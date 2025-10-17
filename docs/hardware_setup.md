@@ -52,6 +52,7 @@ GND           → GND (Pin 6)
 BCLK          → GPIO18/PCM_CLK (Pin 12)
 LRC           → GPIO19/PCM_FS (Pin 35)
 DIN           → GPIO20/PCM_DOUT (Pin 40)
+SD (Shutdown) → GPIO27 (Pin 13) ← IMPORTANT: Prevents clicks/pops
 ```
 
 ### Step 4: Speaker Connection

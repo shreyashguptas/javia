@@ -39,7 +39,8 @@ MAX98357A Amplifier:
 ├── GND  → Pi GND (Pin 6)
 ├── BCLK → Pi GPIO18/PCM_CLK (Pin 12)
 ├── LRC  → Pi GPIO19/PCM_FS (Pin 35)
-└── DIN  → Pi GPIO20/PCM_DOUT (Pin 40)
+├── DIN  → Pi GPIO20/PCM_DOUT (Pin 40)
+└── SD   → Pi GPIO27 (Pin 13) **IMPORTANT: Eliminates clicks!**
 
 Speaker:
 └── Connect to MAX98357A output terminals

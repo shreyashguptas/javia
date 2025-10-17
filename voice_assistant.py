@@ -42,6 +42,7 @@ SYSTEM_PROMPT = "You are a helpful voice assistant that gives concise, factual a
 
 # GPIO Configuration (can be overridden via environment variables)
 BUTTON_PIN = int(os.getenv('BUTTON_PIN', '17'))  # BCM GPIO17 (Physical Pin 11)
+AMPLIFIER_SD_PIN = int(os.getenv('AMPLIFIER_SD_PIN', '27'))  # BCM GPIO27 (Physical Pin 13) - Controls amplifier shutdown
 
 # Audio Configuration (can be overridden via environment variables)
 SAMPLE_RATE = int(os.getenv('SAMPLE_RATE', '16000'))
@@ -80,6 +81,11 @@ def setup():
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     print(f"[INIT] Button configured on GPIO{BUTTON_PIN}")
+    
+    # Setup amplifier shutdown pin (keeps amp powered, controls muting)
+    GPIO.setup(AMPLIFIER_SD_PIN, GPIO.OUT)
+    GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)  # Start with amp muted
+    print(f"[INIT] Amplifier SD pin configured on GPIO{AMPLIFIER_SD_PIN}")
     
     # Check API key
     if GROQ_API_KEY == "YOUR_GROQ_API_KEY_HERE":
@@ -464,7 +470,7 @@ def add_silence_padding(wav_file, padding_ms=100):
         print(f"[WARNING] Could not add silence padding: {e}")
 
 def play_audio():
-    """Play audio through I2S amplifier"""
+    """Play audio through I2S amplifier with SD pin control"""
     print("[PLAYBACK] Playing response...")
     
     if not RESPONSE_FILE.exists():
@@ -472,8 +478,13 @@ def play_audio():
         return
     
     try:
+        # Enable amplifier (unmute) before playback
+        GPIO.output(AMPLIFIER_SD_PIN, GPIO.HIGH)
+        print("[PLAYBACK] Amplifier enabled")
+        time.sleep(0.05)  # Give amplifier 50ms to stabilize
+        
         # Add silence padding to prevent clicks/pops
-        add_silence_padding(RESPONSE_FILE, padding_ms=100)
+        add_silence_padding(RESPONSE_FILE, padding_ms=50)  # Reduced since we have SD control
         
         # Use aplay for I2S playback (most reliable on Pi)
         result = subprocess.run(
@@ -483,6 +494,13 @@ def play_audio():
             timeout=30
         )
         
+        # Wait a moment for audio to finish
+        time.sleep(0.05)
+        
+        # Disable amplifier (mute) after playback
+        GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
+        print("[PLAYBACK] Amplifier muted")
+        
         if result.returncode == 0:
             print("[PLAYBACK] Complete!")
         else:
@@ -490,6 +508,8 @@ def play_audio():
             
     except Exception as e:
         print(f"[ERROR] Playback error: {e}")
+        # Make sure amp is muted on error
+        GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
 
 # ==================== MAIN LOOP ====================
 

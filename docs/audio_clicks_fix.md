@@ -47,22 +47,53 @@ add_silence_padding(RESPONSE_FILE, padding_ms=200)  # Try 200ms for more padding
 
 ---
 
-### Solution 2: Hardware - Add SD (Shutdown) Pin Control ⭐⭐⭐⭐⭐
+### Solution 2: Hardware - Add SD (Shutdown) Pin Control ⭐⭐⭐⭐⭐ (IMPLEMENTED)
 
 **What it does:**
 - Connect MAX98357A SD pin to a GPIO pin
-- Keep amplifier powered on continuously
-- Only enable audio output when needed
-- Prevents power-on/power-off clicks
+- Keep amplifier powered but muted when not playing
+- Only enable audio output during playback
+- Prevents power-on/power-off clicks completely
 
-**Wiring Change:**
-```
-Current:
-MAX98357A SD → Not connected (or tied to VDD)
+**🔌 EXACT WIRING INSTRUCTIONS:**
 
-New:
-MAX98357A SD → Pi GPIO27 (Pin 13)
+**STEP 1: Locate the MAX98357A SD Pin**
+- It's usually labeled "SD" or "SHUTDOWN" on the board
+- May be a pin hole or pad on the board
+
+**STEP 2: Add One Wire**
 ```
+Before:
+MAX98357A SD pin → Not connected (or floating)
+
+After:
+MAX98357A SD pin → Raspberry Pi GPIO27 (Physical Pin 13)
+```
+
+**STEP 3: Physical Pin Locations on Pi Zero 2 W**
+```
+Looking at Pi with GPIO pins on right side:
+
+Pin 1  (3.3V)  ●○ Pin 2  (5V)
+Pin 3          ●○ Pin 4  (5V)
+Pin 5          ●○ Pin 6  (GND)
+Pin 7          ●○ Pin 8
+Pin 9  (GND)   ●○ Pin 10
+Pin 11 (GPIO17 - BUTTON) ●○ Pin 12 (GPIO18 - I2S CLK)
+Pin 13 (GPIO27 - AMP SD)  ●○ Pin 14 (GND)  ← ADD WIRE HERE TO MAX98357A SD
+Pin 15         ●○ Pin 16
+...
+Pin 35 (GPIO19 - I2S FS)  ●○ Pin 36
+Pin 37         ●○ Pin 38 (GPIO20 - I2S DIN)
+Pin 39 (GND)   ●○ Pin 40 (GPIO20 - I2S DOUT)
+```
+
+**STEP 4: Wire It Up**
+- Take a jumper wire (female-to-female or male-to-female)
+- Connect one end to **Pi Pin 13** (GPIO27)
+- Connect other end to **MAX98357A SD pin**
+
+**That's it!** One single wire eliminates the clicks.
 
 **Code to add:**
 ```python
