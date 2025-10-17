@@ -1,0 +1,18 @@
+# I2S Configuration for INMP441 + MAX98357A
+dtparam=i2s=on
+dtoverlay=i2s-mmap
+
+# Use generic I2S audio card
+dtoverlay=rpi-simple-soundcard,card-name=voice-assistant
+dtparam=simple_card_name="voice-assistant"
+
+# I2S pins
+dtparam=i2s_master=on
+dtparam=i2s_sample_rate=16000
+
+# Additional audio settings
+dtparam=audio=on
+dtparam=audio_pwm_mode=2
+
+# GPIO settings for button
+gpio=17=ip,pu
