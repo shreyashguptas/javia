@@ -171,11 +171,14 @@ def amplify_audio(audio_data, gain=2.0):
 2. **Verify API key** - Ensure Groq API key is valid
 3. **Test recording quality**:
    ```bash
-   # Record test file
+   # Record test file with voice assistant
    python3 examples/mic_test.py
    
+   # Or test directly with arecord (5 seconds)
+   arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav -d 5 test.wav
+   
    # Listen to the recording
-   aplay /tmp/mic_test.wav
+   aplay test.wav
    ```
 
 4. **Check background noise** - Reduce ambient noise

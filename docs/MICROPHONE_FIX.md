@@ -52,7 +52,7 @@ arecord -l
 
 ```bash
 # Test recording for 5 seconds
-arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav test.wav
+arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav -d 5 test.wav
 
 # Check file size
 ls -la test.wav

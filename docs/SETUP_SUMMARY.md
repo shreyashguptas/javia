@@ -62,8 +62,8 @@ sudo reboot
 # Check if microphone is detected
 arecord -l
 
-# Test recording
-arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE test.wav
+# Test recording (5 seconds)
+arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -d 5 test.wav
 ```
 
 ## 🚀 Quick Start Guide

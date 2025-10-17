@@ -98,8 +98,8 @@ for i in range(p.get_device_count()):
 
 2. **Check ALSA Configuration**:
    ```bash
-   # Test recording manually
-   arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav test.wav
+   # Test recording manually (5 seconds)
+   arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav -d 5 test.wav
    ```
 
 ### 2. Speaker Not Working
@@ -272,18 +272,18 @@ cat /proc/asound/card0/pcm0p/sub0/hw_params
    ```
 
 2. **Test Different Rates**:
-   ```bash
-   # Test 16kHz
-   arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE test16k.wav
-   
-   # Test 48kHz
-   arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE test48k.wav
-   ```
+```bash
+# Test 16kHz (5 seconds)
+arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -d 5 test16k.wav
+
+# Test 48kHz (5 seconds)
+arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -d 5 test48k.wav
+```
 
 **B. Audio Levels**
 ```bash
-# Check input levels
-arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -V mono test.wav
+# Check input levels (5 seconds with VU meter)
+arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -V mono -d 5 test.wav
 
 # Check output levels
 amixer -c 0 set Master 80%
@@ -354,8 +354,8 @@ free -h
 arecord -l
 aplay -l
 
-# Test microphone
-arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav test.wav
+# Test microphone (5 seconds)
+arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav -d 5 test.wav
 
 # Test speaker
 aplay -D plughw:0,0 test.wav
@@ -364,8 +364,8 @@ aplay -D plughw:0,0 test.wav
 cat /proc/asound/cards
 cat /proc/asound/pcm
 
-# Monitor audio levels
-arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -V mono test.wav
+# Monitor audio levels (press Ctrl+C to stop)
+arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -V mono -d 5 test.wav
 ```
 
 ### System Diagnostics

@@ -131,8 +131,8 @@ GROQ_API_KEY=YOUR_GROQ_API_KEY_HERE
 
 ### 3. Test Setup
 ```bash
-# Test microphone
-arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav test.wav
+# Test microphone (records for 5 seconds)
+arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav -d 5 test.wav
 
 # Test speaker
 aplay -D plughw:0,0 test.wav
@@ -186,8 +186,8 @@ voice_assistant/
    arecord -l
    aplay -l
    
-   # Test recording
-   arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE test.wav
+   # Test recording (5 seconds)
+   arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -d 5 test.wav
    ```
 
 4. **Python Environment**
