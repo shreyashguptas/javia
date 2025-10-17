@@ -84,12 +84,36 @@ sudo reboot
 cd J.A.R.V.I.S.
 ```
 
+**Option 1: Use System Packages (Recommended for Pi Zero 2 W)**
+
+This avoids compilation issues and memory constraints:
+
 ```bash
+# Install system packages
+sudo apt update
+sudo apt install -y python3-pyaudio python3-rpi.gpio python3-requests python3-numpy python3-pip
+
+# Create virtual environment with system packages
+python3 -m venv --system-site-packages ~/venvs/pi
+source ~/venvs/pi/bin/activate
+
+# Install remaining packages
+pip install python-dotenv
+```
+
+**Option 2: Build from Source (if you have time and patience)**
+
+Only use this if Option 1 doesn't work:
+
+```bash
+# Install build dependencies
+sudo apt install -y python3-dev portaudio19-dev libatlas-base-dev
+
 # Create virtual environment
 python3 -m venv ~/venvs/pi
 source ~/venvs/pi/bin/activate
 
-# Install required packages
+# Install packages (this may take 30-60 minutes on Pi Zero 2 W)
 pip install -r config/requirements.txt
 ```
 

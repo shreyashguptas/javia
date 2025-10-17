@@ -47,19 +47,21 @@ sudo apt install -y \
     python3 \
     python3-pip \
     python3-venv \
-    python3-dev \
-    portaudio19-dev \
+    python3-pyaudio \
+    python3-rpi.gpio \
+    python3-requests \
+    python3-numpy \
     alsa-utils \
     alsa-tools \
     git \
     curl \
     wget
 
-# Create virtual environment
+# Create virtual environment with system site packages
 print_status "Creating Python virtual environment..."
 if [ ! -d "$HOME/venvs/pi" ]; then
-    python3 -m venv "$HOME/venvs/pi"
-    print_status "Virtual environment created at $HOME/venvs/pi"
+    python3 -m venv --system-site-packages "$HOME/venvs/pi"
+    print_status "Virtual environment created at $HOME/venvs/pi (with system packages)"
 else
     print_warning "Virtual environment already exists at $HOME/venvs/pi"
 fi
@@ -68,10 +70,10 @@ fi
 print_status "Activating virtual environment..."
 source "$HOME/venvs/pi/bin/activate"
 
-# Install Python packages
+# Install Python packages (only the ones not available as system packages)
 print_status "Installing Python packages..."
 pip install --upgrade pip
-pip install pyaudio RPi.GPIO requests pathlib2 python-dotenv numpy
+pip install python-dotenv pathlib2
 
 # Configure I2S audio
 print_status "Configuring I2S audio..."
