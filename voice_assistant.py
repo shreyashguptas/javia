@@ -52,7 +52,7 @@ AUDIO_FORMAT = pyaudio.paInt16
 MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))  # Amplification factor (1.0 = no change, 2.0 = double volume)
 
 # File paths
-AUDIO_DIR = Path("/tmp/voice_assistant")
+AUDIO_DIR = Path(os.path.expanduser("~/voice_assistant/audio"))
 RECORDING_FILE = AUDIO_DIR / "recording.wav"
 RESPONSE_FILE = AUDIO_DIR / "response.wav"
 
@@ -65,8 +65,16 @@ def setup():
     print("="*50 + "\n")
     
     # Create audio directory
-    AUDIO_DIR.mkdir(exist_ok=True)
+    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[INIT] Audio directory: {AUDIO_DIR}")
+    
+    # Clean up old recordings to prevent disk space issues
+    try:
+        for old_file in AUDIO_DIR.glob("*.wav"):
+            old_file.unlink()
+        print(f"[INIT] Cleaned up old audio files")
+    except Exception as e:
+        print(f"[INIT] Could not clean old files: {e}")
     
     # Setup GPIO
     GPIO.setmode(GPIO.BCM)
