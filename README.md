@@ -17,45 +17,42 @@ This project creates a voice assistant that:
 
 ### Components
 - **Raspberry Pi Zero 2 W** (mainboard)
-- **INMP441 MEMS Microphone** (I2S digital interface)
-- **MAX98357A I2S Amplifier** (3W Class D)
-- **3W 4Ω Speaker** (with JST-PH2.0 interface)
+- **Google Voice HAT** (AIY Voice HAT v1.0 or compatible)
+  - Includes: Built-in dual MEMS microphones
+  - Includes: 3W Class D amplifier
+  - Interface: I2S digital audio
+- **3W 4Ω Speaker** (connects to Voice HAT)
 - **Push Button** (for activation)
-- **Breadboard and jumper wires**
+- **Optional: Jumper wires** (for button connection)
 
 ### Wiring Diagram
 
 ```
-INMP441 Microphone:
-├── VDD  → Pi 3.3V (Pin 1)
-├── GND  → Pi GND (Pin 6)
-├── SCK  → Pi GPIO18/PCM_CLK (Pin 12)
-├── WS   → Pi GPIO19/PCM_FS (Pin 35)
-├── SD   → Pi GPIO20/PCM_DIN (Pin 38)
-└── L/R  → Pi GND (Pin 6) [for left channel]
-
-MAX98357A Amplifier:
-├── VDD  → Pi 3.3V (Pin 1)
-├── GND  → Pi GND (Pin 6)
-├── BCLK → Pi GPIO18/PCM_CLK (Pin 12)
-├── LRC  → Pi GPIO19/PCM_FS (Pin 35)
-├── DIN  → Pi GPIO20/PCM_DOUT (Pin 40)
-└── SD   → Pi GPIO27 (Pin 13) **IMPORTANT: Eliminates clicks!**
+Google Voice HAT:
+└── Mounts directly onto Pi's 40-pin GPIO header
 
 Speaker:
-└── Connect to MAX98357A output terminals
+├── Red wire   → Voice HAT Speaker + terminal
+└── Black wire → Voice HAT Speaker - terminal
 
 Button:
-├── One terminal → Pi GPIO17 (Pin 11)
-└── Other terminal → Pi GND (Pin 6)
+├── Terminal 1 → Pi GPIO17 (Pin 11) - accessible through Voice HAT
+└── Terminal 2 → Pi GND (Pin 6) - accessible through Voice HAT
+
+Optional - Amplifier Shutdown Control:
+└── Voice HAT SD pin → Pi GPIO27 (Pin 13) [reduces audio clicks]
 ```
+
+**Note**: The Google Voice HAT is a complete audio solution that includes microphone array and speaker amplifier in one board. It connects to all 40 GPIO pins but passes through unused pins for your button.
 
 ## 🚀 Quick Start
 
 ### 1. Hardware Setup
-1. Connect components according to wiring diagram
-2. Ensure all connections are secure on breadboard
-3. Power on Raspberry Pi
+1. **Power off** the Raspberry Pi completely
+2. **Mount the Google Voice HAT** onto the 40-pin GPIO header (press down firmly)
+3. **Connect the speaker** to the Voice HAT speaker terminals (red to +, black to -)
+4. **Connect the button** to GPIO17 and GND
+5. **Power on** the Raspberry Pi
 
 ### 2. Software Configuration
 
@@ -68,7 +65,7 @@ sudo nano /boot/firmware/config.txt
 Then add this at the bottom of the file
 
 ```bash
-# I2S Configuration for INMP441 + MAX98357A
+# I2S Configuration for Google Voice HAT
 dtparam=i2s=on
 dtoverlay=googlevoicehat-soundcard
 ```

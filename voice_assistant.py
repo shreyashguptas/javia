@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Raspberry Pi Zero 2 W Voice Assistant with Groq API
-Hardware: INMP441 Mic, MAX98357A Amp, Button
+Hardware: Google Voice HAT (microphone + speaker)
 """
 
 import os
@@ -16,6 +16,17 @@ import RPi.GPIO as GPIO
 import pyaudio
 import numpy as np
 from dotenv import load_dotenv
+
+# Suppress ALSA warnings
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"
+ERROR_HANDLER_FUNC = lambda *args, **kwargs: None
+try:
+    from ctypes import *
+    # Set ALSA error handler to suppress warnings
+    asound = cdll.LoadLibrary('libasound.so.2')
+    asound.snd_lib_error_set_handler(c_void_p.in_dll(asound, 'snd_lib_error'))
+except:
+    pass  # If we can't suppress, that's okay
 
 # Load environment variables from .env file
 load_dotenv()
@@ -178,23 +189,41 @@ def record_audio():
     """Record audio from I2S microphone until button is pressed again"""
     print("[AUDIO] Setting up recording...")
     
-    # Initialize PyAudio
-    audio = pyaudio.PyAudio()
-    
-    # Find I2S input device (usually card 0)
-    device_index = None
-    for i in range(audio.get_device_count()):
-        info = audio.get_device_info_by_index(i)
-        if info['maxInputChannels'] > 0 and 'sndrpisimplecar' in info['name'].lower():
-            device_index = i
-            print(f"[AUDIO] Using device: {info['name']}")
-            break
-    
-    if device_index is None:
-        print("[WARNING] I2S device not found, using default")
-        device_index = None  # Use default
+    audio = None
+    stream = None
     
     try:
+        # Initialize PyAudio
+        audio = pyaudio.PyAudio()
+        
+        # Find I2S input device (Google Voice HAT)
+        device_index = None
+        for i in range(audio.get_device_count()):
+            try:
+                info = audio.get_device_info_by_index(i)
+                if info['maxInputChannels'] > 0 and ('googlevoicehat' in info['name'].lower() or 
+                                                      'voicehat' in info['name'].lower() or
+                                                      'sndrpigooglevoi' in info['name'].lower()):
+                    device_index = i
+                    print(f"[AUDIO] Using device: {info['name']}")
+                    break
+            except Exception as e:
+                continue  # Skip problematic devices
+        
+        if device_index is None:
+            print("[WARNING] Google Voice HAT not found, using default input device")
+            device_index = None  # Use default
+        
+        # Validate device before opening stream
+        if device_index is not None:
+            try:
+                device_info = audio.get_device_info_by_index(device_index)
+                if device_info['maxInputChannels'] < 1:
+                    print("[WARNING] Selected device has no input channels, using default")
+                    device_index = None
+            except Exception as e:
+                print(f"[WARNING] Could not validate device: {e}, using default")
+                device_index = None
         # Open stream
         stream = audio.open(
             format=AUDIO_FORMAT,
@@ -217,35 +246,43 @@ def record_audio():
         
         # Record until button is pressed again
         while GPIO.input(BUTTON_PIN) == GPIO.HIGH:
-            data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
-            frames.append(data)
-            chunks_recorded += 1
-            
-            # Progress indicator every second
-            if chunks_recorded % (SAMPLE_RATE // CHUNK_SIZE) == 0:
-                seconds = chunks_recorded // (SAMPLE_RATE // CHUNK_SIZE)
-                print(f"[AUDIO] {seconds} seconds recorded...")
+            try:
+                data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+                frames.append(data)
+                chunks_recorded += 1
+                
+                # Progress indicator every second
+                if chunks_recorded % (SAMPLE_RATE // CHUNK_SIZE) == 0:
+                    seconds = chunks_recorded // (SAMPLE_RATE // CHUNK_SIZE)
+                    print(f"[AUDIO] {seconds} seconds recorded...")
+            except Exception as e:
+                print(f"[WARNING] Audio buffer issue: {e}")
+                continue  # Try to continue recording despite errors
         
         print("[AUDIO] " + "="*40)
+        
+        # Validate recording length
+        if len(frames) == 0:
+            print("[ERROR] No audio data recorded")
+            return False
         
         # Calculate total recording time
         total_seconds = chunks_recorded / (SAMPLE_RATE / CHUNK_SIZE)
         print(f"[AUDIO] Recording complete ({total_seconds:.1f} seconds)")
         
-        # Stop and close
-        stream.stop_stream()
-        stream.close()
-        
         # Get sample width before terminating
         sample_width = audio.get_sample_size(AUDIO_FORMAT)
-        audio.terminate()
         
         # Amplify audio if gain is not 1.0
         if MICROPHONE_GAIN != 1.0:
             print(f"[AUDIO] Applying gain of {MICROPHONE_GAIN}x...")
             amplified_frames = []
             for frame in frames:
-                amplified_frames.append(amplify_audio(frame, MICROPHONE_GAIN))
+                try:
+                    amplified_frames.append(amplify_audio(frame, MICROPHONE_GAIN))
+                except Exception as e:
+                    print(f"[WARNING] Could not amplify chunk: {e}")
+                    amplified_frames.append(frame)  # Use original if amplification fails
             frames = amplified_frames
         
         # Save to WAV file
@@ -255,15 +292,38 @@ def record_audio():
             wf.setframerate(SAMPLE_RATE)
             wf.writeframes(b''.join(frames))
         
-        file_size = RECORDING_FILE.stat().st_size
-        print(f"[AUDIO] Saved: {RECORDING_FILE} ({file_size} bytes)")
+        # Validate saved file
+        if not RECORDING_FILE.exists():
+            print("[ERROR] Recording file was not saved")
+            return False
         
+        file_size = RECORDING_FILE.stat().st_size
+        if file_size < 1000:  # Less than 1KB is suspiciously small
+            print(f"[WARNING] Recording file is very small ({file_size} bytes)")
+        
+        print(f"[AUDIO] Saved: {RECORDING_FILE} ({file_size} bytes)")
         return True
         
     except Exception as e:
         print(f"[ERROR] Recording failed: {e}")
-        audio.terminate()
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
         return False
+        
+    finally:
+        # Clean up resources
+        try:
+            if stream is not None:
+                stream.stop_stream()
+                stream.close()
+        except:
+            pass
+        
+        try:
+            if audio is not None:
+                audio.terminate()
+        except:
+            pass
 
 # ==================== TRANSCRIPTION ====================
 
@@ -273,6 +333,16 @@ def transcribe_audio():
     
     if not RECORDING_FILE.exists():
         print("[ERROR] Recording file not found")
+        return ""
+    
+    # Validate file size
+    file_size = RECORDING_FILE.stat().st_size
+    if file_size < 100:
+        print(f"[ERROR] Recording file too small ({file_size} bytes) - likely empty")
+        return ""
+    
+    if file_size > 25 * 1024 * 1024:  # 25MB limit for Groq API
+        print(f"[ERROR] Recording file too large ({file_size} bytes) - exceeds 25MB limit")
         return ""
     
     try:
@@ -288,30 +358,63 @@ def transcribe_audio():
                 'Authorization': f'Bearer {GROQ_API_KEY}'
             }
             
-            print(f"[API] Sending {RECORDING_FILE.stat().st_size} bytes...")
+            print(f"[API] Sending {file_size} bytes...")
             
-            # Make request
-            response = requests.post(
-                GROQ_WHISPER_URL,
-                headers=headers,
-                files=files,
-                data=data,
-                timeout=30
-            )
-            
-            print(f"[API] Response code: {response.status_code}")
-            
-            if response.status_code == 200:
-                result = response.json()
-                transcription = result.get('text', '')
-                print(f"[SUCCESS] Transcription: \"{transcription}\"")
-                return transcription
-            else:
-                print(f"[ERROR] API error: {response.text}")
-                return ""
+            # Make request with retries
+            max_retries = 2
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(
+                        GROQ_WHISPER_URL,
+                        headers=headers,
+                        files=files,
+                        data=data,
+                        timeout=60  # Increased timeout for larger files
+                    )
+                    
+                    print(f"[API] Response code: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        transcription = result.get('text', '').strip()
+                        
+                        if not transcription:
+                            print("[WARNING] Transcription returned empty text")
+                            return ""
+                        
+                        print(f"[SUCCESS] Transcription: \"{transcription}\"")
+                        return transcription
+                    elif response.status_code == 429:
+                        print("[WARNING] Rate limited, waiting before retry...")
+                        time.sleep(2)
+                        continue
+                    else:
+                        print(f"[ERROR] API error {response.status_code}: {response.text}")
+                        return ""
+                        
+                except requests.exceptions.Timeout:
+                    if attempt < max_retries - 1:
+                        print(f"[WARNING] Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(1)
+                        continue
+                    else:
+                        print("[ERROR] Request timeout after retries")
+                        return ""
+                        
+                except requests.exceptions.ConnectionError as e:
+                    print(f"[ERROR] Connection error: {e}")
+                    return ""
                 
+            print("[ERROR] Failed after all retry attempts")
+            return ""
+                
+    except FileNotFoundError:
+        print(f"[ERROR] Recording file not found: {RECORDING_FILE}")
+        return ""
     except Exception as e:
         print(f"[ERROR] Transcription failed: {e}")
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
         return ""
 
 # ==================== LLM QUERY ====================
@@ -319,6 +422,10 @@ def transcribe_audio():
 def query_llm(user_text):
     """Query Groq LLM"""
     print("[API] Querying LLM...")
+    
+    if not user_text or not user_text.strip():
+        print("[ERROR] Cannot query LLM with empty text")
+        return ""
     
     try:
         headers = {
@@ -330,7 +437,7 @@ def query_llm(user_text):
             'model': LLM_MODEL,
             'messages': [
                 {'role': 'system', 'content': SYSTEM_PROMPT},
-                {'role': 'user', 'content': user_text}
+                {'role': 'user', 'content': user_text.strip()}
             ],
             'max_tokens': 150,
             'temperature': 0.7
@@ -338,33 +445,68 @@ def query_llm(user_text):
         
         print(f"[API] Sending query...")
         
-        response = requests.post(
-            GROQ_LLM_URL,
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-        
-        print(f"[API] Response code: {response.status_code}")
-        
-        if response.status_code == 200:
-            result = response.json()
-            llm_response = result['choices'][0]['message']['content']
-            
-            # Check if response is empty or just whitespace
-            if not llm_response or llm_response.strip() == "":
-                print(f"[ERROR] LLM returned empty response")
-                print(f"[DEBUG] Full response: {result}")
+        # Make request with retries
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    GROQ_LLM_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+                
+                print(f"[API] Response code: {response.status_code}")
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    # Validate response structure
+                    if 'choices' not in result or len(result['choices']) == 0:
+                        print(f"[ERROR] Invalid LLM response structure")
+                        return ""
+                    
+                    llm_response = result['choices'][0]['message']['content']
+                    
+                    # Check if response is empty or just whitespace
+                    if not llm_response or llm_response.strip() == "":
+                        print(f"[ERROR] LLM returned empty response")
+                        return ""
+                    
+                    print(f"[SUCCESS] LLM Response: \"{llm_response}\"")
+                    return llm_response.strip()
+                    
+                elif response.status_code == 429:
+                    print("[WARNING] Rate limited, waiting before retry...")
+                    time.sleep(2)
+                    continue
+                else:
+                    print(f"[ERROR] API error {response.status_code}: {response.text}")
+                    return ""
+                    
+            except requests.exceptions.Timeout:
+                if attempt < max_retries - 1:
+                    print(f"[WARNING] Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(1)
+                    continue
+                else:
+                    print("[ERROR] Request timeout after retries")
+                    return ""
+                    
+            except requests.exceptions.ConnectionError as e:
+                print(f"[ERROR] Connection error: {e}")
                 return ""
+        
+        print("[ERROR] Failed after all retry attempts")
+        return ""
             
-            print(f"[SUCCESS] LLM Response: \"{llm_response}\"")
-            return llm_response
-        else:
-            print(f"[ERROR] API error: {response.text}")
-            return ""
-            
+    except KeyError as e:
+        print(f"[ERROR] Missing expected field in API response: {e}")
+        return ""
     except Exception as e:
         print(f"[ERROR] LLM query failed: {e}")
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
         return ""
 
 # ==================== TEXT-TO-SPEECH ====================
@@ -372,6 +514,15 @@ def query_llm(user_text):
 def generate_speech(text):
     """Generate speech using Groq TTS API"""
     print("[API] Generating speech...")
+    
+    if not text or not text.strip():
+        print("[ERROR] Cannot generate speech from empty text")
+        return False
+    
+    # Validate text length
+    if len(text) > 4096:
+        print(f"[WARNING] Text too long ({len(text)} chars), truncating to 4096")
+        text = text[:4096]
     
     try:
         headers = {
@@ -381,125 +532,178 @@ def generate_speech(text):
         
         payload = {
             'model': TTS_MODEL,
-            'input': text,
+            'input': text.strip(),
             'voice': TTS_VOICE,
             'response_format': 'wav'
         }
         
         print(f"[API] Requesting TTS...")
         
-        # Stream response to file
-        response = requests.post(
-            GROQ_TTS_URL,
-            headers=headers,
-            json=payload,
-            timeout=60,
-            stream=True
-        )
-        
-        print(f"[API] Response code: {response.status_code}")
-        
-        if response.status_code == 200:
-            # Save to file
-            total_bytes = 0
-            with open(RESPONSE_FILE, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        total_bytes += len(chunk)
-                        if total_bytes % 50000 == 0:
-                            print(f"[API] Downloaded: {total_bytes} bytes")
-            
-            print(f"[SUCCESS] Audio saved: {RESPONSE_FILE} ({total_bytes} bytes)")
-            
-            # Validate WAV file
+        # Make request with retries
+        max_retries = 2
+        for attempt in range(max_retries):
             try:
-                with wave.open(str(RESPONSE_FILE), 'rb') as wf:
-                    print(f"[PLAYBACK] Channels: {wf.getnchannels()}")
-                    print(f"[PLAYBACK] Sample Rate: {wf.getframerate()} Hz")
-                    print(f"[PLAYBACK] Sample Width: {wf.getsampwidth()} bytes")
-                    return True
-            except Exception as e:
-                print(f"[ERROR] Invalid WAV file: {e}")
+                # Stream response to file
+                response = requests.post(
+                    GROQ_TTS_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=60,
+                    stream=True
+                )
+                
+                print(f"[API] Response code: {response.status_code}")
+                
+                if response.status_code == 200:
+                    # Save to file
+                    total_bytes = 0
+                    with open(RESPONSE_FILE, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                total_bytes += len(chunk)
+                    
+                    if total_bytes == 0:
+                        print("[ERROR] Received empty audio file")
+                        return False
+                    
+                    print(f"[SUCCESS] Audio saved: {RESPONSE_FILE} ({total_bytes} bytes)")
+                    
+                    # Validate WAV file
+                    try:
+                        with wave.open(str(RESPONSE_FILE), 'rb') as wf:
+                            channels = wf.getnchannels()
+                            sample_rate = wf.getframerate()
+                            sample_width = wf.getsampwidth()
+                            frames = wf.getnframes()
+                            
+                            if frames == 0:
+                                print("[ERROR] WAV file has no audio frames")
+                                return False
+                            
+                            print(f"[PLAYBACK] Channels: {channels}")
+                            print(f"[PLAYBACK] Sample Rate: {sample_rate} Hz")
+                            print(f"[PLAYBACK] Sample Width: {sample_width} bytes")
+                            return True
+                    except Exception as e:
+                        print(f"[ERROR] Invalid WAV file: {e}")
+                        return False
+                        
+                elif response.status_code == 429:
+                    print("[WARNING] Rate limited, waiting before retry...")
+                    time.sleep(2)
+                    continue
+                else:
+                    print(f"[ERROR] API error {response.status_code}: {response.text}")
+                    return False
+                    
+            except requests.exceptions.Timeout:
+                if attempt < max_retries - 1:
+                    print(f"[WARNING] Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(1)
+                    continue
+                else:
+                    print("[ERROR] Request timeout after retries")
+                    return False
+                    
+            except requests.exceptions.ConnectionError as e:
+                print(f"[ERROR] Connection error: {e}")
                 return False
-        else:
-            print(f"[ERROR] API error: {response.text}")
-            return False
+        
+        print("[ERROR] Failed after all retry attempts")
+        return False
             
     except Exception as e:
         print(f"[ERROR] TTS generation failed: {e}")
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
         return False
 
 # ==================== AUDIO PLAYBACK ====================
 
-def add_silence_padding(wav_file, padding_ms=100):
+def add_silence_padding(wav_file, padding_ms=150):
     """
     Add silence padding to beginning and end of WAV file to prevent clicks/pops
+    Memory-efficient approach using temporary file
     
     Args:
         wav_file: Path to WAV file
-        padding_ms: Milliseconds of silence to add (default 100ms)
+        padding_ms: Milliseconds of silence to add (default 150ms)
     """
     try:
-        # Read original file
+        import tempfile
+        
+        # Create temporary file for padded audio
+        temp_file = wav_file.parent / f"{wav_file.stem}_temp.wav"
+        
+        # Read original file parameters
         with wave.open(str(wav_file), 'rb') as wf:
             params = wf.getparams()
-            frames = wf.readframes(wf.getnframes())
             channels = params.nchannels
             sampwidth = params.sampwidth
             framerate = params.framerate
+            
+            # Determine dtype based on sample width
+            if sampwidth == 1:
+                dtype = np.uint8
+            elif sampwidth == 2:
+                dtype = np.int16
+            elif sampwidth == 4:
+                dtype = np.int32
+            else:
+                print(f"[WARNING] Unsupported sample width: {sampwidth} bytes")
+                return
+            
+            # Calculate padding length (samples = time * sample_rate * channels)
+            padding_samples = int((padding_ms / 1000.0) * framerate * channels)
+            silence = np.zeros(padding_samples, dtype=dtype)
+            
+            # Write to temporary file with padding
+            with wave.open(str(temp_file), 'wb') as wf_out:
+                wf_out.setparams(params)
+                
+                # Write leading silence
+                wf_out.writeframes(silence.tobytes())
+                
+                # Copy original audio in chunks to avoid memory issues
+                chunk_size = 8192
+                while True:
+                    frames = wf.readframes(chunk_size)
+                    if not frames:
+                        break
+                    wf_out.writeframes(frames)
+                
+                # Write trailing silence
+                wf_out.writeframes(silence.tobytes())
         
-        # Determine dtype based on sample width
-        if sampwidth == 1:
-            dtype = np.uint8
-        elif sampwidth == 2:
-            dtype = np.int16
-        elif sampwidth == 4:
-            dtype = np.int32
-        else:
-            print(f"[WARNING] Unsupported sample width: {sampwidth} bytes")
-            return
-        
-        # Convert to numpy array
-        audio_data = np.frombuffer(frames, dtype=dtype)
-        
-        # Calculate padding length (samples = time * sample_rate * channels)
-        padding_samples = int((padding_ms / 1000.0) * framerate * channels)
-        silence = np.zeros(padding_samples, dtype=dtype)
-        
-        # Add silence to beginning and end
-        padded_audio = np.concatenate([silence, audio_data, silence])
-        
-        # Write back to file
-        with wave.open(str(wav_file), 'wb') as wf:
-            wf.setparams(params)
-            wf.writeframes(padded_audio.tobytes())
+        # Replace original file with padded version
+        temp_file.replace(wav_file)
         
         print(f"[AUDIO] Added {padding_ms}ms silence padding ({framerate}Hz, {channels}ch)")
         
     except Exception as e:
-        import traceback
         print(f"[WARNING] Could not add silence padding: {e}")
-        print(f"[DEBUG] {traceback.format_exc()}")
+        # Clean up temp file if it exists
+        if 'temp_file' in locals() and temp_file.exists():
+            temp_file.unlink()
 
 def play_audio():
     """Play audio through I2S amplifier with SD pin control"""
-    print("[PLAYBACK] Playing response...")
-    
     if not RESPONSE_FILE.exists():
         print("[ERROR] Response file not found")
         return
     
     try:
         # Add silence padding FIRST (before enabling amp)
-        add_silence_padding(RESPONSE_FILE, padding_ms=100)
+        print("[PLAYBACK] Preparing audio...")
+        add_silence_padding(RESPONSE_FILE, padding_ms=150)
         
-        # Enable amplifier (unmute) before playback
+        # Enable amplifier (unmute) - give it time to stabilize
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.HIGH)
-        print("[PLAYBACK] Amplifier enabled")
-        time.sleep(0.150)  # Give amplifier 150ms to stabilize and power on
+        time.sleep(0.200)  # 200ms for amplifier to fully power on and stabilize
         
         # Use aplay for I2S playback (most reliable on Pi)
+        print("[PLAYBACK] Playing response...")
         result = subprocess.run(
             ['aplay', '-D', 'plughw:0,0', str(RESPONSE_FILE)],
             capture_output=True,
@@ -507,12 +711,11 @@ def play_audio():
             timeout=30
         )
         
-        # Wait for audio to fully finish
-        time.sleep(0.150)  # Give audio time to complete
+        # Wait for audio to fully complete before muting
+        time.sleep(0.200)  # 200ms for audio to fully finish
         
         # Disable amplifier (mute) after playback
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
-        print("[PLAYBACK] Amplifier muted")
         
         if result.returncode == 0:
             print("[PLAYBACK] Complete!")
@@ -570,7 +773,7 @@ def main():
                 continue
             
             # Step 5: Play
-            print("\n[PLAYBACK] Playing response...")
+            print("\n[STEP 5/5] Playing response...")
             play_audio()
             
             print("\n[COMPLETE] Conversation complete!")

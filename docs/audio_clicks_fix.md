@@ -6,7 +6,7 @@ You're hearing clicking or popping sounds from the speaker at:
 - **Start of playback** - Click when audio begins
 - **End of playback** - Click/pop when audio stops
 
-This is a common issue with Class D amplifiers like the MAX98357A.
+This is a common issue with Class D amplifiers like the one in the Google Voice HAT.
 
 ## Why This Happens
 
@@ -17,7 +17,7 @@ This is a common issue with Class D amplifiers like the MAX98357A.
    - Speaker cone moves abruptly → audible click
 
 2. **Amplifier Enable/Disable**
-   - MAX98357A powers on when it detects I2S signal
+   - Voice HAT amplifier powers on when it detects I2S signal
    - Powers off when I2S stops
    - Power transitions cause voltage spikes → clicks
 
@@ -50,25 +50,28 @@ add_silence_padding(RESPONSE_FILE, padding_ms=200)  # Try 200ms for more padding
 ### Solution 2: Hardware - Add SD (Shutdown) Pin Control ⭐⭐⭐⭐⭐ (IMPLEMENTED)
 
 **What it does:**
-- Connect MAX98357A SD pin to a GPIO pin
+- Connect Voice HAT amplifier SD (shutdown) pin to a GPIO pin
 - Keep amplifier powered but muted when not playing
 - Only enable audio output during playback
 - Prevents power-on/power-off clicks completely
 
 **🔌 EXACT WIRING INSTRUCTIONS:**
 
-**STEP 1: Locate the MAX98357A SD Pin**
-- It's usually labeled "SD" or "SHUTDOWN" on the board
-- May be a pin hole or pad on the board
+**STEP 1: Locate the Voice HAT Amplifier SD Pin**
+- On Google Voice HAT, this may be labeled "SD", "SHUTDOWN", or "AMP_SD"
+- Check your specific Voice HAT model documentation
+- Some Voice HAT versions may not expose this pin
 
-**STEP 2: Add One Wire**
+**STEP 2: Add One Wire (if available)**
 ```
 Before:
-MAX98357A SD pin → Not connected (or floating)
+Voice HAT SD pin → Not connected (or floating)
 
 After:
-MAX98357A SD pin → Raspberry Pi GPIO27 (Physical Pin 13)
+Voice HAT SD pin → Raspberry Pi GPIO27 (Physical Pin 13)
 ```
+
+**Note:** If your Voice HAT doesn't expose the SD pin, the software fixes (silence padding and timing delays) will still significantly reduce clicks.
 
 **STEP 3: Physical Pin Locations on Pi Zero 2 W**
 ```
@@ -88,12 +91,12 @@ Pin 37         ●○ Pin 38 (GPIO20 - I2S DIN)
 Pin 39 (GND)   ●○ Pin 40 (GPIO20 - I2S DOUT)
 ```
 
-**STEP 4: Wire It Up**
+**STEP 4: Wire It Up (if SD pin is available)**
 - Take a jumper wire (female-to-female or male-to-female)
-- Connect one end to **Pi Pin 13** (GPIO27)
-- Connect other end to **MAX98357A SD pin**
+- Connect one end to **Pi Pin 13** (GPIO27) - may need to access through Voice HAT
+- Connect other end to **Voice HAT SD pin**
 
-**That's it!** One single wire eliminates the clicks.
+**That's it!** One single wire significantly reduces the clicks.
 
 **Code to add:**
 ```python
@@ -140,13 +143,15 @@ GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)  # Disable amp
 **Wiring:**
 ```
 Current:
-MAX98357A OUT+ → Speaker Red
-MAX98357A OUT- → Speaker Black
+Voice HAT Speaker+ → Speaker Red
+Voice HAT Speaker- → Speaker Black
 
 New:
-MAX98357A OUT+ → [Capacitor +] → Speaker Red
-MAX98357A OUT- → Speaker Black
+Voice HAT Speaker+ → [Capacitor +] → Speaker Red
+Voice HAT Speaker- → Speaker Black
 ```
+
+**Note:** This modification is more difficult with the Voice HAT since speaker terminals are integrated. Only attempt if comfortable with soldering.
 
 **Effectiveness:** Reduces clicks by 60-70%
 

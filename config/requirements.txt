@@ -3,10 +3,3 @@ RPi.GPIO
 requests
 python-dotenv
 numpy
-pathlib2
-wave
-json
-subprocess
-time
-os
-sys
