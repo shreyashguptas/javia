@@ -60,6 +60,12 @@ Button:
 #### Enable I2S Audio
 Add to `/boot/firmware/config.txt`:
 ```bash
+sudo nano /boot/firmware/config.txt
+```
+
+Then add this at the bottom of the file
+
+```bash
 # I2S Configuration for INMP441 + MAX98357A
 dtparam=i2s=on
 dtoverlay=googlevoicehat-soundcard
@@ -71,13 +77,20 @@ sudo reboot
 ```
 
 #### Install Dependencies
+
+- Make sure this repo is git cloned then run the following
+
+```bash
+cd J.A.R.V.I.S.
+```
+
 ```bash
 # Create virtual environment
 python3 -m venv ~/venvs/pi
 source ~/venvs/pi/bin/activate
 
 # Install required packages
-pip install pyaudio RPi.GPIO requests
+pip install -r config/requirements.txt
 ```
 
 #### Configure API Key
