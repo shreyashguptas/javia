@@ -33,7 +33,7 @@ GROQ_TTS_URL = "https://api.groq.com/openai/v1/audio/speech"
 
 # Model Names (can be overridden via environment variables)
 WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'whisper-large-v3-turbo')
-LLM_MODEL = os.getenv('LLM_MODEL', 'llama-3.1-8b-instant')  # Faster and more reliable than gpt-oss-20b
+LLM_MODEL = os.getenv('LLM_MODEL', 'openai/gpt-oss-20b')
 TTS_MODEL = os.getenv('TTS_MODEL', 'playai-tts')
 TTS_VOICE = os.getenv('TTS_VOICE', 'Chip-PlayAI')
 

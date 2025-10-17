@@ -270,7 +270,7 @@ RECORD_SECONDS=7
 
 ### Models Used
 - **Whisper**: `whisper-large-v3-turbo` (fastest, most accurate)
-- **LLM**: `llama-3.1-8b-instant` (fast and reliable)
+- **LLM**: `openai/gpt-oss-20b`
 - **TTS**: `playai-tts` with `Chip-PlayAI` voice
 
 ## 🤝 Contributing
