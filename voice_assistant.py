@@ -426,6 +426,43 @@ def generate_speech(text):
 
 # ==================== AUDIO PLAYBACK ====================
 
+def add_silence_padding(wav_file, padding_ms=100):
+    """
+    Add silence padding to beginning and end of WAV file to prevent clicks/pops
+    
+    Args:
+        wav_file: Path to WAV file
+        padding_ms: Milliseconds of silence to add (default 100ms)
+    """
+    try:
+        import wave
+        import numpy as np
+        
+        # Read original file
+        with wave.open(str(wav_file), 'rb') as wf:
+            params = wf.getparams()
+            frames = wf.readframes(wf.getnframes())
+        
+        # Convert to numpy array
+        audio_data = np.frombuffer(frames, dtype=np.int16)
+        
+        # Calculate padding length
+        padding_samples = int((padding_ms / 1000.0) * params.framerate)
+        silence = np.zeros(padding_samples, dtype=np.int16)
+        
+        # Add silence to beginning and end
+        padded_audio = np.concatenate([silence, audio_data, silence])
+        
+        # Write back to file
+        with wave.open(str(wav_file), 'wb') as wf:
+            wf.setparams(params)
+            wf.writeframes(padded_audio.tobytes())
+        
+        print(f"[AUDIO] Added {padding_ms}ms silence padding to reduce clicks")
+        
+    except Exception as e:
+        print(f"[WARNING] Could not add silence padding: {e}")
+
 def play_audio():
     """Play audio through I2S amplifier"""
     print("[PLAYBACK] Playing response...")
@@ -435,6 +472,9 @@ def play_audio():
         return
     
     try:
+        # Add silence padding to prevent clicks/pops
+        add_silence_padding(RESPONSE_FILE, padding_ms=100)
+        
         # Use aplay for I2S playback (most reliable on Pi)
         result = subprocess.run(
             ['aplay', '-D', 'plughw:0,0', str(RESPONSE_FILE)],
