@@ -18,7 +18,7 @@
 arecord -l
 
 # Expected output:
-# card 0: voice-assistant [voice-assistant], device 0: simple-card_codec_link [simple-card_codec_link]
+# card 0: googlevoicehat [Google Voice HAT], device 0: ...
 ```
 
 **Solutions:**
@@ -45,8 +45,7 @@ cat /boot/firmware/config.txt | grep -i i2s
 
 # Expected lines:
 # dtparam=i2s=on
-# dtoverlay=i2s-mmap
-# dtoverlay=rpi-simple-soundcard,card-name=voice-assistant
+# dtoverlay=googlevoicehat-soundcard
 ```
 
 **Solutions:**
@@ -56,14 +55,10 @@ cat /boot/firmware/config.txt | grep -i i2s
    
    # Add these lines at the end:
    dtparam=i2s=on
-   dtoverlay=i2s-mmap
-   dtoverlay=rpi-simple-soundcard,card-name=voice-assistant
-   dtparam=simple_card_name="voice-assistant"
-   dtparam=i2s_master=on
-   dtparam=i2s_sample_rate=16000
+   dtoverlay=googlevoicehat-soundcard
    ```
 
-2. **Reboot After Changes**:
+2. **Reboot After Changes** (REQUIRED):
    ```bash
    sudo reboot
    ```
@@ -73,6 +68,9 @@ cat /boot/firmware/config.txt | grep -i i2s
    # After reboot, check devices
    arecord -l
    aplay -l
+   
+   # Should show something like:
+   # card 0: googlevoicehat [Google Voice HAT], device 0: ...
    ```
 
 **C. Python Environment Issues**

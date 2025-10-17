@@ -14,11 +14,7 @@ cat /boot/firmware/config.txt | grep -i i2s
 
 # Should show:
 # dtparam=i2s=on
-# dtoverlay=i2s-mmap
-# dtoverlay=rpi-simple-soundcard,card-name=voice-assistant
-# dtparam=simple_card_name="voice-assistant"
-# dtparam=i2s_master=on
-# dtparam=i2s_sample_rate=16000
+# dtoverlay=googlevoicehat-soundcard
 ```
 
 **If missing, add these lines to `/boot/firmware/config.txt`:**
@@ -27,11 +23,7 @@ sudo nano /boot/firmware/config.txt
 
 # Add at the end:
 dtparam=i2s=on
-dtoverlay=i2s-mmap
-dtoverlay=rpi-simple-soundcard,card-name=voice-assistant
-dtparam=simple_card_name="voice-assistant"
-dtparam=i2s_master=on
-dtparam=i2s_sample_rate=16000
+dtoverlay=googlevoicehat-soundcard
 ```
 
 **Then reboot:**
@@ -48,7 +40,7 @@ After reboot, check if the microphone is detected:
 arecord -l
 
 # Should show something like:
-# card 0: voice-assistant [voice-assistant], device 0: simple-card_codec_link [simple-card_codec_link]
+# card 0: googlevoicehat [Google Voice HAT], device 0: ...
 ```
 
 **If not detected:**
@@ -134,16 +126,24 @@ p.terminate()
 
 ### 7. **Alternative I2S Configuration**
 
-If the current configuration doesn't work, try this alternative:
+If `googlevoicehat-soundcard` doesn't work, try these alternatives:
 
+**Option 1: HiFiBerry DAC**
 ```bash
-# Edit config.txt
 sudo nano /boot/firmware/config.txt
 
 # Replace I2S section with:
 dtparam=i2s=on
-dtoverlay=googlevoicehat-soundcard
-dtparam=audio=on
+dtoverlay=hifiberry-dac
+```
+
+**Option 2: IQAudio**
+```bash
+sudo nano /boot/firmware/config.txt
+
+# Replace I2S section with:
+dtparam=i2s=on
+dtoverlay=iqaudio-codec
 ```
 
 **Then reboot and test again.**

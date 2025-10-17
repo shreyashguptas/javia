@@ -62,15 +62,12 @@ Add to `/boot/firmware/config.txt`:
 ```bash
 # I2S Configuration for INMP441 + MAX98357A
 dtparam=i2s=on
-dtoverlay=i2s-mmap
+dtoverlay=googlevoicehat-soundcard
+```
 
-# Use generic I2S audio card
-dtoverlay=rpi-simple-soundcard,card-name=voice-assistant
-dtparam=simple_card_name="voice-assistant"
-
-# I2S pins
-dtparam=i2s_master=on
-dtparam=i2s_sample_rate=16000
+**Then reboot:**
+```bash
+sudo reboot
 ```
 
 #### Install Dependencies

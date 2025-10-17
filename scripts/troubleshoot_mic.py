@@ -31,9 +31,7 @@ def check_config_file():
     # Check for required I2S settings
     required_settings = [
         "dtparam=i2s=on",
-        "dtoverlay=i2s-mmap",
-        "dtoverlay=rpi-simple-soundcard",
-        "dtparam=simple_card_name=\"voice-assistant\""
+        "dtoverlay=googlevoicehat-soundcard"
     ]
     
     missing_settings = []
@@ -67,7 +65,7 @@ def check_audio_devices():
                               capture_output=True, text=True, check=True)
         print(result.stdout)
         
-        if "voice-assistant" in result.stdout:
+        if "googlevoicehat" in result.stdout or "voice-assistant" in result.stdout:
             print("✓ I2S microphone detected")
             return True
         else:
