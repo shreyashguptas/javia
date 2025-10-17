@@ -441,20 +441,31 @@ def add_silence_padding(wav_file, padding_ms=100):
         padding_ms: Milliseconds of silence to add (default 100ms)
     """
     try:
-        import wave
-        import numpy as np
-        
         # Read original file
         with wave.open(str(wav_file), 'rb') as wf:
             params = wf.getparams()
             frames = wf.readframes(wf.getnframes())
+            channels = params.nchannels
+            sampwidth = params.sampwidth
+            framerate = params.framerate
+        
+        # Determine dtype based on sample width
+        if sampwidth == 1:
+            dtype = np.uint8
+        elif sampwidth == 2:
+            dtype = np.int16
+        elif sampwidth == 4:
+            dtype = np.int32
+        else:
+            print(f"[WARNING] Unsupported sample width: {sampwidth} bytes")
+            return
         
         # Convert to numpy array
-        audio_data = np.frombuffer(frames, dtype=np.int16)
+        audio_data = np.frombuffer(frames, dtype=dtype)
         
-        # Calculate padding length
-        padding_samples = int((padding_ms / 1000.0) * params.framerate)
-        silence = np.zeros(padding_samples, dtype=np.int16)
+        # Calculate padding length (samples = time * sample_rate * channels)
+        padding_samples = int((padding_ms / 1000.0) * framerate * channels)
+        silence = np.zeros(padding_samples, dtype=dtype)
         
         # Add silence to beginning and end
         padded_audio = np.concatenate([silence, audio_data, silence])
@@ -464,10 +475,12 @@ def add_silence_padding(wav_file, padding_ms=100):
             wf.setparams(params)
             wf.writeframes(padded_audio.tobytes())
         
-        print(f"[AUDIO] Added {padding_ms}ms silence padding to reduce clicks")
+        print(f"[AUDIO] Added {padding_ms}ms silence padding ({framerate}Hz, {channels}ch)")
         
     except Exception as e:
+        import traceback
         print(f"[WARNING] Could not add silence padding: {e}")
+        print(f"[DEBUG] {traceback.format_exc()}")
 
 def play_audio():
     """Play audio through I2S amplifier with SD pin control"""
@@ -478,13 +491,13 @@ def play_audio():
         return
     
     try:
+        # Add silence padding FIRST (before enabling amp)
+        add_silence_padding(RESPONSE_FILE, padding_ms=100)
+        
         # Enable amplifier (unmute) before playback
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.HIGH)
         print("[PLAYBACK] Amplifier enabled")
-        time.sleep(0.05)  # Give amplifier 50ms to stabilize
-        
-        # Add silence padding to prevent clicks/pops
-        add_silence_padding(RESPONSE_FILE, padding_ms=50)  # Reduced since we have SD control
+        time.sleep(0.150)  # Give amplifier 150ms to stabilize and power on
         
         # Use aplay for I2S playback (most reliable on Pi)
         result = subprocess.run(
@@ -494,8 +507,8 @@ def play_audio():
             timeout=30
         )
         
-        # Wait a moment for audio to finish
-        time.sleep(0.05)
+        # Wait for audio to fully finish
+        time.sleep(0.150)  # Give audio time to complete
         
         # Disable amplifier (mute) after playback
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
