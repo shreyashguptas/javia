@@ -6,6 +6,7 @@ A complete voice assistant project using Raspberry Pi Zero 2 W with INMP441 micr
 
 This project creates a voice assistant that:
 - Records audio using INMP441 I2S microphone
+- **Press button once to start recording, press again to stop** (no time limit!)
 - Transcribes speech using Groq Whisper API
 - Processes queries with Groq LLM
 - Generates speech responses using Groq TTS
@@ -140,6 +141,15 @@ aplay -D plughw:0,0 test.wav
 # Run voice assistant
 python3 voice_assistant.py
 ```
+
+## 🎙️ How to Use
+
+1. **Press the button** - Recording starts
+2. **Speak your question** - Take as long as you need (no time limit)
+3. **Press the button again** - Recording stops
+4. **Wait for response** - Processing and playback happens automatically
+5. **Listen to the answer** - Response plays through speaker
+6. **Repeat** - Press button to ask another question
 
 ## 📁 Project Structure
 

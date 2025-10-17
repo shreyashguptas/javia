@@ -110,22 +110,36 @@ def setup():
 # ==================== BUTTON HANDLING ====================
 
 def wait_for_button_press():
-    """Wait for button press and release"""
-    print("[BUTTON] Waiting for button press...")
+    """Wait for button press"""
+    print("[BUTTON] Waiting for button press to start recording...")
     
     # Wait for button press (LOW with pull-up)
     while GPIO.input(BUTTON_PIN) == GPIO.HIGH:
         time.sleep(0.01)
     
-    print("[BUTTON] *** BUTTON PRESSED! ***")
+    print("[BUTTON] *** BUTTON PRESSED! Starting recording... ***")
     time.sleep(0.05)  # Debounce
+
+def wait_for_button_release():
+    """Wait for button press again to stop recording"""
+    print("[BUTTON] Press button again to stop recording...")
     
-    # Wait for release
-    print("[BUTTON] Waiting for release...")
+    # Wait for button to be released first (if still pressed)
     while GPIO.input(BUTTON_PIN) == GPIO.LOW:
         time.sleep(0.01)
     
-    print("[BUTTON] Released. Starting conversation...\n")
+    # Now wait for button press again (to stop)
+    while GPIO.input(BUTTON_PIN) == GPIO.HIGH:
+        time.sleep(0.01)
+    
+    print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+    time.sleep(0.05)  # Debounce
+    
+    # Wait for release
+    while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+        time.sleep(0.01)
+    
+    print("[BUTTON] Released. Processing audio...\n")
 
 # ==================== AUDIO RECORDING ====================
 
@@ -155,7 +169,7 @@ def amplify_audio(audio_data, gain=2.0):
     return amplified.tobytes()
 
 def record_audio():
-    """Record audio from I2S microphone"""
+    """Record audio from I2S microphone until button is pressed again"""
     print("[AUDIO] Setting up recording...")
     
     # Initialize PyAudio
@@ -185,23 +199,32 @@ def record_audio():
             frames_per_buffer=CHUNK_SIZE
         )
         
-        print(f"[AUDIO] Recording for {RECORD_SECONDS} seconds... SPEAK NOW!")
+        print("[AUDIO] Recording... SPEAK NOW!")
         print("[AUDIO] " + "="*40)
         
         frames = []
+        chunks_recorded = 0
         
-        # Record
-        for i in range(0, int(SAMPLE_RATE / CHUNK_SIZE * RECORD_SECONDS)):
+        # Wait for button to be released first
+        while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+            time.sleep(0.01)
+        
+        # Record until button is pressed again
+        while GPIO.input(BUTTON_PIN) == GPIO.HIGH:
             data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
             frames.append(data)
+            chunks_recorded += 1
             
-            # Progress indicator
-            if i % (SAMPLE_RATE // CHUNK_SIZE) == 0:
-                second = i // (SAMPLE_RATE // CHUNK_SIZE)
-                print(f"[AUDIO] {second}/{RECORD_SECONDS} seconds")
+            # Progress indicator every second
+            if chunks_recorded % (SAMPLE_RATE // CHUNK_SIZE) == 0:
+                seconds = chunks_recorded // (SAMPLE_RATE // CHUNK_SIZE)
+                print(f"[AUDIO] {seconds} seconds recorded...")
         
         print("[AUDIO] " + "="*40)
-        print("[AUDIO] Recording complete")
+        
+        # Calculate total recording time
+        total_seconds = chunks_recorded / (SAMPLE_RATE / CHUNK_SIZE)
+        print(f"[AUDIO] Recording complete ({total_seconds:.1f} seconds)")
         
         # Stop and close
         stream.stop_stream()
