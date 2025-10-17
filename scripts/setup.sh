@@ -71,7 +71,7 @@ source "$HOME/venvs/pi/bin/activate"
 # Install Python packages
 print_status "Installing Python packages..."
 pip install --upgrade pip
-pip install pyaudio RPi.GPIO requests pathlib2 python-dotenv
+pip install pyaudio RPi.GPIO requests pathlib2 python-dotenv numpy
 
 # Configure I2S audio
 print_status "Configuring I2S audio..."

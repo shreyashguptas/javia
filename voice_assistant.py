@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 import RPi.GPIO as GPIO
 import pyaudio
+import numpy as np
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -48,6 +49,7 @@ CHANNELS = 1
 RECORD_SECONDS = int(os.getenv('RECORD_SECONDS', '5'))
 CHUNK_SIZE = 1024
 AUDIO_FORMAT = pyaudio.paInt16
+MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))  # Amplification factor (1.0 = no change, 2.0 = double volume)
 
 # File paths
 AUDIO_DIR = Path("/tmp/voice_assistant")
@@ -119,6 +121,31 @@ def wait_for_button_press():
 
 # ==================== AUDIO RECORDING ====================
 
+def amplify_audio(audio_data, gain=2.0):
+    """
+    Amplify audio data by the specified gain factor
+    
+    Args:
+        audio_data: Raw audio bytes
+        gain: Amplification factor (1.0 = no change, 2.0 = double volume)
+    
+    Returns:
+        Amplified audio bytes
+    """
+    # Convert bytes to numpy array
+    audio_array = np.frombuffer(audio_data, dtype=np.int16)
+    
+    # Apply gain
+    amplified = audio_array * gain
+    
+    # Clip to prevent overflow
+    amplified = np.clip(amplified, -32768, 32767)
+    
+    # Convert back to int16
+    amplified = amplified.astype(np.int16)
+    
+    return amplified.tobytes()
+
 def record_audio():
     """Record audio from I2S microphone"""
     print("[AUDIO] Setting up recording...")
@@ -171,12 +198,23 @@ def record_audio():
         # Stop and close
         stream.stop_stream()
         stream.close()
+        
+        # Get sample width before terminating
+        sample_width = audio.get_sample_size(AUDIO_FORMAT)
         audio.terminate()
+        
+        # Amplify audio if gain is not 1.0
+        if MICROPHONE_GAIN != 1.0:
+            print(f"[AUDIO] Applying gain of {MICROPHONE_GAIN}x...")
+            amplified_frames = []
+            for frame in frames:
+                amplified_frames.append(amplify_audio(frame, MICROPHONE_GAIN))
+            frames = amplified_frames
         
         # Save to WAV file
         with wave.open(str(RECORDING_FILE), 'wb') as wf:
             wf.setnchannels(CHANNELS)
-            wf.setsampwidth(audio.get_sample_size(AUDIO_FORMAT))
+            wf.setsampwidth(sample_width)
             wf.setframerate(SAMPLE_RATE)
             wf.writeframes(b''.join(frames))
         

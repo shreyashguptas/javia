@@ -160,8 +160,14 @@ voice_assistant/
 
 ### Audio Quality Issues
 
-- **Low Volume**: Check speaker connections and amplifier power
-- **Distorted Audio**: Verify sample rate settings (16000 Hz)
+- **Microphone Too Quiet**: 
+  - Increase `MICROPHONE_GAIN` in `.env` file (try 2.0, 3.0, or 4.0)
+  - Check ALSA capture volume: `amixer -c 0 set Capture 100%`
+  - Verify microphone is close enough (6-12 inches)
+- **Speaker Volume Low**: Check speaker connections and amplifier power
+- **Distorted Audio**: 
+  - Reduce `MICROPHONE_GAIN` if too high
+  - Verify sample rate settings (16000 Hz)
 - **No Audio**: Test with `aplay` command first
 
 ### API Issues
@@ -182,9 +188,30 @@ python3 examples/mic_test.py
 ```
 
 ### Customization
-- Modify `SYSTEM_PROMPT` for different assistant personality
-- Adjust `RECORD_SECONDS` for longer/shorter recordings
-- Change `BUTTON_PIN` for different GPIO pin
+
+You can customize settings via the `.env` file:
+
+```bash
+# Edit .env file
+nano .env
+```
+
+**Available Settings:**
+- `MICROPHONE_GAIN` - Amplify microphone input (default: 2.0)
+  - `1.0` = No amplification
+  - `2.0` = Double volume (recommended)
+  - `3.0` = Triple volume
+  - `4.0` = Quadruple volume (may distort)
+- `RECORD_SECONDS` - Recording duration in seconds (default: 5)
+- `BUTTON_PIN` - GPIO pin for button (default: 17)
+- `SAMPLE_RATE` - Audio sample rate (default: 16000)
+
+**Example `.env`:**
+```env
+GROQ_API_KEY=your_api_key_here
+MICROPHONE_GAIN=2.5
+RECORD_SECONDS=7
+```
 
 ## 📚 API Documentation
 
