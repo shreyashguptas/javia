@@ -33,7 +33,7 @@ GROQ_TTS_URL = "https://api.groq.com/openai/v1/audio/speech"
 
 # Model Names (can be overridden via environment variables)
 WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'whisper-large-v3-turbo')
-LLM_MODEL = os.getenv('LLM_MODEL', 'openai/gpt-oss-20b')
+LLM_MODEL = os.getenv('LLM_MODEL', 'llama-3.1-8b-instant')  # Faster and more reliable than gpt-oss-20b
 TTS_MODEL = os.getenv('TTS_MODEL', 'playai-tts')
 TTS_VOICE = os.getenv('TTS_VOICE', 'Chip-PlayAI')
 
@@ -344,6 +344,13 @@ def query_llm(user_text):
         if response.status_code == 200:
             result = response.json()
             llm_response = result['choices'][0]['message']['content']
+            
+            # Check if response is empty or just whitespace
+            if not llm_response or llm_response.strip() == "":
+                print(f"[ERROR] LLM returned empty response")
+                print(f"[DEBUG] Full response: {result}")
+                return ""
+            
             print(f"[SUCCESS] LLM Response: \"{llm_response}\"")
             return llm_response
         else:

@@ -268,8 +268,8 @@ RECORD_SECONDS=7
 - **TTS**: `https://api.groq.com/openai/v1/audio/speech`
 
 ### Models Used
-- **Whisper**: `whisper-large-v3-turbo`
-- **LLM**: `openai/gpt-oss-20b`
+- **Whisper**: `whisper-large-v3-turbo` (fastest, most accurate)
+- **LLM**: `llama-3.1-8b-instant` (fast and reliable)
 - **TTS**: `playai-tts` with `Chip-PlayAI` voice
 
 ## 🤝 Contributing
