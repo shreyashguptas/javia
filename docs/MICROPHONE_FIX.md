@@ -51,8 +51,8 @@ arecord -l
 ### 3. **Test Manual Recording**
 
 ```bash
-# Test recording for 5 seconds
-arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav -d 5 test.wav
+# Test recording for 5 seconds (Google Voice HAT uses 48000 Hz)
+arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -t wav -d 5 test.wav
 
 # Check file size
 ls -la test.wav
@@ -161,14 +161,16 @@ This will run comprehensive tests and provide specific recommendations.
 
 ### 9. **Test with Different Audio Formats**
 
-Try different sample rates:
+Google Voice HAT natively supports 48000 Hz. Test with:
 
 ```bash
-# Test 48kHz
-arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE test48k.wav
+# Test 48kHz (native for Voice HAT)
+arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -d 5 test48k.wav
 
-# Test 44.1kHz
-arecord -D plughw:0,0 -c1 -r 44100 -f S16_LE test44k.wav
+# Try 44.1kHz (may work with resampling)
+arecord -D plughw:0,0 -c1 -r 44100 -f S16_LE -d 5 test44k.wav
+
+# 16kHz typically does NOT work with Voice HAT
 ```
 
 ### 10. **Check System Logs**

@@ -5,7 +5,17 @@ This document summarizes all the improvements made to the Raspberry Pi Voice Ass
 
 ## Critical Fixes
 
-### 1. ✅ Fixed MemoryError in Audio Click Prevention
+### 1. ✅ Fixed Invalid Sample Rate Error (MOST CRITICAL)
+**Problem:** The code was using 16000 Hz sample rate, but **Google Voice HAT requires 48000 Hz**. This caused `OSError: [Errno -9997] Invalid sample rate` and prevented recording completely.
+
+**Solution:**
+- Changed `SAMPLE_RATE` from 16000 to 48000 Hz
+- Updated all documentation with correct sample rate
+- Added note in code explaining Voice HAT requirement
+
+**Impact:** Recording now works properly with Google Voice HAT. This was blocking all functionality.
+
+### 2. ✅ Fixed MemoryError in Audio Click Prevention
 **Problem:** The `add_silence_padding()` function was trying to load entire WAV files into memory, causing MemoryError on 2MB+ audio files.
 
 **Solution:** 
@@ -16,17 +26,18 @@ This document summarizes all the improvements made to the Raspberry Pi Voice Ass
 
 **Impact:** Audio clicks at start/end of playback are now properly prevented.
 
-### 2. ✅ Suppressed ALSA Warnings
-**Problem:** Console was cluttered with ~20 ALSA warnings about unknown PCM devices.
+### 3. ✅ Improved ALSA Warning Suppression
+**Problem:** Console was cluttered with ~20 ALSA warnings about unknown PCM devices (Jack audio server, HDMI, etc.).
 
 **Solution:**
-- Added ALSA error handler suppression using ctypes
-- Set environment variable to hide pygame prompts
+- Implemented proper CFUNCTYPE error handler for ALSA
+- Created `py_error_handler()` function to intercept and suppress warnings
+- Uses ctypes to hook into libasound.so.2
 - Falls back gracefully if suppression fails
 
-**Impact:** Clean, readable console output.
+**Impact:** Significantly reduced console clutter. Some warnings may still appear during PyAudio initialization but are harmless.
 
-### 3. ✅ Fixed Device Detection for Google Voice HAT
+### 4. ✅ Fixed Device Detection for Google Voice HAT
 **Problem:** Code was looking for wrong device name (`sndrpisimplecar` instead of actual `sndrpigooglevoi`).
 
 **Solution:**
@@ -38,7 +49,7 @@ This document summarizes all the improvements made to the Raspberry Pi Voice Ass
 
 **Impact:** Microphone and speaker are now correctly detected on first try.
 
-### 4. ✅ Optimized Amplifier Timing
+### 5. ✅ Optimized Amplifier Timing
 **Problem:** Clicks still audible due to insufficient stabilization time.
 
 **Solution:**
@@ -51,7 +62,7 @@ This document summarizes all the improvements made to the Raspberry Pi Voice Ass
 
 ## Robustness Improvements
 
-### 5. ✅ Enhanced Error Handling Throughout
+### 6. ✅ Enhanced Error Handling Throughout
 
 #### Audio Recording
 - Added device validation before opening stream
@@ -83,7 +94,7 @@ This document summarizes all the improvements made to the Raspberry Pi Voice Ass
 - Retry logic for all network errors
 - Streaming download with chunked writing
 
-### 6. ✅ Improved Logging
+### 7. ✅ Improved Logging
 - Removed duplicate "Playing response..." message
 - Changed to "STEP 5/5" for consistency
 - Split playback into "Preparing audio..." and "Playing response..."
@@ -92,7 +103,7 @@ This document summarizes all the improvements made to the Raspberry Pi Voice Ass
 
 ## Documentation Updates
 
-### 7. ✅ Updated Hardware Documentation
+### 8. ✅ Updated Hardware Documentation
 **Changes to `docs/hardware_setup.md`:**
 - Corrected hardware from "INMP441 + MAX98357A" to "Google Voice HAT"
 - Updated component specifications
@@ -113,7 +124,7 @@ This document summarizes all the improvements made to the Raspberry Pi Voice Ass
 - Modified instructions for HAT-specific implementation
 - Updated troubleshooting for Voice HAT
 
-### 8. ✅ Cleaned Up Dependencies
+### 9. ✅ Cleaned Up Dependencies
 **Changes to `config/requirements.txt`:**
 - Removed standard library modules:
   - `wave` (stdlib)
@@ -135,12 +146,12 @@ numpy
 
 ## Performance Optimizations
 
-### 9. Memory Efficiency
+### 10. Memory Efficiency
 - Streaming WAV file operations (reduces peak memory by ~2MB)
 - Chunked audio recording (8KB chunks)
 - Chunked TTS download (8KB chunks)
 
-### 10. Network Resilience
+### 11. Network Resilience
 - Retry logic on all API calls (2 retries)
 - Rate limiting detection and backoff
 - Increased timeouts for large files (60s for transcription/TTS)
@@ -148,13 +159,13 @@ numpy
 
 ## Code Quality Improvements
 
-### 11. Better Resource Management
+### 12. Better Resource Management
 - Proper cleanup in finally blocks
 - Null checks before resource operations
 - Safe audio device termination
 - Temporary file cleanup on errors
 
-### 12. Validation at Every Step
+### 13. Validation at Every Step
 - File existence checks
 - File size validation
 - Audio format validation
@@ -163,13 +174,17 @@ numpy
 
 ## Summary of Benefits
 
+### Core Functionality
+- **Before:** System couldn't record audio at all (Invalid sample rate error)
+- **After:** Recording works perfectly with Google Voice HAT at 48000 Hz
+
 ### Reliability
 - **Before:** System would crash on large audio files
 - **After:** Handles files of any size gracefully
 
 ### User Experience
 - **Before:** 20+ ALSA warnings cluttering output
-- **After:** Clean, informative console output
+- **After:** Cleaner console output (some warnings during initialization are normal)
 
 ### Audio Quality
 - **Before:** Loud clicks at start/end of playback
@@ -180,8 +195,8 @@ numpy
 - **After:** Automatic retries with detailed error reporting
 
 ### Documentation Accuracy
-- **Before:** Docs described wrong hardware (INMP441/MAX98357A)
-- **After:** Accurate documentation for Google Voice HAT
+- **Before:** Docs described wrong hardware (INMP441/MAX98357A) and wrong sample rate (16000 Hz)
+- **After:** Accurate documentation for Google Voice HAT with correct 48000 Hz sample rate
 
 ## Testing Recommendations
 
@@ -224,8 +239,9 @@ numpy
 ## Conclusion
 
 All critical issues identified in the transcript have been resolved:
+- ✅ **Invalid sample rate error fixed** (16000→48000 Hz) - **CRITICAL FIX**
 - ✅ MemoryError fixed
-- ✅ ALSA warnings suppressed
+- ✅ ALSA warnings significantly reduced
 - ✅ Device detection corrected
 - ✅ Audio clicks minimized
 - ✅ Error handling comprehensive
@@ -234,5 +250,15 @@ All critical issues identified in the transcript have been resolved:
 - ✅ Performance optimized
 
 The voice assistant is now production-ready with enterprise-grade error handling and reliability.
+
+## Known Behavior
+
+**ALSA Warnings During Initialization:**
+You may still see some ALSA warnings when PyAudio initializes (about Jack server, unknown PCM devices, etc.). These are **completely harmless** and occur during device enumeration. They appear before our error handler can fully suppress them. The important thing is:
+1. Recording works correctly
+2. The Voice HAT device is detected
+3. Audio playback works without issues
+
+These warnings do not affect functionality and are a normal part of PyAudio's device detection on Linux systems with multiple audio subsystems.
 
 

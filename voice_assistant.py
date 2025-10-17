@@ -17,14 +17,19 @@ import pyaudio
 import numpy as np
 from dotenv import load_dotenv
 
-# Suppress ALSA warnings
-os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"
-ERROR_HANDLER_FUNC = lambda *args, **kwargs: None
+# Suppress ALSA warnings - these are harmless but cluttering
+from ctypes import *
+ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+
+def py_error_handler(filename, line, function, err, fmt):
+    """Suppress ALSA error messages"""
+    pass
+
+c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+
 try:
-    from ctypes import *
-    # Set ALSA error handler to suppress warnings
     asound = cdll.LoadLibrary('libasound.so.2')
-    asound.snd_lib_error_set_handler(c_void_p.in_dll(asound, 'snd_lib_error'))
+    asound.snd_lib_error_set_handler(c_error_handler)
 except:
     pass  # If we can't suppress, that's okay
 
@@ -56,7 +61,8 @@ BUTTON_PIN = int(os.getenv('BUTTON_PIN', '17'))  # BCM GPIO17 (Physical Pin 11)
 AMPLIFIER_SD_PIN = int(os.getenv('AMPLIFIER_SD_PIN', '27'))  # BCM GPIO27 (Physical Pin 13) - Controls amplifier shutdown
 
 # Audio Configuration (can be overridden via environment variables)
-SAMPLE_RATE = int(os.getenv('SAMPLE_RATE', '16000'))
+# Note: Google Voice HAT requires 48000 Hz sample rate
+SAMPLE_RATE = int(os.getenv('SAMPLE_RATE', '48000'))
 CHANNELS = 1
 RECORD_SECONDS = int(os.getenv('RECORD_SECONDS', '5'))
 CHUNK_SIZE = 1024

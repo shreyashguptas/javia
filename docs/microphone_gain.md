@@ -143,7 +143,8 @@ def amplify_audio(audio_data, gain=2.0):
 
 3. **Test microphone directly**:
    ```bash
-   arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav test.wav
+   # Google Voice HAT uses 48000 Hz
+   arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -t wav -d 5 test.wav
    aplay test.wav
    ```
 
@@ -174,8 +175,8 @@ def amplify_audio(audio_data, gain=2.0):
    # Record test file with voice assistant
    python3 examples/mic_test.py
    
-   # Or test directly with arecord (5 seconds)
-   arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav -d 5 test.wav
+   # Or test directly with arecord (5 seconds) - Google Voice HAT uses 48000 Hz
+   arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -t wav -d 5 test.wav
    
    # Listen to the recording
    aplay test.wav
@@ -197,7 +198,7 @@ For most setups, these settings work well:
 GROQ_API_KEY=your_api_key_here
 MICROPHONE_GAIN=2.0
 RECORD_SECONDS=5
-SAMPLE_RATE=16000
+SAMPLE_RATE=48000
 ```
 
 ### Optimal Speaking Technique
@@ -253,7 +254,7 @@ This will show you the RMS (Root Mean Square) level of your recordings, helping 
 
 ### Audio Format
 
-- **Sample Rate**: 16000 Hz (16 kHz)
+- **Sample Rate**: 48000 Hz (48 kHz) - Required by Google Voice HAT
 - **Bit Depth**: 16-bit (int16)
 - **Channels**: Mono (1 channel)
 - **Format**: PCM WAV

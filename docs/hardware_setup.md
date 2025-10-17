@@ -170,9 +170,10 @@ Other GPIO pins remain available for your use (like GPIO17 for the button).
 **Solutions**:
 - Verify Voice HAT is properly seated
 - Check software gain settings (`MICROPHONE_GAIN=2.0` in `.env`)
-- Test with: `arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -d 5 test.wav`
+- Test with: `arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -d 5 test.wav`
 - Listen to test file: `aplay test.wav`
 - Ensure microphone is not blocked or damaged
+- Verify sample rate is 48000 Hz (Voice HAT requirement)
 
 ### No Audio Output  
 **Symptoms**: Speaker makes no sound during playback

@@ -130,8 +130,8 @@ GROQ_API_KEY=YOUR_GROQ_API_KEY_HERE
 
 ### 3. Test Setup
 ```bash
-# Test microphone (records for 5 seconds)
-arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -t wav -d 5 test.wav
+# Test microphone (records for 5 seconds) - Google Voice HAT uses 48000 Hz
+arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -t wav -d 5 test.wav
 
 # Test speaker
 aplay -D plughw:0,0 test.wav
@@ -194,8 +194,8 @@ voice_assistant/
    arecord -l
    aplay -l
    
-   # Test recording (5 seconds)
-   arecord -D plughw:0,0 -c1 -r 16000 -f S16_LE -d 5 test.wav
+   # Test recording (5 seconds) - Google Voice HAT uses 48000 Hz
+   arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -d 5 test.wav
    ```
 
 4. **Python Environment**
@@ -249,7 +249,7 @@ nano .env
   - `4.0` = Quadruple volume (may distort)
 - `RECORD_SECONDS` - Recording duration in seconds (default: 5)
 - `BUTTON_PIN` - GPIO pin for button (default: 17)
-- `SAMPLE_RATE` - Audio sample rate (default: 16000)
+- `SAMPLE_RATE` - Audio sample rate (default: 48000 for Google Voice HAT)
 
 **Example `.env`:**
 ```env
