@@ -68,6 +68,7 @@ RECORD_SECONDS = int(os.getenv('RECORD_SECONDS', '5'))
 CHUNK_SIZE = 1024
 AUDIO_FORMAT = pyaudio.paInt16
 MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))  # Amplification factor (1.0 = no change, 2.0 = double volume)
+FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))  # Fade-in/fade-out duration in milliseconds (to eliminate clicks)
 
 # File paths
 AUDIO_DIR = Path(os.path.expanduser("~/voice_assistant/audio"))
@@ -627,6 +628,84 @@ def generate_speech(text):
 
 # ==================== AUDIO PLAYBACK ====================
 
+def apply_fade_in_out(wav_file, fade_duration_ms=50):
+    """
+    Apply fade-in and fade-out effects to eliminate clicks at audio boundaries
+    
+    Args:
+        wav_file: Path to WAV file
+        fade_duration_ms: Duration of fade in milliseconds (default 50ms)
+    """
+    try:
+        # Read the WAV file
+        with wave.open(str(wav_file), 'rb') as wf:
+            params = wf.getparams()
+            channels = params.nchannels
+            sampwidth = params.sampwidth
+            framerate = params.framerate
+            n_frames = params.nframes
+            
+            # Read all audio data
+            audio_data = wf.readframes(n_frames)
+        
+        # Convert to numpy array based on sample width
+        if sampwidth == 1:
+            dtype = np.uint8
+            audio_array = np.frombuffer(audio_data, dtype=dtype)
+            # Convert to signed for processing
+            audio_array = audio_array.astype(np.int16) - 128
+        elif sampwidth == 2:
+            dtype = np.int16
+            audio_array = np.frombuffer(audio_data, dtype=dtype)
+        elif sampwidth == 4:
+            dtype = np.int32
+            audio_array = np.frombuffer(audio_data, dtype=dtype)
+        else:
+            print(f"[WARNING] Unsupported sample width for fade: {sampwidth} bytes")
+            return
+        
+        # Calculate fade length in samples
+        fade_samples = int((fade_duration_ms / 1000.0) * framerate * channels)
+        fade_samples = min(fade_samples, len(audio_array) // 4)  # Don't fade more than 25% of audio
+        
+        if fade_samples < 10:  # Too short to fade
+            print(f"[WARNING] Audio too short for fade effect")
+            return
+        
+        print(f"[DEBUG] Applying {fade_duration_ms}ms fade ({fade_samples} samples)")
+        
+        # Create fade curves (cosine curve for smooth transition)
+        fade_in_curve = np.linspace(0, 1, fade_samples)
+        fade_in_curve = 0.5 * (1 - np.cos(np.pi * fade_in_curve))  # Smooth cosine curve
+        
+        fade_out_curve = np.linspace(1, 0, fade_samples)
+        fade_out_curve = 0.5 * (1 - np.cos(np.pi * fade_out_curve))  # Smooth cosine curve
+        
+        # Apply fade-in to beginning
+        audio_array[:fade_samples] = (audio_array[:fade_samples] * fade_in_curve).astype(audio_array.dtype)
+        
+        # Apply fade-out to end
+        audio_array[-fade_samples:] = (audio_array[-fade_samples:] * fade_out_curve).astype(audio_array.dtype)
+        
+        # Convert back to original format
+        if sampwidth == 1:
+            # Convert back to unsigned 8-bit
+            audio_array = (audio_array + 128).clip(0, 255).astype(np.uint8)
+        
+        # Write back to file
+        with wave.open(str(wav_file), 'wb') as wf:
+            wf.setnchannels(channels)
+            wf.setsampwidth(sampwidth)
+            wf.setframerate(framerate)
+            wf.writeframes(audio_array.tobytes())
+        
+        print(f"[AUDIO] Applied fade-in/fade-out effects")
+        
+    except Exception as e:
+        print(f"[WARNING] Could not apply fade effects: {e}")
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
+
 def add_silence_padding(wav_file, padding_ms=150):
     """
     Add silence padding to beginning and end of WAV file to prevent clicks/pops
@@ -724,8 +803,13 @@ def play_audio():
     
     process = None
     try:
-        # Add silence padding FIRST (before enabling amp)
+        # Prepare audio to eliminate clicks
         print("[PLAYBACK] Preparing audio...")
+        
+        # Step 1: Apply fade-in/fade-out to the audio content (eliminates clicks at audio boundaries)
+        apply_fade_in_out(RESPONSE_FILE, fade_duration_ms=FADE_DURATION_MS)
+        
+        # Step 2: Add silence padding around it (prevents amplifier on/off clicks)
         add_silence_padding(RESPONSE_FILE, padding_ms=150)
         
         # Enable amplifier (unmute) - give it time to stabilize

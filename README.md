@@ -239,7 +239,10 @@ voice_assistant/
 - **Distorted Audio**: 
   - Reduce `MICROPHONE_GAIN` if too high
   - Verify sample rate is 48000 Hz
-- **Audio Clicks**: See `docs/AUDIO_CLICKS.md`
+- **Audio Clicks/Pops**: 
+  - The system uses **fade-in/fade-out** and **silence padding** to eliminate clicks
+  - If clicks persist, try increasing `FADE_DURATION_MS` in `.env` (default: 50ms, try 100ms)
+  - See `docs/AUDIO_CLICKS.md` for detailed troubleshooting
 - **No Audio**: Test with `aplay` command first
 
 **Full troubleshooting:** See `docs/TROUBLESHOOTING.md`
@@ -276,15 +279,20 @@ nano .env
   - `2.0` = Double volume (recommended)
   - `3.0` = Triple volume
   - `4.0` = Quadruple volume (may distort)
-- `RECORD_SECONDS` - Recording duration in seconds (default: 5)
+- `FADE_DURATION_MS` - Fade-in/fade-out duration to eliminate clicks (default: 50ms)
+  - `50` = Default (imperceptible but effective)
+  - `100` = Longer fade (for stubborn clicks)
+  - `150` = Very long fade (very aggressive)
 - `BUTTON_PIN` - GPIO pin for button (default: 17)
 - `SAMPLE_RATE` - Audio sample rate (default: 48000, required by driver)
+
+**Note**: `RECORD_SECONDS` is not used - recording continues until you press button again!
 
 **Example `.env`:**
 ```env
 GROQ_API_KEY=your_api_key_here
 MICROPHONE_GAIN=2.5
-RECORD_SECONDS=7
+FADE_DURATION_MS=100
 ```
 
 ## 📚 API Documentation
