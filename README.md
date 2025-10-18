@@ -163,7 +163,13 @@ python3 voice_assistant.py
 3. **Press the button again** - Recording stops
 4. **Wait for response** - Processing and playback happens automatically
 5. **Listen to the answer** - Response plays through speaker
-6. **Repeat** - Press button to ask another question
+6. **Interrupt if needed** - Press button during playback to cancel, then press again to start new recording
+7. **Repeat** - Press button to ask another question
+
+### Interrupt Feature
+While the assistant is speaking (playing audio response):
+- **Press button once**: Immediately stops the audio playback
+- **Press button again**: Starts recording a new question (normal flow resumes)
 
 ## 📁 Project Structure
 

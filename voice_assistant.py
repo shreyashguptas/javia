@@ -694,11 +694,15 @@ def add_silence_padding(wav_file, padding_ms=150):
             temp_file.unlink()
 
 def play_audio():
-    """Play audio through I2S amplifier with SD pin control"""
+    """
+    Play audio through I2S amplifier with SD pin control
+    Returns True if playback completed normally, False if interrupted by button press
+    """
     if not RESPONSE_FILE.exists():
         print("[ERROR] Response file not found")
-        return
+        return False
     
+    process = None
     try:
         # Add silence padding FIRST (before enabling amp)
         print("[PLAYBACK] Preparing audio...")
@@ -709,13 +713,27 @@ def play_audio():
         time.sleep(0.200)  # 200ms for amplifier to fully power on and stabilize
         
         # Use aplay for I2S playback (most reliable on Pi)
-        print("[PLAYBACK] Playing response...")
-        result = subprocess.run(
+        print("[PLAYBACK] Playing response... (Press button to interrupt)")
+        process = subprocess.Popen(
             ['aplay', '-D', 'plughw:0,0', str(RESPONSE_FILE)],
-            capture_output=True,
-            text=True,
-            timeout=30
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
         )
+        
+        # Monitor button during playback
+        interrupted = False
+        while process.poll() is None:  # While process is still running
+            if GPIO.input(BUTTON_PIN) == GPIO.LOW:  # Button pressed
+                print("\n[INTERRUPT] *** BUTTON PRESSED! Stopping playback... ***")
+                process.terminate()
+                try:
+                    process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                interrupted = True
+                break
+            time.sleep(0.01)  # Check every 10ms
         
         # Wait for audio to fully complete before muting
         time.sleep(0.200)  # 200ms for audio to fully finish
@@ -723,15 +741,28 @@ def play_audio():
         # Disable amplifier (mute) after playback
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
         
-        if result.returncode == 0:
-            print("[PLAYBACK] Complete!")
+        if interrupted:
+            print("[INTERRUPT] Playback cancelled!")
+            # Wait for button release
+            while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+                time.sleep(0.01)
+            return False
         else:
-            print(f"[ERROR] Playback failed: {result.stderr}")
+            print("[PLAYBACK] Complete!")
+            return True
             
     except Exception as e:
         print(f"[ERROR] Playback error: {e}")
         # Make sure amp is muted on error
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
+        # Clean up process if it exists
+        if process and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=1)
+            except:
+                process.kill()
+        return False
 
 # ==================== MAIN LOOP ====================
 
@@ -778,14 +809,20 @@ def main():
                 time.sleep(2)
                 continue
             
-            # Step 5: Play
+            # Step 5: Play (with interrupt support)
             print("\n[STEP 5/5] Playing response...")
-            play_audio()
+            playback_completed = play_audio()
             
-            print("\n[COMPLETE] Conversation complete!")
-            print("="*50 + "\n")
-            
-            time.sleep(1)  # Debounce
+            if playback_completed:
+                print("\n[COMPLETE] Conversation complete!")
+                print("="*50 + "\n")
+                time.sleep(1)  # Debounce
+            else:
+                # Playback was interrupted
+                print("\n[INTERRUPT] Waiting for next button press to start new recording...")
+                print("="*50 + "\n")
+                time.sleep(0.5)  # Brief pause for clarity
+                # Loop will continue and wait_for_button_press() will be called
             
     except KeyboardInterrupt:
         print("\n\n[EXIT] Shutting down...")
