@@ -1,0 +1,26 @@
+[Unit]
+Description=Voice Assistant Server
+After=network.target
+
+[Service]
+Type=simple
+User=voiceassistant
+Group=voiceassistant
+WorkingDirectory=/opt/voice_assistant/server
+Environment="PATH=/opt/voice_assistant/venv/bin"
+ExecStart=/opt/voice_assistant/venv/bin/uvicorn server.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=voice-assistant-server
+
+[Install]
+WantedBy=multi-user.target
+

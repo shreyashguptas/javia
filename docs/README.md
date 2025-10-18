@@ -1,114 +1,228 @@
 # Documentation Guide
 
+Welcome to the Voice Assistant documentation! This guide helps you navigate the documentation for the client-server architecture.
+
 ## Quick Navigation
 
 ### Getting Started
-- **`../README.md`** - Project overview, quick start, basic usage
+- **[../GETTING_STARTED.md](../GETTING_STARTED.md)** - Quick deployment guide for server and client
+- **[../README.md](../README.md)** - Project overview and introduction
+- **[../MIGRATION.md](../MIGRATION.md)** - Migration guide from old monolithic architecture
+
+### Architecture & Deployment
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design, data flow, and components
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide for server and Pi client
+- **[API.md](API.md)** - REST API and Groq API documentation
 
 ### Hardware & Setup
-- **`HARDWARE.md`** - Complete wiring diagrams and assembly instructions
-- **`PYTHON.md`** - Python 3.13 compatibility and installation guide
+- **[HARDWARE.md](HARDWARE.md)** - Raspberry Pi wiring diagrams and assembly
+- **[PYTHON.md](PYTHON.md)** - Python installation and system packages
 
-### Configuration
-- **`API.md`** - Groq API setup and configuration
-- **`MICROPHONE_GAIN.md`** - Microphone volume/sensitivity adjustment
+### Configuration & Tuning
+- **[MICROPHONE_GAIN.md](MICROPHONE_GAIN.md)** - Microphone volume adjustment
+- **[AUDIO_CLICKS.md](AUDIO_CLICKS.md)** - Fixing audio clicks and pops
 
 ### Troubleshooting
-- **`TROUBLESHOOTING.md`** - Common issues and solutions
-- **`AUDIO_CLICKS.md`** - Fixing audio clicks and pops
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
 
-### Project Info
-- **`CHANGELOG.md`** - Improvements and bug fixes log
+### Project History
+- **[CHANGELOG.md](CHANGELOG.md)** - Historical improvements log
 
 ## Documentation Organization
 
-### By Topic
+### By Component
 
-**Hardware Issues** → `HARDWARE.md` or `TROUBLESHOOTING.md`
-**Audio Quality** → `MICROPHONE_GAIN.md` or `AUDIO_CLICKS.md`
-**API Problems** → `API.md` or `TROUBLESHOOTING.md`
-**Installation** → `PYTHON.md` or `../README.md`
+**Server Setup:**
+1. [DEPLOYMENT.md](DEPLOYMENT.md) → Server deployment section
+2. [API.md](API.md) → REST API documentation
+3. [ARCHITECTURE.md](ARCHITECTURE.md) → Server architecture
 
-### Quick Reference
+**Raspberry Pi Client:**
+1. [DEPLOYMENT.md](DEPLOYMENT.md) → Client deployment section
+2. [HARDWARE.md](HARDWARE.md) → Hardware wiring
+3. [PYTHON.md](PYTHON.md) → Python setup
+4. [MICROPHONE_GAIN.md](MICROPHONE_GAIN.md) → Audio tuning
+5. [AUDIO_CLICKS.md](AUDIO_CLICKS.md) → Audio quality
+
+**Understanding the System:**
+1. [ARCHITECTURE.md](ARCHITECTURE.md) → How it all works
+2. [API.md](API.md) → Communication protocol
+3. [../MIGRATION.md](../MIGRATION.md) → What changed from old version
+
+### By Task
 
 | Need to... | See |
 |------------|-----|
-| Wire hardware | `HARDWARE.md` |
-| Fix microphone not working | `TROUBLESHOOTING.md` → Section 2 |
-| Adjust microphone volume | `MICROPHONE_GAIN.md` |
-| Fix audio clicks | `AUDIO_CLICKS.md` |
-| Configure API key | `API.md` |
-| Install Python packages | `PYTHON.md` |
-| Fix sample rate error | `TROUBLESHOOTING.md` → Section 1 |
-| Check what's changed | `CHANGELOG.md` |
+| Deploy server | [DEPLOYMENT.md](DEPLOYMENT.md) → Part 1 |
+| Setup Cloudflare | [DEPLOYMENT.md](DEPLOYMENT.md) → Part 1, Step 7-9 |
+| Install Pi client | [DEPLOYMENT.md](DEPLOYMENT.md) → Part 2 |
+| Wire hardware | [HARDWARE.md](HARDWARE.md) |
+| Fix microphone not working | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
+| Adjust microphone volume | [MICROPHONE_GAIN.md](MICROPHONE_GAIN.md) |
+| Fix audio clicks | [AUDIO_CLICKS.md](AUDIO_CLICKS.md) |
+| Understand architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Setup API keys | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| Configure Nginx | [DEPLOYMENT.md](DEPLOYMENT.md) → Part 1, Step 6-8 |
+| Test deployment | [DEPLOYMENT.md](DEPLOYMENT.md) → Part 3 |
+| Secure system | [DEPLOYMENT.md](DEPLOYMENT.md) → Part 4 |
+| Monitor logs | [DEPLOYMENT.md](DEPLOYMENT.md) → Part 5 |
 
 ## File Descriptions
 
-### HARDWARE.md
+### Core Documentation
+
+#### ARCHITECTURE.md
+- Client-server design overview
+- Data flow diagrams
+- Component responsibilities
+- API specifications
+- Security architecture
+- Performance characteristics
+- Deployment topology
+
+#### DEPLOYMENT.md
+- Complete deployment guide
+- Server setup on Debian
+- Cloudflare configuration
+- Raspberry Pi client installation
+- Security hardening
+- Monitoring and maintenance
+- Troubleshooting deployment issues
+
+#### API.md
+- Voice Assistant REST API endpoints
+- Authentication methods
+- Request/response formats
+- Groq API configuration
+- Rate limiting
+- Error codes
+- Testing examples
+
+### Hardware Documentation
+
+#### HARDWARE.md
 - Complete component list
-- Pin-by-pin wiring diagrams
-- Assembly steps
+- INMP441 microphone wiring
+- MAX98357A amplifier wiring
+- Button connections
 - Power requirements
 - Verification checklist
 
-### TROUBLESHOOTING.md
-- Quick diagnostic commands
-- Common error solutions
-- Audio device testing
-- System checks
-- Log collection
+### Setup & Configuration
 
-### API.md
-- Groq API setup
-- Model configuration
-- Rate limits
-- Error handling
-- Testing endpoints
+#### PYTHON.md
+- Python 3.13 compatibility
+- System package installation
+- Virtual environment setup
+- Avoiding compilation issues on Pi
 
-### AUDIO_CLICKS.md
-- Why clicks happen
-- Three-layer solution
-- Hardware SD pin control
-- Software padding
-- Troubleshooting persistent clicks
-
-### MICROPHONE_GAIN.md
-- Software gain configuration
-- Recommended values (1.0-4.0)
+#### MICROPHONE_GAIN.md
+- Software gain configuration (1.0-4.0x)
+- Recommended values
 - ALSA volume control
 - Testing procedures
 - Troubleshooting quiet recordings
 
-### PYTHON.md
-- Python 3.13 compatibility
-- System package installation
-- Virtual environment setup
-- Avoiding compilation issues
+#### AUDIO_CLICKS.md
+- Why clicks happen
+- Hardware SD pin control
+- Software padding and fade effects
+- Troubleshooting persistent clicks
 
-### CHANGELOG.md
-- Critical bug fixes
-- Feature improvements
-- Performance optimizations
-- Documentation updates
+### Support
 
-## Code as Source of Truth
+#### TROUBLESHOOTING.md
+- Quick diagnostic commands
+- Common error solutions
+- Audio device testing
+- System checks
+- Server connection issues
+- Log collection
 
-All documentation reflects the actual implementation in `voice_assistant.py`:
+#### CHANGELOG.md
+- Historical improvements
+- Bug fixes from original version
+- Feature additions
 
-**Hardware:**
+## Architecture Overview
+
+The voice assistant uses a **client-server architecture**:
+
+### Raspberry Pi Client
+- Records audio from microphone
+- Sends to server via HTTPS
+- Receives processed audio response
+- Plays through speaker
+- **Documentation:** [Hardware](HARDWARE.md), [Client Setup](DEPLOYMENT.md#part-2-raspberry-pi-client-deployment)
+
+### Server (Debian VM)
+- Receives audio files
+- Processes via Groq API (Whisper, LLM, TTS)
+- Returns audio response
+- **Documentation:** [Server Setup](DEPLOYMENT.md#part-1-server-deployment), [API](API.md)
+
+### Cloudflare
+- DNS management
+- SSL/TLS encryption
+- DDoS protection
+- **Documentation:** [Cloudflare Setup](DEPLOYMENT.md#step-7-setup-cloudflare-ssl-certificates)
+
+## Component Documentation
+
+### Server Components
+| Component | Location | Documentation |
+|-----------|----------|---------------|
+| FastAPI App | `../server/main.py` | [API.md](API.md) |
+| Groq Service | `../server/services/groq_service.py` | [API.md](API.md) |
+| Authentication | `../server/middleware/auth.py` | [API.md](API.md) |
+| Configuration | `../server/config.py` | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| Deployment | `../server/deploy/` | [DEPLOYMENT.md](DEPLOYMENT.md) |
+
+### Client Components
+| Component | Location | Documentation |
+|-----------|----------|---------------|
+| Main Client | `../pi_client/client.py` | Hardware I/O |
+| Audio Recording | `../pi_client/client.py` | [HARDWARE.md](HARDWARE.md) |
+| Audio Playback | `../pi_client/client.py` | [AUDIO_CLICKS.md](AUDIO_CLICKS.md) |
+| Deployment | `../pi_client/deploy/` | [DEPLOYMENT.md](DEPLOYMENT.md) |
+
+## Deployment Quick Start
+
+1. **Read** [GETTING_STARTED.md](../GETTING_STARTED.md) for overview
+2. **Deploy Server** using [DEPLOYMENT.md](DEPLOYMENT.md) Part 1
+3. **Setup Cloudflare** using [DEPLOYMENT.md](DEPLOYMENT.md) Step 7-9
+4. **Install Client** using [DEPLOYMENT.md](DEPLOYMENT.md) Part 2
+5. **Test** using test scripts in Part 3
+
+## Need Help?
+
+1. Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues
+2. Review [DEPLOYMENT.md](DEPLOYMENT.md) for deployment problems
+3. Check logs (documented in [DEPLOYMENT.md](DEPLOYMENT.md) Part 5)
+4. Review [ARCHITECTURE.md](ARCHITECTURE.md) to understand the system
+5. Create GitHub issue with logs
+
+## Technical Stack
+
+**Server:**
+- FastAPI (Python web framework)
+- Uvicorn (ASGI server)
+- Nginx (reverse proxy)
+- Groq API (Whisper, LLM, TTS)
+
+**Client:**
+- Python 3
+- PyAudio (audio I/O)
+- RPi.GPIO (hardware control)
 - INMP441 microphone (I2S)
 - MAX98357A amplifier (I2S)
-- Uses `googlevoicehat-soundcard` driver
 
-**Configuration:**
-- Sample Rate: 48000 Hz (required)
-- Microphone Gain: 2.0x default
-- Button: GPIO17
-- Amplifier SD: GPIO27
+**Infrastructure:**
+- Debian 13 (server OS)
+- Raspberry Pi OS (client OS)
+- Cloudflare (CDN/SSL/DNS)
+- systemd (process management)
 
-**Features:**
-- Button press to start/stop recording
-- Automatic retry on API errors
-- Memory-efficient audio padding
-- Comprehensive error handling
+---
 
+**All documentation reflects the current client-server architecture.** For migration from the old monolithic version, see [MIGRATION.md](../MIGRATION.md).

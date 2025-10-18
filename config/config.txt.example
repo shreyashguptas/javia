@@ -1,6 +1,0 @@
-# I2S Configuration for INMP441 + MAX98357A
-dtparam=i2s=on
-dtoverlay=googlevoicehat-soundcard
-
-# GPIO settings for button
-gpio=17=ip,pu

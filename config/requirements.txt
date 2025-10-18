@@ -1,5 +1,0 @@
-pyaudio
-RPi.GPIO
-requests
-python-dotenv
-numpy

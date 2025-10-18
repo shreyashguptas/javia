@@ -1,17 +1,27 @@
-# Raspberry Pi Zero 2 W Voice Assistant
+# Raspberry Pi Voice Assistant
 
-A complete voice assistant project using Raspberry Pi Zero 2 W with INMP441 microphone, MAX98357A amplifier, and Groq API integration.
+A distributed voice assistant with client-server architecture: Raspberry Pi handles audio I/O, server processes via Groq API.
 
 ## 🎯 Project Overview
 
-This project creates a voice assistant that:
+This project creates a production-ready voice assistant with:
+
+### Architecture
+- **Raspberry Pi Client**: Records audio, sends to server, plays response
+- **Server (Debian VM)**: Processes audio via Groq API (Whisper, LLM, TTS)
+- **Cloudflare**: Provides DNS, SSL/TLS, DDoS protection
+
+### Features
 - Records audio using **INMP441 I2S microphone**
 - **Press button once to start recording, press again to stop** (no time limit!)
-- Transcribes speech using Groq Whisper API
-- Processes queries with Groq LLM
-- Generates speech responses using Groq TTS
+- Sends audio to server over HTTPS
+- Server transcribes speech using Groq Whisper API
+- Server processes queries with Groq LLM
+- Server generates speech responses using Groq TTS
 - Plays audio through **MAX98357A I2S amplifier**
 - Controlled via GPIO button
+- Secure API key authentication
+- Session support (future feature)
 
 ## 🔧 Hardware Requirements
 
@@ -56,6 +66,84 @@ Button:
 
 ## 🚀 Quick Start
 
+**Note**: This project now uses a client-server architecture. You need to:
+1. Deploy the server (Debian VM)
+2. Install the client (Raspberry Pi)
+
+**Quick Links**:
+- 📖 **[Full Deployment Guide](docs/DEPLOYMENT.md)** - Step-by-step server + client setup
+- 🏗️ **[Architecture Documentation](docs/ARCHITECTURE.md)** - System design and components
+- 🔌 **[API Documentation](docs/API.md)** - REST API and Groq API details
+
+### Option 1: Quick Deploy (Recommended)
+
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for complete instructions.
+
+**Server Setup** (5-10 minutes):
+```bash
+# On Debian server
+sudo bash server/deploy/deploy.sh
+# Configure .env with GROQ_API_KEY and SERVER_API_KEY
+# Setup Cloudflare DNS and SSL
+```
+
+**Pi Client Setup** (5 minutes):
+```bash
+# On Raspberry Pi
+bash pi_client/deploy/install_client.sh
+# Configure .env with SERVER_URL and CLIENT_API_KEY
+```
+
+### Option 2: Manual Setup
+
+Follow the sections below for detailed manual setup.
+
+---
+
+## 🖥️ Server Deployment
+
+### Prerequisites
+- Debian 13 (or Ubuntu 22.04+) server
+- Static public IP address
+- Custom domain with Cloudflare
+- Groq API key
+
+### Quick Deploy
+
+1. **Copy server files to your server**:
+```bash
+scp -r server/ user@your-server:/opt/voice_assistant/
+```
+
+2. **Run deployment script**:
+```bash
+ssh user@your-server
+cd /opt/voice_assistant/deploy
+sudo bash deploy.sh
+```
+
+3. **Configure environment**:
+```bash
+sudo nano /opt/voice_assistant/.env
+# Set GROQ_API_KEY and SERVER_API_KEY
+```
+
+4. **Setup Cloudflare** (see [DEPLOYMENT.md](docs/DEPLOYMENT.md) for details):
+- Configure DNS
+- Setup SSL/TLS
+- Create origin certificate
+
+5. **Test server**:
+```bash
+curl https://yourdomain.com/health
+```
+
+**Full instructions**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+
+---
+
+## 📱 Raspberry Pi Client Setup
+
 ### 1. Hardware Setup
 1. **Power off** the Raspberry Pi
 2. **Wire INMP441 microphone** according to diagram above
@@ -89,72 +177,84 @@ dtoverlay=googlevoicehat-soundcard
 sudo reboot
 ```
 
-#### Install Dependencies
+### 3. Client Software Installation
 
-- Make sure this repo is git cloned then run the following
-
-```bash
-cd J.A.R.V.I.S.
-```
-
-**Option 1: Use System Packages (Recommended for Pi Zero 2 W)**
-
-This avoids compilation issues and memory constraints:
+#### Quick Install
 
 ```bash
-# Install system packages
-sudo apt update
-sudo apt install -y python3-pyaudio python3-rpi.gpio python3-requests python3-numpy python3-pip
+# Copy client files to Pi
+scp -r pi_client/ pi@raspberrypi.local:/tmp/voice_assistant_client/
 
-# Create virtual environment with system packages
-python3 -m venv --system-site-packages ~/venvs/pi
-source ~/venvs/pi/bin/activate
+# SSH to Pi
+ssh pi@raspberrypi.local
 
-# Install remaining packages
-pip install python-dotenv
+# Run installation script
+cd /tmp/voice_assistant_client/deploy
+bash install_client.sh
 ```
 
-**Option 2: Build from Source (if you have time and patience)**
+#### Configure Client
 
-Only use this if Option 1 doesn't work:
-
+Edit configuration file:
 ```bash
-# Install build dependencies
-sudo apt install -y python3-dev portaudio19-dev libatlas-base-dev
-
-# Create virtual environment
-python3 -m venv ~/venvs/pi
-source ~/venvs/pi/bin/activate
-
-# Install packages (this may take 30-60 minutes on Pi Zero 2 W)
-pip install -r config/requirements.txt
+nano ~/voice_assistant_client/.env
 ```
 
-#### Configure API Key
-Copy the environment template and add your API key:
+Set the following:
+```env
+# Your server URL (must use https://)
+SERVER_URL=https://yourdomain.com
+
+# API key (must match server's SERVER_API_KEY)
+CLIENT_API_KEY=your_secure_api_key_here
+
+# Hardware pins
+BUTTON_PIN=17
+AMPLIFIER_SD_PIN=27
+
+# Audio settings
+MICROPHONE_GAIN=2.0
+```
+
+Secure the file:
 ```bash
-cp env.example .env
-nano .env
+chmod 600 ~/voice_assistant_client/.env
 ```
 
-Edit the `.env` file and replace:
-```
-GROQ_API_KEY=YOUR_GROQ_API_KEY_HERE
-```
+### 4. Test Client
 
-### 3. Test Setup
+Test hardware:
 ```bash
 # Test microphone (5 seconds, 48000 Hz required)
 arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -t wav -d 5 test.wav
 
 # Test speaker
 aplay -D plughw:0,0 test.wav
-
-# Run voice assistant
-python3 voice_assistant.py
 ```
 
-**Troubleshooting:** See `docs/TROUBLESHOOTING.md`
+Test client:
+```bash
+cd ~/voice_assistant_client
+source ~/venvs/pi_client/bin/activate
+python3 client.py
+```
+
+Press button and speak. Verify recording, server communication, and playback all work.
+
+### 5. Run as Service (Optional)
+
+```bash
+sudo systemctl start voice-assistant-client.service
+sudo systemctl enable voice-assistant-client.service
+```
+
+View logs:
+```bash
+sudo journalctl -u voice-assistant-client.service -f
+```
+
+**Full instructions**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+**Troubleshooting**: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
 ## 🎙️ How to Use
 
@@ -176,26 +276,43 @@ While the assistant is speaking (playing audio response):
 ```
 voice_assistant/
 ├── README.md                 # This file
-├── voice_assistant.py        # Main application
-├── env.example              # Environment variables template
-├── config/
-│   ├── config.txt.example    # Example Pi configuration
-│   └── requirements.txt      # Python dependencies
+├── voice_assistant.py        # Legacy monolithic version (deprecated)
+├── server/                   # Server application
+│   ├── main.py               # FastAPI application
+│   ├── config.py             # Configuration management
+│   ├── requirements.txt      # Server dependencies
+│   ├── env.example           # Server environment template
+│   ├── services/
+│   │   └── groq_service.py   # Groq API integration
+│   ├── middleware/
+│   │   └── auth.py           # API key authentication
+│   ├── models/
+│   │   └── requests.py       # Request/response models
+│   ├── deploy/
+│   │   ├── deploy.sh         # Server deployment script
+│   │   ├── systemd/          # Systemd service files
+│   │   └── nginx/            # Nginx configuration
+│   └── test_server.py        # Server test suite
+├── pi_client/                # Raspberry Pi client
+│   ├── client.py             # Main client application
+│   ├── requirements.txt      # Client dependencies
+│   ├── env.example           # Client environment template
+│   ├── deploy/
+│   │   └── install_client.sh # Client installation script
+│   └── test_client.py        # Client test suite
 ├── docs/
-│   ├── HARDWARE.md           # Detailed hardware wiring guide
+│   ├── ARCHITECTURE.md       # System architecture
+│   ├── DEPLOYMENT.md         # Deployment guide
+│   ├── API.md                # API documentation
+│   ├── HARDWARE.md           # Hardware wiring guide
 │   ├── TROUBLESHOOTING.md    # Common issues and solutions
-│   ├── API.md                # Groq API configuration
 │   ├── AUDIO_CLICKS.md       # Fixing audio clicks/pops
-│   ├── MICROPHONE_GAIN.md    # Microphone volume configuration
-│   ├── PYTHON.md             # Python 3.13 compatibility
+│   ├── MICROPHONE_GAIN.MD    # Microphone volume configuration
+│   ├── PYTHON.md             # Python compatibility
 │   └── CHANGELOG.md          # Project improvements log
-├── scripts/
-│   ├── setup.sh              # Automated setup script
-│   ├── test_audio.py         # Audio testing utilities
-│   └── install_deps.sh       # Dependency installer
-└── examples/
-    ├── simple_test.py        # Basic functionality test
-    └── mic_test.py           # Microphone testing
+├── config/                   # Legacy configuration
+├── scripts/                  # Legacy scripts
+└── examples/                 # Legacy examples
 ```
 
 ## 🔍 Troubleshooting
@@ -255,57 +372,84 @@ voice_assistant/
 
 ## 🛠️ Development
 
-### Testing Audio Components
-```bash
-# Test microphone recording
-python3 scripts/test_audio.py
+### Testing
 
-# Test individual components
-python3 examples/mic_test.py
+**Test Server**:
+```bash
+cd server
+source venv/bin/activate
+python3 test_server.py
+```
+
+**Test Client**:
+```bash
+cd pi_client
+source ~/venvs/pi_client/bin/activate
+python3 test_client.py
 ```
 
 ### Customization
 
-You can customize settings via the `.env` file:
-
-```bash
-# Edit .env file
-nano .env
-```
-
-**Available Settings:**
-- `MICROPHONE_GAIN` - Amplify microphone input (default: 2.0)
-  - `1.0` = No amplification
-  - `2.0` = Double volume (recommended)
-  - `3.0` = Triple volume
-  - `4.0` = Quadruple volume (may distort)
-- `FADE_DURATION_MS` - Fade-in/fade-out duration to eliminate clicks (default: 50ms)
-  - `50` = Default (imperceptible but effective)
-  - `100` = Longer fade (for stubborn clicks)
-  - `150` = Very long fade (very aggressive)
-- `BUTTON_PIN` - GPIO pin for button (default: 17)
-- `SAMPLE_RATE` - Audio sample rate (default: 48000, required by driver)
-
-**Note**: `RECORD_SECONDS` is not used - recording continues until you press button again!
-
-**Example `.env`:**
+**Server Configuration** (`server/.env`):
 ```env
-GROQ_API_KEY=your_api_key_here
-MICROPHONE_GAIN=2.5
-FADE_DURATION_MS=100
+GROQ_API_KEY=your_groq_api_key
+SERVER_API_KEY=your_secure_api_key
+WHISPER_MODEL=whisper-large-v3-turbo
+LLM_MODEL=openai/gpt-oss-20b
+TTS_MODEL=playai-tts
+TTS_VOICE=Chip-PlayAI
+SYSTEM_PROMPT=You are a helpful voice assistant...
 ```
 
-## 📚 API Documentation
+**Client Configuration** (`pi_client/.env`):
+```env
+SERVER_URL=https://yourdomain.com
+CLIENT_API_KEY=matches_server_api_key
+BUTTON_PIN=17
+AMPLIFIER_SD_PIN=27
+MICROPHONE_GAIN=2.0
+FADE_DURATION_MS=50
+```
 
-### Groq API Endpoints
-- **Whisper**: `https://api.groq.com/openai/v1/audio/transcriptions`
-- **LLM**: `https://api.groq.com/openai/v1/chat/completions`
-- **TTS**: `https://api.groq.com/openai/v1/audio/speech`
+**Audio Settings**:
+- `MICROPHONE_GAIN`: 1.0 = no change, 2.0 = double volume (recommended)
+- `FADE_DURATION_MS`: Fade duration to eliminate clicks (50ms recommended)
 
-### Models Used
-- **Whisper**: `whisper-large-v3-turbo` (fastest, most accurate)
-- **LLM**: `openai/gpt-oss-20b`
-- **TTS**: `playai-tts` with `Chip-PlayAI` voice
+### Monitoring
+
+**Server Logs**:
+```bash
+sudo journalctl -u voice-assistant-server.service -f
+sudo tail -f /var/log/nginx/voice-assistant-access.log
+```
+
+**Client Logs**:
+```bash
+sudo journalctl -u voice-assistant-client.service -f
+```
+
+## 📚 Documentation
+
+### Quick Links
+- 🏗️ **[Architecture](docs/ARCHITECTURE.md)** - System design, data flow, components
+- 🚀 **[Deployment](docs/DEPLOYMENT.md)** - Complete deployment guide
+- 🔌 **[API Reference](docs/API.md)** - REST API and Groq API documentation
+- 🔧 **[Hardware](docs/HARDWARE.md)** - Wiring diagrams and connections
+- 🐛 **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+### API Overview
+
+**Voice Assistant REST API** (Server):
+- `POST /api/v1/process` - Process audio (transcribe → LLM → TTS)
+- `GET /health` - Health check
+- Authentication: API key in `X-API-Key` header
+
+**Groq API** (Backend):
+- **Whisper**: `whisper-large-v3-turbo` - Speech transcription
+- **LLM**: `openai/gpt-oss-20b` - Query processing
+- **TTS**: `playai-tts` - Speech generation
+
+See **[docs/API.md](docs/API.md)** for complete API reference.
 
 ## 🤝 Contributing
 
@@ -319,13 +463,36 @@ FADE_DURATION_MS=100
 
 MIT License - see LICENSE file for details
 
+## 🔒 Security
+
+- ✅ API key authentication between client and server
+- ✅ HTTPS/TLS for all communication
+- ✅ Cloudflare DDoS protection
+- ✅ Rate limiting (10 req/min per IP)
+- ✅ File size and format validation
+- ✅ Secure environment variable storage
+
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for security hardening steps.
+
 ## 🆘 Support
 
 For issues and questions:
-1. Check troubleshooting guide
-2. Review hardware setup
-3. Test individual components
+1. Check **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**
+2. Review **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
+3. Check server and client logs
 4. Create GitHub issue with logs
+
+## 🎯 Roadmap
+
+- [x] Client-server architecture
+- [x] Secure API authentication
+- [x] Production deployment guide
+- [ ] Session-based conversation history
+- [ ] User personalization and learning
+- [ ] Multi-client support
+- [ ] Audio streaming (reduce latency)
+- [ ] Wake word detection
+- [ ] Mobile app client
 
 ---
 

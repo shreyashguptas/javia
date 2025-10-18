@@ -1,11 +1,182 @@
-# Groq API Configuration
+# API Documentation
 
 ## Overview
 
-This voice assistant uses Groq's API for three functions:
+The voice assistant uses two API layers:
+
+### 1. Voice Assistant REST API (Server)
+The server exposes a REST API for processing audio from Raspberry Pi clients.
+
+### 2. Groq API (Backend)
+The server uses Groq's API for three functions:
 1. **Speech-to-Text** - Whisper for transcription
 2. **Language Model** - LLM for query processing
 3. **Text-to-Speech** - TTS for response generation
+
+---
+
+## Voice Assistant REST API
+
+### Base URL
+```
+https://yourdomain.com
+```
+
+### Authentication
+All API requests (except `/health`) require API key authentication.
+
+**Header**: `X-API-Key: your_api_key`
+
+### Endpoints
+
+#### `GET /health`
+
+Health check endpoint.
+
+**Authentication**: None required
+
+**Response**: `200 OK`
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0"
+}
+```
+
+**Example**:
+```bash
+curl https://yourdomain.com/health
+```
+
+---
+
+#### `POST /api/v1/process`
+
+Process audio through complete pipeline: transcription → LLM → TTS.
+
+**Authentication**: Required (X-API-Key header)
+
+**Request**:
+- **Content-Type**: `multipart/form-data`
+- **Headers**: 
+  ```
+  X-API-Key: your_api_key_here
+  ```
+- **Form Data**:
+  - `audio` (file): Audio file (WAV format, max 25MB)
+  - `session_id` (optional, string): Session identifier for conversation history
+
+**Response**: `200 OK`
+- **Content-Type**: `audio/wav`
+- **Headers**:
+  - `X-Transcription`: Transcribed text from audio
+  - `X-LLM-Response`: LLM response text
+  - `X-Session-ID`: Session ID (if provided)
+- **Body**: Audio file (WAV format) containing TTS response
+
+**Error Responses**:
+- `400 Bad Request`: Invalid file format, size, or corrupted audio
+- `401 Unauthorized`: Missing API key
+- `403 Forbidden`: Invalid API key
+- `413 Request Entity Too Large`: File exceeds 25MB
+- `422 Unprocessable Entity`: Validation error
+- `500 Internal Server Error`: Server processing error
+
+**Example**:
+```bash
+curl -X POST \
+  -H "X-API-Key: your_api_key" \
+  -F "audio=@recording.wav" \
+  -F "session_id=user123_session456" \
+  https://yourdomain.com/api/v1/process \
+  --output response.wav -v
+```
+
+**Python Example**:
+```python
+import requests
+
+headers = {'X-API-Key': 'your_api_key'}
+files = {'audio': ('recording.wav', open('recording.wav', 'rb'), 'audio/wav')}
+data = {'session_id': 'user123_session456'}
+
+response = requests.post(
+    'https://yourdomain.com/api/v1/process',
+    headers=headers,
+    files=files,
+    data=data,
+    stream=True
+)
+
+if response.status_code == 200:
+    # Get metadata
+    transcription = response.headers.get('X-Transcription')
+    llm_response = response.headers.get('X-LLM-Response')
+    
+    # Save audio
+    with open('response.wav', 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+```
+
+---
+
+#### `GET /docs`
+
+Interactive API documentation (Swagger UI).
+
+**Authentication**: None required
+
+**Access**: Open in browser: `https://yourdomain.com/docs`
+
+---
+
+#### `GET /redoc`
+
+Alternative API documentation (ReDoc).
+
+**Authentication**: None required
+
+**Access**: Open in browser: `https://yourdomain.com/redoc`
+
+---
+
+### Rate Limiting
+
+**Nginx Level**:
+- 10 requests per minute per IP
+- Burst: 5 additional requests allowed
+
+**Status Code**: `429 Too Many Requests` when exceeded
+
+**Headers**: 
+```
+Retry-After: 60
+```
+
+---
+
+### Security
+
+**Authentication**: API key in custom header
+- Keys stored in environment variables only
+- Transmitted over HTTPS only
+- Validated on every request
+
+**Transport**: 
+- All requests must use HTTPS
+- TLS 1.2+ required
+- Cloudflare DDoS protection
+
+**File Validation**:
+- Content-Type must be `audio/wav`
+- Size: 100 bytes minimum, 25MB maximum
+- File structure validated as WAV format
+
+---
+
+## Groq API Configuration
 
 ## Getting Your API Key
 
