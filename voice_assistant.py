@@ -631,48 +631,47 @@ def generate_speech(text):
 def apply_fade_in_out(wav_file, fade_duration_ms=50):
     """
     Apply fade-in and fade-out effects to eliminate clicks at audio boundaries
+    Memory-efficient: Only loads beginning and end portions of the file
     
     Args:
         wav_file: Path to WAV file
         fade_duration_ms: Duration of fade in milliseconds (default 50ms)
     """
+    temp_file = None
     try:
-        # Read the WAV file
+        # Read the WAV file parameters first
         with wave.open(str(wav_file), 'rb') as wf:
             params = wf.getparams()
             channels = params.nchannels
             sampwidth = params.sampwidth
             framerate = params.framerate
             n_frames = params.nframes
-            
-            # Read all audio data
-            audio_data = wf.readframes(n_frames)
         
-        # Convert to numpy array based on sample width
+        # Determine dtype based on sample width
         if sampwidth == 1:
             dtype = np.uint8
-            audio_array = np.frombuffer(audio_data, dtype=dtype)
-            # Convert to signed for processing
-            audio_array = audio_array.astype(np.int16) - 128
+            is_unsigned = True
         elif sampwidth == 2:
             dtype = np.int16
-            audio_array = np.frombuffer(audio_data, dtype=dtype)
+            is_unsigned = False
         elif sampwidth == 4:
             dtype = np.int32
-            audio_array = np.frombuffer(audio_data, dtype=dtype)
+            is_unsigned = False
         else:
             print(f"[WARNING] Unsupported sample width for fade: {sampwidth} bytes")
             return
         
-        # Calculate fade length in samples
-        fade_samples = int((fade_duration_ms / 1000.0) * framerate * channels)
-        fade_samples = min(fade_samples, len(audio_array) // 4)  # Don't fade more than 25% of audio
+        # Calculate fade length in frames (not samples)
+        fade_frames = int((fade_duration_ms / 1000.0) * framerate)
+        fade_frames = min(fade_frames, n_frames // 4)  # Don't fade more than 25% of audio
         
-        if fade_samples < 10:  # Too short to fade
+        if fade_frames < 10:  # Too short to fade
             print(f"[WARNING] Audio too short for fade effect")
             return
         
-        print(f"[DEBUG] Applying {fade_duration_ms}ms fade ({fade_samples} samples)")
+        fade_samples = fade_frames * channels  # Total samples including all channels
+        
+        print(f"[DEBUG] Applying {fade_duration_ms}ms fade ({fade_frames} frames, {fade_samples} samples)")
         
         # Create fade curves (cosine curve for smooth transition)
         fade_in_curve = np.linspace(0, 1, fade_samples)
@@ -681,23 +680,68 @@ def apply_fade_in_out(wav_file, fade_duration_ms=50):
         fade_out_curve = np.linspace(1, 0, fade_samples)
         fade_out_curve = 0.5 * (1 - np.cos(np.pi * fade_out_curve))  # Smooth cosine curve
         
-        # Apply fade-in to beginning
-        audio_array[:fade_samples] = (audio_array[:fade_samples] * fade_in_curve).astype(audio_array.dtype)
+        # Create temporary file
+        temp_file = wav_file.parent / f"{wav_file.stem}_fade_temp.wav"
         
-        # Apply fade-out to end
-        audio_array[-fade_samples:] = (audio_array[-fade_samples:] * fade_out_curve).astype(audio_array.dtype)
+        # Process file with streaming approach
+        with wave.open(str(wav_file), 'rb') as wf_in:
+            with wave.open(str(temp_file), 'wb') as wf_out:
+                # Set output parameters
+                wf_out.setnchannels(channels)
+                wf_out.setsampwidth(sampwidth)
+                wf_out.setframerate(framerate)
+                
+                # Read and process beginning (fade-in)
+                beginning_data = wf_in.readframes(fade_frames)
+                beginning_array = np.frombuffer(beginning_data, dtype=dtype).copy()
+                
+                # Convert unsigned 8-bit to signed for processing
+                if is_unsigned:
+                    beginning_array = beginning_array.astype(np.int16) - 128
+                
+                # Apply fade-in
+                beginning_array = (beginning_array * fade_in_curve).astype(beginning_array.dtype)
+                
+                # Convert back to unsigned if needed
+                if is_unsigned:
+                    beginning_array = (beginning_array + 128).clip(0, 255).astype(np.uint8)
+                
+                # Write faded beginning
+                wf_out.writeframes(beginning_array.tobytes())
+                
+                # Copy middle portion in chunks (no processing needed)
+                middle_frames = n_frames - (2 * fade_frames)
+                if middle_frames > 0:
+                    chunk_size = 4096  # Process in 4KB chunks
+                    frames_written = 0
+                    while frames_written < middle_frames:
+                        frames_to_read = min(chunk_size, middle_frames - frames_written)
+                        chunk = wf_in.readframes(frames_to_read)
+                        if not chunk:
+                            break
+                        wf_out.writeframes(chunk)
+                        frames_written += frames_to_read
+                
+                # Read and process ending (fade-out)
+                ending_data = wf_in.readframes(fade_frames)
+                ending_array = np.frombuffer(ending_data, dtype=dtype).copy()
+                
+                # Convert unsigned 8-bit to signed for processing
+                if is_unsigned:
+                    ending_array = ending_array.astype(np.int16) - 128
+                
+                # Apply fade-out
+                ending_array = (ending_array * fade_out_curve).astype(ending_array.dtype)
+                
+                # Convert back to unsigned if needed
+                if is_unsigned:
+                    ending_array = (ending_array + 128).clip(0, 255).astype(np.uint8)
+                
+                # Write faded ending
+                wf_out.writeframes(ending_array.tobytes())
         
-        # Convert back to original format
-        if sampwidth == 1:
-            # Convert back to unsigned 8-bit
-            audio_array = (audio_array + 128).clip(0, 255).astype(np.uint8)
-        
-        # Write back to file
-        with wave.open(str(wav_file), 'wb') as wf:
-            wf.setnchannels(channels)
-            wf.setsampwidth(sampwidth)
-            wf.setframerate(framerate)
-            wf.writeframes(audio_array.tobytes())
+        # Replace original file with processed version
+        temp_file.replace(wav_file)
         
         print(f"[AUDIO] Applied fade-in/fade-out effects")
         
@@ -705,6 +749,12 @@ def apply_fade_in_out(wav_file, fade_duration_ms=50):
         print(f"[WARNING] Could not apply fade effects: {e}")
         import traceback
         print(f"[DEBUG] {traceback.format_exc()}")
+        # Clean up temp file if it exists
+        if temp_file is not None and temp_file.exists():
+            try:
+                temp_file.unlink()
+            except:
+                pass
 
 def add_silence_padding(wav_file, padding_ms=150):
     """

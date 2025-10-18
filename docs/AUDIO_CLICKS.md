@@ -63,11 +63,12 @@ The cosine curve has **zero derivative at endpoints**, meaning no abrupt rate-of
 
 **Code Implementation:**
 ```python
-# voice_assistant.py lines 630-706
+# voice_assistant.py lines 631-757
 def apply_fade_in_out(wav_file, fade_duration_ms=50):
-    # Reads entire WAV file
-    # Applies cosine fade to beginning and end
-    # Writes modified audio back
+    # Memory-efficient streaming approach
+    # Only loads beginning (fade-in) and ending (fade-out) portions
+    # Middle portion copied in 4KB chunks
+    # Perfect for Raspberry Pi Zero 2 W with limited RAM
 ```
 
 **Configuration:**
@@ -441,10 +442,12 @@ Derivative at t=0 and t=1 is 0 (smooth connection)
 
 ### Memory Usage
 
-**Fade Function:**
-- Loads entire WAV file into memory temporarily
-- Typical response: ~2MB WAV = ~4MB RAM during processing
-- Pi Zero 2 W has 512MB RAM, so this is fine
+**Fade Function (Memory-Efficient Streaming):**
+- Only loads fade regions (beginning + end)
+- 50ms fade at 48kHz = 2,400 samples × 2 bytes = ~5KB per region
+- Total memory: ~10KB for both fade regions
+- Middle portion copied in 4KB chunks (never fully loaded)
+- **No MemoryError**, even on Pi Zero 2 W with limited RAM
 
 **Silence Padding:**
 - Streaming approach (memory-efficient)
@@ -454,10 +457,10 @@ Derivative at t=0 and t=1 is 0 (smooth connection)
 
 ### Performance Impact
 
-- **CPU**: Negligible (numpy operations are very fast)
-- **Memory**: ~4MB peak during fade processing
+- **CPU**: Negligible (numpy operations on small buffers are very fast)
+- **Memory**: ~10-15KB peak during fade processing (streaming approach)
 - **Latency**: Adds ~50-100ms processing time before playback
-- **Overall**: Acceptable and barely noticeable
+- **Overall**: Extremely efficient, suitable for resource-constrained devices
 
 ### WAV File Format Notes
 
