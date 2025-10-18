@@ -5,54 +5,66 @@ A complete voice assistant project using Raspberry Pi Zero 2 W with INMP441 micr
 ## 🎯 Project Overview
 
 This project creates a voice assistant that:
-- Records audio using INMP441 I2S microphone
+- Records audio using **INMP441 I2S microphone**
 - **Press button once to start recording, press again to stop** (no time limit!)
 - Transcribes speech using Groq Whisper API
 - Processes queries with Groq LLM
 - Generates speech responses using Groq TTS
-- Plays audio through MAX98357A I2S amplifier
+- Plays audio through **MAX98357A I2S amplifier**
 - Controlled via GPIO button
 
 ## 🔧 Hardware Requirements
 
 ### Components
-- **Raspberry Pi Zero 2 W** (mainboard)
-- **Google Voice HAT** (AIY Voice HAT v1.0 or compatible)
-  - Includes: Built-in dual MEMS microphones
-  - Includes: 3W Class D amplifier
-  - Interface: I2S digital audio
-- **3W 4Ω Speaker** (connects to Voice HAT)
-- **Push Button** (for activation)
-- **Optional: Jumper wires** (for button connection)
+- **Raspberry Pi Zero 2 W** - Mainboard with 40-pin GPIO
+- **INMP441 MEMS Microphone** - I2S digital microphone (24-bit, up to 64kHz)
+- **MAX98357A I2S Amplifier** - 3W Class D amplifier with DAC
+- **3W 4Ω Speaker** - Connected to amplifier output
+- **Push Button** - Momentary switch for recording control
+- **Breadboard and Jumper Wires** - For connections
+- **5V 3A Power Supply** - USB power adapter with quality cable
 
-### Wiring Diagram
+### Quick Wiring Reference
 
 ```
-Google Voice HAT:
-└── Mounts directly onto Pi's 40-pin GPIO header
+INMP441 Microphone:
+├── VDD  → Pi 3.3V (Pin 1)
+├── GND  → Pi GND (Pin 6)
+├── SCK  → Pi GPIO18 (Pin 12)
+├── WS   → Pi GPIO19 (Pin 35)
+├── SD   → Pi GPIO20 (Pin 38)
+└── L/R  → Pi GND (Pin 6)
+
+MAX98357A Amplifier:
+├── VDD  → Pi 3.3V (Pin 1)
+├── GND  → Pi GND (Pin 6)
+├── BCLK → Pi GPIO18 (Pin 12)
+├── LRC  → Pi GPIO19 (Pin 35)
+├── DIN  → Pi GPIO21 (Pin 40)
+└── SD   → Pi GPIO27 (Pin 13) ← Prevents audio clicks
 
 Speaker:
-├── Red wire   → Voice HAT Speaker + terminal
-└── Black wire → Voice HAT Speaker - terminal
+├── Red   → Amplifier OUT+
+└── Black → Amplifier OUT-
 
 Button:
-├── Terminal 1 → Pi GPIO17 (Pin 11) - accessible through Voice HAT
-└── Terminal 2 → Pi GND (Pin 6) - accessible through Voice HAT
-
-Optional - Amplifier Shutdown Control:
-└── Voice HAT SD pin → Pi GPIO27 (Pin 13) [reduces audio clicks]
+├── Terminal 1 → Pi GPIO17 (Pin 11)
+└── Terminal 2 → Pi GND (Pin 6)
 ```
 
-**Note**: The Google Voice HAT is a complete audio solution that includes microphone array and speaker amplifier in one board. It connects to all 40 GPIO pins but passes through unused pins for your button.
+**Detailed wiring diagrams:** See `docs/HARDWARE.md`
 
 ## 🚀 Quick Start
 
 ### 1. Hardware Setup
-1. **Power off** the Raspberry Pi completely
-2. **Mount the Google Voice HAT** onto the 40-pin GPIO header (press down firmly)
-3. **Connect the speaker** to the Voice HAT speaker terminals (red to +, black to -)
-4. **Connect the button** to GPIO17 and GND
-5. **Power on** the Raspberry Pi
+1. **Power off** the Raspberry Pi
+2. **Wire INMP441 microphone** according to diagram above
+3. **Wire MAX98357A amplifier** according to diagram above
+4. **Connect speaker** to amplifier (red to +, black to -)
+5. **Connect button** to GPIO17 and GND
+6. **Power on** with 3A power supply
+
+**Detailed setup:** See `docs/HARDWARE.md`
 
 ### 2. Software Configuration
 
@@ -65,10 +77,12 @@ sudo nano /boot/firmware/config.txt
 Then add this at the bottom of the file
 
 ```bash
-# I2S Configuration for Google Voice HAT
+# I2S Configuration (INMP441 + MAX98357A)
 dtparam=i2s=on
 dtoverlay=googlevoicehat-soundcard
 ```
+
+**Note:** We use the `googlevoicehat-soundcard` driver (it works great with INMP441+MAX98357A).
 
 **Then reboot:**
 ```bash
@@ -130,7 +144,7 @@ GROQ_API_KEY=YOUR_GROQ_API_KEY_HERE
 
 ### 3. Test Setup
 ```bash
-# Test microphone (records for 5 seconds) - Google Voice HAT uses 48000 Hz
+# Test microphone (5 seconds, 48000 Hz required)
 arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -t wav -d 5 test.wav
 
 # Test speaker
@@ -139,6 +153,8 @@ aplay -D plughw:0,0 test.wav
 # Run voice assistant
 python3 voice_assistant.py
 ```
+
+**Troubleshooting:** See `docs/TROUBLESHOOTING.md`
 
 ## 🎙️ How to Use
 
@@ -160,9 +176,13 @@ voice_assistant/
 │   ├── config.txt.example    # Example Pi configuration
 │   └── requirements.txt      # Python dependencies
 ├── docs/
-│   ├── hardware_setup.md     # Detailed hardware guide
-│   ├── troubleshooting.md    # Common issues and solutions
-│   └── api_setup.md          # Groq API configuration
+│   ├── HARDWARE.md           # Detailed hardware wiring guide
+│   ├── TROUBLESHOOTING.md    # Common issues and solutions
+│   ├── API.md                # Groq API configuration
+│   ├── AUDIO_CLICKS.md       # Fixing audio clicks/pops
+│   ├── MICROPHONE_GAIN.md    # Microphone volume configuration
+│   ├── PYTHON.md             # Python 3.13 compatibility
+│   └── CHANGELOG.md          # Project improvements log
 ├── scripts/
 │   ├── setup.sh              # Automated setup script
 │   ├── test_audio.py         # Audio testing utilities
@@ -194,7 +214,7 @@ voice_assistant/
    arecord -l
    aplay -l
    
-   # Test recording (5 seconds) - Google Voice HAT uses 48000 Hz
+   # Test recording (5 seconds, 48000 Hz required)
    arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -d 5 test.wav
    ```
 
@@ -212,8 +232,11 @@ voice_assistant/
 - **Speaker Volume Low**: Check speaker connections and amplifier power
 - **Distorted Audio**: 
   - Reduce `MICROPHONE_GAIN` if too high
-  - Verify sample rate settings (16000 Hz)
+  - Verify sample rate is 48000 Hz
+- **Audio Clicks**: See `docs/AUDIO_CLICKS.md`
 - **No Audio**: Test with `aplay` command first
+
+**Full troubleshooting:** See `docs/TROUBLESHOOTING.md`
 
 ### API Issues
 
@@ -249,7 +272,7 @@ nano .env
   - `4.0` = Quadruple volume (may distort)
 - `RECORD_SECONDS` - Recording duration in seconds (default: 5)
 - `BUTTON_PIN` - GPIO pin for button (default: 17)
-- `SAMPLE_RATE` - Audio sample rate (default: 48000 for Google Voice HAT)
+- `SAMPLE_RATE` - Audio sample rate (default: 48000, required by driver)
 
 **Example `.env`:**
 ```env
