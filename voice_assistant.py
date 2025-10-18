@@ -636,62 +636,82 @@ def add_silence_padding(wav_file, padding_ms=150):
         wav_file: Path to WAV file
         padding_ms: Milliseconds of silence to add (default 150ms)
     """
+    temp_file = None
     try:
-        import tempfile
-        
         # Create temporary file for padded audio
         temp_file = wav_file.parent / f"{wav_file.stem}_temp.wav"
         
         # Read original file parameters
-        with wave.open(str(wav_file), 'rb') as wf:
-            params = wf.getparams()
+        with wave.open(str(wav_file), 'rb') as wf_in:
+            params = wf_in.getparams()
             channels = params.nchannels
             sampwidth = params.sampwidth
             framerate = params.framerate
             
+            print(f"[DEBUG] Input WAV: {framerate}Hz, {channels}ch, {sampwidth}B sample width")
+            
             # Determine dtype based on sample width
             if sampwidth == 1:
                 dtype = np.uint8
+                default_value = 128  # Unsigned 8-bit is 0-255, silence is 128
             elif sampwidth == 2:
                 dtype = np.int16
+                default_value = 0  # Signed 16-bit, silence is 0
             elif sampwidth == 4:
                 dtype = np.int32
+                default_value = 0  # Signed 32-bit, silence is 0
             else:
                 print(f"[WARNING] Unsupported sample width: {sampwidth} bytes")
                 return
             
-            # Calculate padding length (samples = time * sample_rate * channels)
-            padding_samples = int((padding_ms / 1000.0) * framerate * channels)
-            silence = np.zeros(padding_samples, dtype=dtype)
+            # Calculate padding length
+            # For WAV: frames = time * sample_rate
+            # Each frame contains samples for all channels interleaved
+            padding_frames = int((padding_ms / 1000.0) * framerate)
+            
+            # Create silence: padding_frames * channels samples
+            silence_samples = padding_frames * channels
+            silence = np.full(silence_samples, default_value, dtype=dtype)
+            silence_bytes = silence.tobytes()
+            
+            print(f"[DEBUG] Padding: {padding_ms}ms = {padding_frames} frames = {len(silence_bytes)} bytes")
             
             # Write to temporary file with padding
             with wave.open(str(temp_file), 'wb') as wf_out:
-                wf_out.setparams(params)
+                # Set output parameters (must be set before writing)
+                wf_out.setnchannels(channels)
+                wf_out.setsampwidth(sampwidth)
+                wf_out.setframerate(framerate)
                 
                 # Write leading silence
-                wf_out.writeframes(silence.tobytes())
+                wf_out.writeframes(silence_bytes)
                 
                 # Copy original audio in chunks to avoid memory issues
-                chunk_size = 8192
+                chunk_size = 4096  # frames to read at a time
                 while True:
-                    frames = wf.readframes(chunk_size)
+                    frames = wf_in.readframes(chunk_size)
                     if not frames:
                         break
                     wf_out.writeframes(frames)
                 
                 # Write trailing silence
-                wf_out.writeframes(silence.tobytes())
+                wf_out.writeframes(silence_bytes)
         
         # Replace original file with padded version
         temp_file.replace(wav_file)
         
-        print(f"[AUDIO] Added {padding_ms}ms silence padding ({framerate}Hz, {channels}ch)")
+        print(f"[AUDIO] Added {padding_ms}ms silence padding")
         
     except Exception as e:
         print(f"[WARNING] Could not add silence padding: {e}")
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
         # Clean up temp file if it exists
-        if 'temp_file' in locals() and temp_file.exists():
-            temp_file.unlink()
+        if temp_file is not None and temp_file.exists():
+            try:
+                temp_file.unlink()
+            except:
+                pass
 
 def play_audio():
     """
