@@ -7,59 +7,59 @@ The voice assistant has been architected as a client-server system to optimize p
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         RASPBERRY PI CLIENT                          │
-│                                                                      │
+┌───────────────────────────────────────────────────────────────────┐
+│                         RASPBERRY PI CLIENT                       │
+│                                                                   │
 │  ┌────────────┐     ┌──────────────┐     ┌────────────────────┐   │
 │  │   Button   │────▶│  Audio       │────▶│  Audio Processing  │   │
 │  │   Input    │     │  Recording   │     │  (Gain, Fade)      │   │
 │  └────────────┘     └──────────────┘     └────────────────────┘   │
-│                            │                        │               │
-│                            ▼                        ▼               │
-│                     ┌──────────────────────────────────┐            │
-│                     │   HTTPS Request with Audio      │            │
-│                     │   + API Key Authentication      │            │
-│                     └──────────────────────────────────┘            │
-│                                    │                                │
-└────────────────────────────────────┼────────────────────────────────┘
+│                            │                        │             │
+│                            ▼                        ▼             │
+│                     ┌──────────────────────────────────┐          │
+│                     │   HTTPS Request with Audio       │          │
+│                     │   + API Key Authentication       │          │
+│                     └──────────────────────────────────┘          │
+│                                    │                              │
+└────────────────────────────────────┼──────────────────────────────┘
                                      │
                                      │ HTTPS/TLS
                                      │
                       ┌──────────────▼──────────────┐
-                      │      CLOUDFLARE CDN          │
+                      │      CLOUDFLARE CDN         │
                       │  - DDoS Protection          │
                       │  - SSL/TLS Termination      │
                       │  - Rate Limiting            │
                       └──────────────┬──────────────┘
                                      │
 ┌────────────────────────────────────┼────────────────────────────────┐
-│                         DEBIAN SERVER                                │
-│                                    │                                 │
+│                         DEBIAN SERVER                               │
+│                                    │                                │
 │                      ┌─────────────▼────────────┐                   │
 │                      │      NGINX Reverse Proxy │                   │
 │                      │  - SSL Termination       │                   │
 │                      │  - Rate Limiting         │                   │
 │                      │  - Request Validation    │                   │
 │                      └─────────────┬────────────┘                   │
-│                                    │                                 │
+│                                    │                                │
 │                      ┌─────────────▼────────────┐                   │
 │                      │    FastAPI Application   │                   │
 │                      │  - API Key Auth          │                   │
 │                      │  - Request Validation    │                   │
 │                      │  - Error Handling        │                   │
 │                      └─────────────┬────────────┘                   │
-│                                    │                                 │
+│                                    │                                │
 │                      ┌─────────────▼────────────┐                   │
 │                      │    Groq Service Layer    │                   │
 │                      │  - Whisper (STT)         │                   │
 │                      │  - LLM (Processing)      │                   │
 │                      │  - TTS (Speech Gen)      │                   │
 │                      └─────────────┬────────────┘                   │
-│                                    │                                 │
-└────────────────────────────────────┼─────────────────────────────────┘
+│                                    │                                │
+└────────────────────────────────────┼────────────────────────────────┘
                                      │
                       ┌──────────────▼──────────────┐
-                      │       GROQ API CLOUD         │
+                      │       GROQ API CLOUD        │
                       │  - whisper-large-v3-turbo   │
                       │  - openai/gpt-oss-20b       │
                       │  - playai-tts               │
@@ -335,32 +335,32 @@ Server:
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│                    Production Deployment                    │
+│                    Production Deployment                   │
 ├────────────────────────────────────────────────────────────┤
-│                                                             │
+│                                                            │
 │  Raspberry Pi (Home)                                       │
-│  ├── IP: Dynamic (residential)                            │
+│  ├── IP: Dynamic (residential)                             │
 │  ├── Network: WiFi                                         │
-│  └── Connects to: Server via HTTPS                        │
-│                                                             │
+│  └── Connects to: Server via HTTPS                         │
+│                                                            │
 │  Cloudflare                                                │
 │  ├── DNS: yourdomain.com                                   │
-│  ├── SSL: Full (strict) mode                              │
+│  ├── SSL: Full (strict) mode                               │
 │  └── Features: DDoS protection, caching                    │
-│                                                             │
+│                                                            │
 │  Debian Server (VPS/Cloud)                                 │
-│  ├── IP: Static public IP                                 │
-│  ├── Ports: 80, 443 (open)                                │
+│  ├── IP: Static public IP                                  │
+│  ├── Ports: 80, 443 (open)                                 │
 │  ├── Services:                                             │
-│  │   ├── Nginx (reverse proxy)                            │
-│  │   ├── FastAPI (application)                            │
-│  │   └── Systemd (process management)                     │
-│  └── Connects to: Groq API via HTTPS                      │
-│                                                             │
+│  │   ├── Nginx (reverse proxy)                             │
+│  │   ├── FastAPI (application)                             │
+│  │   └── Systemd (process management)                      │
+│  └── Connects to: Groq API via HTTPS                       │
+│                                                            │
 │  Groq Cloud                                                │
 │  ├── API: api.groq.com                                     │
-│  └── Models: Whisper, LLM, TTS                            │
-│                                                             │
+│  └── Models: Whisper, LLM, TTS                             │
+│                                                            │
 └────────────────────────────────────────────────────────────┘
 ```
 
