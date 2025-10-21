@@ -26,14 +26,14 @@ ssh user@your-server
 # 2. Install Git and clone repository
 sudo apt update && sudo apt install -y git
 cd /tmp
-git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+git clone https://github.com/YOUR_USERNAME/javia.git
 
 # 3. Run deployment script
-cd /tmp/voice_assistant/server/deploy
+cd /tmp/javia/server/deploy
 sudo bash deploy.sh
 
 # 4. Configure environment
-sudo nano /opt/voice_assistant/.env
+sudo nano /opt/javia/.env
 ```
 
 > **Note**: Replace `YOUR_USERNAME` with your GitHub username. For private repos, use a personal access token or SSH key (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for details).
@@ -77,10 +77,10 @@ curl http://localhost:8000/health
 **Configure Nginx:**
 ```bash
 # On server
-sudo nano /opt/voice_assistant/deploy/nginx/voice-assistant.conf
+sudo nano /opt/javia/deploy/nginx/voice-assistant.conf
 # Update server_name to your domain
 
-sudo cp /opt/voice_assistant/deploy/nginx/voice-assistant.conf /etc/nginx/sites-available/
+sudo cp /opt/javia/deploy/nginx/voice-assistant.conf /etc/nginx/sites-available/
 sudo ln -s /etc/nginx/sites-available/voice-assistant.conf /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
@@ -100,14 +100,14 @@ ssh pi@raspberrypi.local
 
 # 2. Clone repository
 cd /tmp
-git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+git clone https://github.com/YOUR_USERNAME/javia.git
 
 # 3. Run installation script
-cd /tmp/voice_assistant/pi_client/deploy
+cd /tmp/javia/pi_client/deploy
 bash install_client.sh
 
 # 4. Configure
-nano ~/voice_assistant_client/.env
+nano ~/javia_client/.env
 ```
 
 > **Note**: Replace `YOUR_USERNAME` with your GitHub username. For private repos, setup authentication (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
@@ -123,10 +123,10 @@ MICROPHONE_GAIN=2.0
 
 ```bash
 # Secure it
-chmod 600 ~/voice_assistant_client/.env
+chmod 600 ~/javia_client/.env
 
 # Test
-cd ~/voice_assistant_client
+cd ~/javia_client
 source ~/venvs/pi_client/bin/activate
 python3 client.py
 ```
@@ -147,7 +147,7 @@ sudo systemctl status voice-assistant-client.service
 ### Test Server
 ```bash
 # On server
-cd /opt/voice_assistant
+cd /opt/javia
 source venv/bin/activate
 python3 test_server.py
 ```
@@ -155,7 +155,7 @@ python3 test_server.py
 ### Test Client
 ```bash
 # On Pi
-cd ~/voice_assistant_client
+cd ~/javia_client
 source ~/venvs/pi_client/bin/activate
 python3 test_client.py
 ```

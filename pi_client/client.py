@@ -54,7 +54,7 @@ MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))
 FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
 
 # File paths
-AUDIO_DIR = Path(os.path.expanduser("~/voice_assistant/audio"))
+AUDIO_DIR = Path(os.path.expanduser("~/javia/audio"))
 RECORDING_FILE = AUDIO_DIR / "recording.wav"
 RESPONSE_FILE = AUDIO_DIR / "response.wav"
 

@@ -1,12 +1,12 @@
 # Migration Guide: Monolithic to Client-Server
 
-This guide explains the changes from the original monolithic `voice_assistant.py` to the new client-server architecture.
+This guide explains the changes from the original monolithic `javia.py` to the new client-server architecture.
 
 ## What Changed?
 
 ### Before (Monolithic)
 ```
-Raspberry Pi (voice_assistant.py)
+Raspberry Pi (javia.py)
   ├── Records audio
   ├── Calls Groq Whisper API
   ├── Calls Groq LLM API
@@ -57,7 +57,7 @@ Raspberry Pi (pi_client/client.py)     Server (server/main.py)
 
 | Old File | New Location | Purpose |
 |----------|-------------|---------|
-| `voice_assistant.py` | `pi_client/client.py` | Audio I/O only |
+| `javia.py` | `pi_client/client.py` | Audio I/O only |
 | N/A | `server/main.py` | Server application |
 | N/A | `server/services/groq_service.py` | Groq API calls |
 | `.env` | `server/.env` | Server config |
@@ -67,21 +67,21 @@ Raspberry Pi (pi_client/client.py)     Server (server/main.py)
 
 ### What Moved to Server
 
-**From `voice_assistant.py` lines 337-425:**
+**From `javia.py` lines 337-425:**
 ```python
 def transcribe_audio():
     # ... Groq Whisper API call ...
 ```
 **Now in:** `server/services/groq_service.py`
 
-**From `voice_assistant.py` lines 429-517:**
+**From `javia.py` lines 429-517:**
 ```python
 def query_llm(user_text):
     # ... Groq LLM API call ...
 ```
 **Now in:** `server/services/groq_service.py`
 
-**From `voice_assistant.py` lines 521-627:**
+**From `javia.py` lines 521-627:**
 ```python
 def generate_speech(text):
     # ... Groq TTS API call ...
@@ -158,7 +158,7 @@ MICROPHONE_GAIN=2.0
 
 ### If You're Currently Running the Old System
 
-1. **Keep Pi running** with old `voice_assistant.py` (don't break it yet!)
+1. **Keep Pi running** with old `javia.py` (don't break it yet!)
 
 2. **Deploy server first:**
    ```bash
@@ -191,7 +191,7 @@ MICROPHONE_GAIN=2.0
 
 7. **Backup old files** (keep for reference):
    ```bash
-   mv voice_assistant.py voice_assistant.py.backup
+   mv javia.py javia.py.backup
    ```
 
 ## Performance Comparison
@@ -248,12 +248,12 @@ If you need to go back to the old system:
 sudo systemctl stop voice-assistant-client.service
 
 # 2. Restore old file
-mv voice_assistant.py.backup voice_assistant.py
+mv javia.py.backup javia.py
 
 # 3. Run old system
-cd ~/voice_assistant
+cd ~/javia
 source ~/venvs/pi/bin/activate
-python3 voice_assistant.py
+python3 javia.py
 ```
 
 ## Questions?

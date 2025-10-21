@@ -49,7 +49,7 @@ MICROPHONE_GAIN=2.0
 
 2. **Test recording**:
    ```bash
-   python3 voice_assistant.py
+   python3 javia.py
    # Press button and speak at normal volume
    ```
 
@@ -101,7 +101,7 @@ The amplification process:
 
 ### Code Reference
 ```python
-# voice_assistant.py lines 152-186
+# javia.py lines 152-186
 def amplify_audio(audio_data, gain=2.0):
     audio_array = np.frombuffer(audio_data, dtype=np.int16)
     amplified = audio_array * gain

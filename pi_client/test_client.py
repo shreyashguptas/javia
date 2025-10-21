@@ -19,7 +19,7 @@ load_dotenv()
 # Configuration
 SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:8000')
 CLIENT_API_KEY = os.getenv('CLIENT_API_KEY', 'YOUR_API_KEY_HERE')
-AUDIO_DIR = Path(os.path.expanduser("~/voice_assistant/audio"))
+AUDIO_DIR = Path(os.path.expanduser("~/javia/audio"))
 
 def test_audio_directory():
     """Test that audio directory can be created"""

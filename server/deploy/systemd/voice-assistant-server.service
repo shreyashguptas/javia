@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=voiceassistant
 Group=voiceassistant
-WorkingDirectory=/opt/voice_assistant/server
-Environment="PATH=/opt/voice_assistant/venv/bin"
-ExecStart=/opt/voice_assistant/venv/bin/uvicorn server.main:app --host 0.0.0.0 --port 8000
+WorkingDirectory=/opt/javia/server
+Environment="PATH=/opt/javia/venv/bin"
+ExecStart=/opt/javia/venv/bin/uvicorn server.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=10
 

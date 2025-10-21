@@ -16,7 +16,7 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 # Configuration
-INSTALL_DIR="$HOME/voice_assistant_client"
+INSTALL_DIR="$HOME/javia_client"
 VENV_DIR="$HOME/venvs/pi_client"
 
 echo "[1/6] Installing system dependencies..."
@@ -31,7 +31,7 @@ cd $INSTALL_DIR
 echo ""
 echo "[3/6] Copying client files..."
 # This script expects to be run from the cloned Git repository
-# Expected location: /tmp/voice_assistant/pi_client/deploy/
+# Expected location: /tmp/javia/pi_client/deploy/
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLIENT_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -44,8 +44,8 @@ else
     echo "Expected to find client.py at: $CLIENT_DIR/client.py"
     echo ""
     echo "Please ensure you:"
-    echo "  1. Cloned the repository: git clone https://github.com/YOUR_USERNAME/voice_assistant.git"
-    echo "  2. Are running this script from: /tmp/voice_assistant/pi_client/deploy/"
+    echo "  1. Cloned the repository: git clone https://github.com/YOUR_USERNAME/javia.git"
+    echo "  2. Are running this script from: /tmp/javia/pi_client/deploy/"
     echo ""
     exit 1
 fi

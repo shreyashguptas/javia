@@ -19,7 +19,7 @@ This guide uses a **Git-based deployment** workflow:
 
 **Repository Structure:**
 ```
-voice_assistant/                 # Git repository root
+javia/                 # Git repository root
 ├── server/                      # Server application
 │   ├── main.py                  # FastAPI application
 │   ├── config.py                # Configuration
@@ -45,8 +45,8 @@ voice_assistant/                 # Git repository root
 ```
 
 **Deployment Paths:**
-- **Server**: Code deployed to `/opt/voice_assistant/`
-- **Pi Client**: Code deployed to `~/voice_assistant_client/`
+- **Server**: Code deployed to `/opt/javia/`
+- **Pi Client**: Code deployed to `~/javia_client/`
 
 ## Prerequisites
 
@@ -82,18 +82,18 @@ voice_assistant/                 # Git repository root
 ```bash
 # On your server
 sudo apt update && sudo apt install -y git
-cd /tmp && git clone https://github.com/YOUR_USERNAME/voice_assistant.git
-cd voice_assistant/server/deploy && sudo bash deploy.sh
-# Edit /opt/voice_assistant/.env with your API keys
+cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
+cd javia/server/deploy && sudo bash deploy.sh
+# Edit /opt/javia/.env with your API keys
 # Setup Nginx + SSL (see Part 1)
 ```
 
 **Pi Client (5 minutes):**
 ```bash
 # On your Raspberry Pi
-cd /tmp && git clone https://github.com/YOUR_USERNAME/voice_assistant.git
-cd voice_assistant/pi_client/deploy && bash install_client.sh
-# Edit ~/voice_assistant_client/.env with server URL and API key
+cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
+cd javia/pi_client/deploy && bash install_client.sh
+# Edit ~/javia_client/.env with server URL and API key
 sudo systemctl start voice-assistant-client.service
 ```
 
@@ -113,11 +113,11 @@ Before deploying, ensure your code is in a Git repository:
 1. Create a new repository on GitHub (can be private)
 2. On your local machine (Mac):
    ```bash
-   cd /Users/shreyashgupta/Documents/Github/voice_assistant
+   cd /Users/shreyashgupta/Documents/Github/javia
    git init  # If not already initialized
    git add .
    git commit -m "Initial commit"
-   git remote add origin https://github.com/YOUR_USERNAME/voice_assistant.git
+   git remote add origin https://github.com/YOUR_USERNAME/javia.git
    git push -u origin main
    ```
 
@@ -127,15 +127,15 @@ You'll need to authenticate when cloning. Options:
 1. **Personal Access Token** (recommended):
    - GitHub → Settings → Developer settings → Personal access tokens
    - Generate new token with `repo` scope
-   - Use: `git clone https://YOUR_TOKEN@github.com/YOUR_USERNAME/voice_assistant.git`
+   - Use: `git clone https://YOUR_TOKEN@github.com/YOUR_USERNAME/javia.git`
 
 2. **SSH Keys** (more secure):
    - Generate SSH key on server/Pi: `ssh-keygen -t ed25519`
    - Add public key to GitHub: Settings → SSH keys
-   - Use: `git clone git@github.com:YOUR_USERNAME/voice_assistant.git`
+   - Use: `git clone git@github.com:YOUR_USERNAME/javia.git`
 
 **For Public Repositories:**
-- Simply use: `git clone https://github.com/YOUR_USERNAME/voice_assistant.git`
+- Simply use: `git clone https://github.com/YOUR_USERNAME/javia.git`
 
 ## Part 1: Server Deployment
 
@@ -161,7 +161,7 @@ Clone this repository to your server:
 
 ```bash
 cd /tmp
-git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+git clone https://github.com/YOUR_USERNAME/javia.git
 ```
 
 > **Note**: Replace `YOUR_USERNAME` with your actual GitHub username. If you have a private repo, you'll need to setup SSH keys or use a personal access token.
@@ -169,27 +169,27 @@ git clone https://github.com/YOUR_USERNAME/voice_assistant.git
 ### Step 3: Run Deployment Script
 
 ```bash
-cd /tmp/voice_assistant/server/deploy
+cd /tmp/javia/server/deploy
 sudo bash deploy.sh
 ```
 
 The script will:
 - Install Python, pip, nginx
 - Create service user (`voiceassistant`)
-- Copy server files to `/opt/voice_assistant/`
+- Copy server files to `/opt/javia/`
 - Setup virtual environment
 - Install Python dependencies
 - Create systemd service
 - Start the service
 
-**Note**: The deployment script expects files in `/tmp/voice_assistant/server/`. It will copy all server files to `/opt/voice_assistant/` where the application will run.
+**Note**: The deployment script expects files in `/tmp/javia/server/`. It will copy all server files to `/opt/javia/` where the application will run.
 
 ### Step 4: Configure Environment Variables
 
 Edit the server configuration:
 
 ```bash
-sudo nano /opt/voice_assistant/.env
+sudo nano /opt/javia/.env
 ```
 
 Set the following values:
@@ -257,7 +257,7 @@ sudo journalctl -u voice-assistant-server.service -f
 Edit the Nginx configuration:
 
 ```bash
-sudo nano /opt/voice_assistant/deploy/nginx/voice-assistant.conf
+sudo nano /opt/javia/deploy/nginx/voice-assistant.conf
 ```
 
 Update the following:
@@ -268,7 +268,7 @@ Update the following:
 Copy to Nginx:
 
 ```bash
-sudo cp /opt/voice_assistant/deploy/nginx/voice-assistant.conf /etc/nginx/sites-available/voice-assistant
+sudo cp /opt/javia/deploy/nginx/voice-assistant.conf /etc/nginx/sites-available/voice-assistant
 sudo ln -s /etc/nginx/sites-available/voice-assistant /etc/nginx/sites-enabled/
 ```
 
@@ -399,7 +399,7 @@ Clone this repository to your Pi:
 
 ```bash
 cd /tmp
-git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+git clone https://github.com/YOUR_USERNAME/javia.git
 ```
 
 > **Note**: Replace `YOUR_USERNAME` with your actual GitHub username. If you have a private repo, you'll need to setup SSH keys or use a personal access token.
@@ -407,24 +407,24 @@ git clone https://github.com/YOUR_USERNAME/voice_assistant.git
 ### Step 3: Run Installation Script
 
 ```bash
-cd /tmp/voice_assistant/pi_client/deploy
+cd /tmp/javia/pi_client/deploy
 bash install_client.sh
 ```
 
 Follow the prompts. The script will:
 - Install system dependencies (python3-pyaudio, python3-rpi.gpio, etc.)
 - Create virtual environment at `~/venvs/pi_client`
-- Copy client files to `~/voice_assistant_client/`
+- Copy client files to `~/javia_client/`
 - Create systemd service (`voice-assistant-client.service`)
 
-**Note**: The installation script expects files in `/tmp/voice_assistant/pi_client/`. It will copy all client files to `~/voice_assistant_client/` where the application will run.
+**Note**: The installation script expects files in `/tmp/javia/pi_client/`. It will copy all client files to `~/javia_client/` where the application will run.
 
 ### Step 4: Configure Environment Variables
 
 Edit the client configuration:
 
 ```bash
-nano ~/voice_assistant_client/.env
+nano ~/javia_client/.env
 ```
 
 Set the following values:
@@ -451,7 +451,7 @@ FADE_DURATION_MS=50
 ### Step 5: Secure the Configuration
 
 ```bash
-chmod 600 ~/voice_assistant_client/.env
+chmod 600 ~/javia_client/.env
 ```
 
 This ensures only your user can read the API key.
@@ -461,7 +461,7 @@ This ensures only your user can read the API key.
 Before enabling the service, test manually:
 
 ```bash
-cd ~/voice_assistant_client
+cd ~/javia_client
 source ~/venvs/pi_client/bin/activate
 python3 client.py
 ```
@@ -502,7 +502,7 @@ sudo systemctl disable voice-assistant-client.service
 Use the test script:
 
 ```bash
-cd /opt/voice_assistant
+cd /opt/javia
 source venv/bin/activate
 python3 test_server.py
 ```
@@ -517,7 +517,7 @@ This will:
 Use the test script (doesn't require GPIO):
 
 ```bash
-cd ~/voice_assistant_client
+cd ~/javia_client
 source ~/venvs/pi_client/bin/activate
 python3 test_client.py
 ```
@@ -683,28 +683,28 @@ git push origin main
 ```bash
 # 1. Navigate to a temporary location
 cd /tmp
-rm -rf voice_assistant  # Remove old clone if exists
-git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+rm -rf javia  # Remove old clone if exists
+git clone https://github.com/YOUR_USERNAME/javia.git
 
 # 2. Copy updated files to installation directory
-sudo cp -r /tmp/voice_assistant/server/* /opt/voice_assistant/
+sudo cp -r /tmp/javia/server/* /opt/javia/
 
 # 3. Update dependencies if needed
-sudo -u voiceassistant /opt/voice_assistant/venv/bin/pip install -r /opt/voice_assistant/requirements.txt
+sudo -u voiceassistant /opt/javia/venv/bin/pip install -r /opt/javia/requirements.txt
 
 # 4. Restart service
 sudo systemctl restart voice-assistant-server.service
 
 # 5. Clean up
-rm -rf /tmp/voice_assistant
+rm -rf /tmp/javia
 ```
 
 **Alternative (if you keep a Git clone on the server):**
 ```bash
 # If you've kept the repo on the server
-cd /path/to/voice_assistant
+cd /path/to/javia
 git pull origin main
-sudo cp -r server/* /opt/voice_assistant/
+sudo cp -r server/* /opt/javia/
 sudo systemctl restart voice-assistant-server.service
 ```
 
@@ -724,25 +724,25 @@ git push origin main
 ```bash
 # 1. Navigate to a temporary location
 cd /tmp
-rm -rf voice_assistant  # Remove old clone if exists
-git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+rm -rf javia  # Remove old clone if exists
+git clone https://github.com/YOUR_USERNAME/javia.git
 
 # 2. Copy updated files
-cp -r /tmp/voice_assistant/pi_client/* ~/voice_assistant_client/
+cp -r /tmp/javia/pi_client/* ~/javia_client/
 
 # 3. Restart service
 sudo systemctl restart voice-assistant-client.service
 
 # 4. Clean up
-rm -rf /tmp/voice_assistant
+rm -rf /tmp/javia
 ```
 
 **Alternative (if you keep a Git clone on the Pi):**
 ```bash
 # If you've kept the repo on the Pi
-cd /path/to/voice_assistant
+cd /path/to/javia
 git pull origin main
-cp -r pi_client/* ~/voice_assistant_client/
+cp -r pi_client/* ~/javia_client/
 sudo systemctl restart voice-assistant-client.service
 ```
 
@@ -814,7 +814,7 @@ sudo journalctl -u voice-assistant-client.service -xe
 
 Run manually to see errors:
 ```bash
-cd ~/voice_assistant_client
+cd ~/javia_client
 source ~/venvs/pi_client/bin/activate
 python3 client.py
 ```
@@ -849,7 +849,7 @@ If you get "repository not found" or authentication errors:
 **For HTTPS (Private Repos):**
 ```bash
 # Use personal access token
-git clone https://YOUR_TOKEN@github.com/YOUR_USERNAME/voice_assistant.git
+git clone https://YOUR_TOKEN@github.com/YOUR_USERNAME/javia.git
 ```
 
 **For SSH (Recommended for Private Repos):**
@@ -862,7 +862,7 @@ cat ~/.ssh/id_ed25519.pub
 
 # Add this key to GitHub → Settings → SSH and GPG keys
 # Then clone using SSH
-git clone git@github.com:YOUR_USERNAME/voice_assistant.git
+git clone git@github.com:YOUR_USERNAME/javia.git
 ```
 
 #### Deployment Script Can't Find Files
@@ -871,13 +871,13 @@ Error: `Cannot find server files!` or `Expected to find main.py at...`
 
 **Solution:**
 1. Ensure you're running the script from the correct location:
-   - Server: `/tmp/voice_assistant/server/deploy/`
-   - Client: `/tmp/voice_assistant/pi_client/deploy/`
+   - Server: `/tmp/javia/server/deploy/`
+   - Client: `/tmp/javia/pi_client/deploy/`
 2. Check the repository was cloned completely:
    ```bash
-   ls -la /tmp/voice_assistant/
-   ls -la /tmp/voice_assistant/server/
-   ls -la /tmp/voice_assistant/pi_client/
+   ls -la /tmp/javia/
+   ls -la /tmp/javia/server/
+   ls -la /tmp/javia/pi_client/
    ```
 
 #### Permission Denied When Copying Files
@@ -912,7 +912,7 @@ Since code is in Git, you only need to backup **configuration and secrets**:
 ```bash
 # On server
 sudo tar -czf ~/voice-assistant-backup-$(date +%Y%m%d).tar.gz \
-  /opt/voice_assistant/.env \
+  /opt/javia/.env \
   /etc/nginx/sites-available/voice-assistant \
   /etc/ssl/certs/cloudflare-origin.pem \
   /etc/ssl/private/cloudflare-origin.key
@@ -932,7 +932,7 @@ scp user@server:~/voice-assistant-backup-*.tar.gz ~/backups/
 ```bash
 # On Pi
 tar -czf ~/client-backup-$(date +%Y%m%d).tar.gz \
-  ~/voice_assistant_client/.env
+  ~/javia_client/.env
 
 # Download to local machine (from your Mac)
 scp pi@raspberrypi.local:~/client-backup-*.tar.gz ~/backups/
@@ -946,9 +946,9 @@ scp pi@raspberrypi.local:~/client-backup-*.tar.gz ~/backups/
 2. Extract backup:
    ```bash
    tar -xzf voice-assistant-backup-YYYYMMDD.tar.gz
-   sudo cp opt/voice_assistant/.env /opt/voice_assistant/.env
-   sudo chown voiceassistant:voiceassistant /opt/voice_assistant/.env
-   sudo chmod 600 /opt/voice_assistant/.env
+   sudo cp opt/javia/.env /opt/javia/.env
+   sudo chown voiceassistant:voiceassistant /opt/javia/.env
+   sudo chmod 600 /opt/javia/.env
    ```
 3. Restore SSL certificates and Nginx config as needed
 4. Restart service: `sudo systemctl restart voice-assistant-server.service`
@@ -959,8 +959,8 @@ scp pi@raspberrypi.local:~/client-backup-*.tar.gz ~/backups/
 2. Extract backup:
    ```bash
    tar -xzf client-backup-YYYYMMDD.tar.gz
-   cp voice_assistant_client/.env ~/voice_assistant_client/.env
-   chmod 600 ~/voice_assistant_client/.env
+   cp javia_client/.env ~/javia_client/.env
+   chmod 600 ~/javia_client/.env
    ```
 3. Restart service: `sudo systemctl restart voice-assistant-client.service`
 
@@ -1013,8 +1013,8 @@ sudo journalctl -u voice-assistant-server.service -f
 sudo systemctl restart voice-assistant-server.service
 
 # Update code
-cd /tmp && git clone https://github.com/YOUR_USERNAME/voice_assistant.git
-sudo cp -r voice_assistant/server/* /opt/voice_assistant/
+cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
+sudo cp -r javia/server/* /opt/javia/
 sudo systemctl restart voice-assistant-server.service
 ```
 
@@ -1030,8 +1030,8 @@ sudo journalctl -u voice-assistant-client.service -f
 sudo systemctl restart voice-assistant-client.service
 
 # Update code
-cd /tmp && git clone https://github.com/YOUR_USERNAME/voice_assistant.git
-cp -r voice_assistant/pi_client/* ~/voice_assistant_client/
+cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
+cp -r javia/pi_client/* ~/javia_client/
 sudo systemctl restart voice-assistant-client.service
 ```
 

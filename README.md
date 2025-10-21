@@ -112,19 +112,19 @@ Follow the sections below for detailed manual setup.
 
 1. **Copy server files to your server**:
 ```bash
-scp -r server/ user@your-server:/opt/voice_assistant/
+scp -r server/ user@your-server:/opt/javia/
 ```
 
 2. **Run deployment script**:
 ```bash
 ssh user@your-server
-cd /opt/voice_assistant/deploy
+cd /opt/javia/deploy
 sudo bash deploy.sh
 ```
 
 3. **Configure environment**:
 ```bash
-sudo nano /opt/voice_assistant/.env
+sudo nano /opt/javia/.env
 # Set GROQ_API_KEY and SERVER_API_KEY
 ```
 
@@ -183,13 +183,13 @@ sudo reboot
 
 ```bash
 # Copy client files to Pi
-scp -r pi_client/ pi@raspberrypi.local:/tmp/voice_assistant_client/
+scp -r pi_client/ pi@raspberrypi.local:/tmp/javia_client/
 
 # SSH to Pi
 ssh pi@raspberrypi.local
 
 # Run installation script
-cd /tmp/voice_assistant_client/deploy
+cd /tmp/javia_client/deploy
 bash install_client.sh
 ```
 
@@ -197,7 +197,7 @@ bash install_client.sh
 
 Edit configuration file:
 ```bash
-nano ~/voice_assistant_client/.env
+nano ~/javia_client/.env
 ```
 
 Set the following:
@@ -218,7 +218,7 @@ MICROPHONE_GAIN=2.0
 
 Secure the file:
 ```bash
-chmod 600 ~/voice_assistant_client/.env
+chmod 600 ~/javia_client/.env
 ```
 
 ### 4. Test Client
@@ -234,7 +234,7 @@ aplay -D plughw:0,0 test.wav
 
 Test client:
 ```bash
-cd ~/voice_assistant_client
+cd ~/javia_client
 source ~/venvs/pi_client/bin/activate
 python3 client.py
 ```
@@ -274,9 +274,9 @@ While the assistant is speaking (playing audio response):
 ## 📁 Project Structure
 
 ```
-voice_assistant/
+javia/
 ├── README.md                 # This file
-├── voice_assistant.py        # Legacy monolithic version (deprecated)
+├── javia.py        # Legacy monolithic version (deprecated)
 ├── server/                   # Server application
 │   ├── main.py               # FastAPI application
 │   ├── config.py             # Configuration management

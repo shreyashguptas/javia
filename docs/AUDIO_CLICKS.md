@@ -63,7 +63,7 @@ The cosine curve has **zero derivative at endpoints**, meaning no abrupt rate-of
 
 **Code Implementation:**
 ```python
-# voice_assistant.py lines 631-757
+# javia.py lines 631-757
 def apply_fade_in_out(wav_file, fade_duration_ms=50):
     # Memory-efficient streaming approach
     # Only loads beginning (fade-in) and ending (fade-out) portions
@@ -91,7 +91,7 @@ FADE_DURATION_MS=150  # Very aggressive fade
 
 **Code Implementation:**
 ```python
-# voice_assistant.py lines 708-792
+# javia.py lines 708-792
 def add_silence_padding(wav_file, padding_ms=150):
     # Streams audio in chunks (memory-efficient)
     # Adds silence at start and end
@@ -115,17 +115,17 @@ MAX98357A SD pin → Raspberry Pi GPIO27 (Physical Pin 13)
 
 **Code Implementation:**
 ```python
-# voice_assistant.py line 61
+# javia.py line 61
 AMPLIFIER_SD_PIN = 27  # GPIO27 controls shutdown
 
-# voice_assistant.py lines 103-105
+# javia.py lines 103-105
 GPIO.setup(AMPLIFIER_SD_PIN, GPIO.OUT)
 GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)  # Start muted
 
-# voice_assistant.py line 816
+# javia.py line 816
 GPIO.output(AMPLIFIER_SD_PIN, GPIO.HIGH)  # Unmute before playback
 
-# voice_assistant.py line 842
+# javia.py line 842
 GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)  # Mute after playback
 ```
 
@@ -140,10 +140,10 @@ GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)  # Mute after playback
 
 **Code Implementation:**
 ```python
-# voice_assistant.py line 817
+# javia.py line 817
 time.sleep(0.200)  # After unmuting, before playback
 
-# voice_assistant.py line 839
+# javia.py line 839
 time.sleep(0.200)  # After playback, before muting
 ```
 
@@ -198,7 +198,7 @@ When running the assistant, you should see:
 ### 1. Check for Success Messages
 ```bash
 # Run the assistant
-python3 voice_assistant.py
+python3 javia.py
 
 # Should see:
 # [AUDIO] Applied fade-in/fade-out effects
@@ -241,14 +241,14 @@ At 48kHz:
 
 **2. Increase Silence Padding**
 
-Edit `voice_assistant.py` line 813:
+Edit `javia.py` line 813:
 ```python
 add_silence_padding(RESPONSE_FILE, padding_ms=250)  # Increased from 150
 ```
 
 **3. Increase Timing Delays**
 
-Edit `voice_assistant.py` lines 817 and 839:
+Edit `javia.py` lines 817 and 839:
 ```python
 time.sleep(0.300)  # Increased from 0.200
 ```
@@ -326,7 +326,7 @@ FADE_DURATION_MS=200
 
 ### Custom Padding for Your Setup
 
-Test different padding values in `voice_assistant.py` line 813:
+Test different padding values in `javia.py` line 813:
 
 ```python
 # Test with these values
@@ -476,7 +476,7 @@ Derivative at t=0 and t=1 is 0 (smooth connection)
 ### Listen Test
 ```bash
 # Run voice assistant
-python3 voice_assistant.py
+python3 javia.py
 
 # Ask a question
 # Listen carefully at start and end of response

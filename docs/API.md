@@ -238,7 +238,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 
 **Code Reference:**
 ```python
-# See voice_assistant.py lines 299-387
+# See javia.py lines 299-387
 def transcribe_audio():
     # Validates file size
     # Handles retries on timeout/rate limit
@@ -265,7 +265,7 @@ Keep responses brief and conversational, under 3 sentences."
 
 **Code Reference:**
 ```python
-# See voice_assistant.py lines 391-510
+# See javia.py lines 391-510
 def query_llm(user_text):
     # Input validation
     # Retry logic
@@ -292,7 +292,7 @@ def query_llm(user_text):
 
 **Code Reference:**
 ```python
-# See voice_assistant.py lines 514-620
+# See javia.py lines 514-620
 def generate_speech(text):
     # Text length validation (max 4096 chars)
     # Streaming download
@@ -378,19 +378,19 @@ Solution: Code detects and reports, check API status
 ## Customization
 
 ### Change System Prompt
-Edit `voice_assistant.py` line 57:
+Edit `javia.py` line 57:
 ```python
 SYSTEM_PROMPT = "Your custom prompt here"
 ```
 
 ### Change Response Length
-Edit `voice_assistant.py` line 411:
+Edit `javia.py` line 411:
 ```python
 'max_tokens': 150,  # Increase for longer responses
 ```
 
 ### Change Models
-Edit `voice_assistant.py` or use environment variables:
+Edit `javia.py` or use environment variables:
 ```env
 WHISPER_MODEL=whisper-large-v3
 LLM_MODEL=llama-3.1-70b-versatile
@@ -399,7 +399,7 @@ TTS_VOICE=Nova-PlayAI
 ```
 
 ### Change Temperature
-Edit `voice_assistant.py` line 412:
+Edit `javia.py` line 412:
 ```python
 'temperature': 0.7,  # 0.0 = deterministic, 1.0 = creative
 ```
