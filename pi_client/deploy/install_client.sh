@@ -30,12 +30,24 @@ cd $INSTALL_DIR
 
 echo ""
 echo "[3/6] Copying client files..."
-# Note: Adjust path as needed
-if [ -d "/tmp/voice_assistant_client" ]; then
-    cp -r /tmp/voice_assistant_client/* $INSTALL_DIR/
+# This script expects to be run from the cloned Git repository
+# Expected location: /tmp/voice_assistant/pi_client/deploy/
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLIENT_DIR="$(dirname "$SCRIPT_DIR")"
+
+if [ -f "$CLIENT_DIR/client.py" ]; then
+    echo "Copying files from: $CLIENT_DIR"
+    cp -r "$CLIENT_DIR"/* $INSTALL_DIR/
+    echo "Files copied successfully"
 else
-    echo "WARNING: Source files not found in /tmp/voice_assistant_client"
-    echo "Please manually copy the pi_client files to $INSTALL_DIR"
+    echo "ERROR: Cannot find client files!"
+    echo "Expected to find client.py at: $CLIENT_DIR/client.py"
+    echo ""
+    echo "Please ensure you:"
+    echo "  1. Cloned the repository: git clone https://github.com/YOUR_USERNAME/voice_assistant.git"
+    echo "  2. Are running this script from: /tmp/voice_assistant/pi_client/deploy/"
+    echo ""
+    exit 1
 fi
 
 echo ""

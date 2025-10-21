@@ -20,17 +20,23 @@ This guide will help you deploy and run the voice assistant system.
 **On your Debian server:**
 
 ```bash
-# 1. Copy server files
-scp -r server/ user@your-server:/tmp/voice_assistant_deploy/
-
-# 2. SSH to server and deploy
+# 1. SSH to server
 ssh user@your-server
-cd /tmp/voice_assistant_deploy/deploy
+
+# 2. Install Git and clone repository
+sudo apt update && sudo apt install -y git
+cd /tmp
+git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+
+# 3. Run deployment script
+cd /tmp/voice_assistant/server/deploy
 sudo bash deploy.sh
 
-# 3. Configure environment
+# 4. Configure environment
 sudo nano /opt/voice_assistant/.env
 ```
+
+> **Note**: Replace `YOUR_USERNAME` with your GitHub username. For private repos, use a personal access token or SSH key (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for details).
 
 **Set in .env:**
 ```env
@@ -87,21 +93,24 @@ curl https://yourdomain.com/health
 
 ### Step 3: Deploy Pi Client (5 minutes)
 
-**On your local machine:**
-```bash
-scp -r pi_client/ pi@raspberrypi.local:/tmp/voice_assistant_client/
-```
-
 **On Raspberry Pi:**
 ```bash
+# 1. SSH to Pi
 ssh pi@raspberrypi.local
 
-cd /tmp/voice_assistant_client/deploy
+# 2. Clone repository
+cd /tmp
+git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+
+# 3. Run installation script
+cd /tmp/voice_assistant/pi_client/deploy
 bash install_client.sh
 
-# Configure
+# 4. Configure
 nano ~/voice_assistant_client/.env
 ```
+
+> **Note**: Replace `YOUR_USERNAME` with your GitHub username. For private repos, setup authentication (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
 
 **Set in .env:**
 ```env

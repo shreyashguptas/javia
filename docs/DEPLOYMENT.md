@@ -8,6 +8,46 @@ This guide covers deploying the voice assistant in a client-server architecture.
 - **Debian Server**: Processes audio via Groq API, returns speech response
 - **Cloudflare**: Provides DNS, SSL/TLS, DDoS protection
 
+## Deployment Approach
+
+This guide uses a **Git-based deployment** workflow:
+
+1. **Development**: You develop and test code on your local machine (Mac)
+2. **Version Control**: Code is pushed to a Git repository (GitHub)
+3. **Deployment**: Server/Pi pulls code from Git repository
+4. **Updates**: Pull latest changes and restart services
+
+**Repository Structure:**
+```
+voice_assistant/                 # Git repository root
+├── server/                      # Server application
+│   ├── main.py                  # FastAPI application
+│   ├── config.py                # Configuration
+│   ├── requirements.txt         # Python dependencies
+│   ├── env.example             # Environment template
+│   ├── deploy/                  # Deployment scripts
+│   │   ├── deploy.sh           # Server deployment script
+│   │   ├── nginx/              # Nginx configuration
+│   │   └── systemd/            # Systemd service files
+│   ├── services/               # Groq API services
+│   ├── middleware/             # Authentication
+│   └── models/                 # Data models
+│
+├── pi_client/                   # Raspberry Pi client
+│   ├── client.py               # Main client application
+│   ├── requirements.txt        # Python dependencies
+│   ├── env.example            # Environment template
+│   └── deploy/                 # Deployment scripts
+│       └── install_client.sh  # Client installation script
+│
+├── docs/                        # Documentation
+└── README.md                    # Main documentation
+```
+
+**Deployment Paths:**
+- **Server**: Code deployed to `/opt/voice_assistant/`
+- **Pi Client**: Code deployed to `~/voice_assistant_client/`
+
 ## Prerequisites
 
 ### Debian Server Requirements
@@ -18,6 +58,7 @@ This guide covers deploying the voice assistant in a client-server architecture.
 - **Disk**: 10GB+ free space
 - **Network**: Static public IP address
 - **Ports**: 80, 443 open to internet
+- **Git**: Installed
 
 ### Raspberry Pi Requirements
 
@@ -25,12 +66,76 @@ This guide covers deploying the voice assistant in a client-server architecture.
 - **Audio**: INMP441 microphone + MAX98357A amplifier (configured)
 - **Network**: WiFi connection
 - **OS**: Raspberry Pi OS
+- **Git**: Installed
 
 ### Domain and DNS
 
 - Custom domain (e.g., yourdomain.com)
 - Cloudflare account (free tier is sufficient)
 - Domain configured in Cloudflare
+
+## Quick Start Summary
+
+**For the impatient**, here's the entire deployment in brief:
+
+**Server (5 minutes):**
+```bash
+# On your server
+sudo apt update && sudo apt install -y git
+cd /tmp && git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+cd voice_assistant/server/deploy && sudo bash deploy.sh
+# Edit /opt/voice_assistant/.env with your API keys
+# Setup Nginx + SSL (see Part 1)
+```
+
+**Pi Client (5 minutes):**
+```bash
+# On your Raspberry Pi
+cd /tmp && git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+cd voice_assistant/pi_client/deploy && bash install_client.sh
+# Edit ~/voice_assistant_client/.env with server URL and API key
+sudo systemctl start voice-assistant-client.service
+```
+
+**Updates (30 seconds):**
+```bash
+# Push from local → Pull on server/Pi → Restart service
+```
+
+Read on for detailed step-by-step instructions...
+
+## Git Repository Setup
+
+Before deploying, ensure your code is in a Git repository:
+
+**If you don't have a GitHub repository yet:**
+
+1. Create a new repository on GitHub (can be private)
+2. On your local machine (Mac):
+   ```bash
+   cd /Users/shreyashgupta/Documents/Github/voice_assistant
+   git init  # If not already initialized
+   git add .
+   git commit -m "Initial commit"
+   git remote add origin https://github.com/YOUR_USERNAME/voice_assistant.git
+   git push -u origin main
+   ```
+
+**For Private Repositories:**
+
+You'll need to authenticate when cloning. Options:
+1. **Personal Access Token** (recommended):
+   - GitHub → Settings → Developer settings → Personal access tokens
+   - Generate new token with `repo` scope
+   - Use: `git clone https://YOUR_TOKEN@github.com/YOUR_USERNAME/voice_assistant.git`
+
+2. **SSH Keys** (more secure):
+   - Generate SSH key on server/Pi: `ssh-keygen -t ed25519`
+   - Add public key to GitHub: Settings → SSH keys
+   - Use: `git clone git@github.com:YOUR_USERNAME/voice_assistant.git`
+
+**For Public Repositories:**
+- Simply use: `git clone https://github.com/YOUR_USERNAME/voice_assistant.git`
 
 ## Part 1: Server Deployment
 
@@ -47,45 +152,37 @@ Update system:
 ```bash
 sudo apt update
 sudo apt upgrade -y
+sudo apt install -y git
 ```
 
-### Step 2: Copy Files to Server
+### Step 2: Clone Repository
 
-On your local machine, prepare deployment package:
-
-```bash
-cd voice_assistant/
-tar -czf server-deploy.tar.gz server/
-```
-
-Upload to server:
-
-```bash
-scp server-deploy.tar.gz user@your-server-ip:/tmp/
-```
-
-On the server, extract files:
+Clone this repository to your server:
 
 ```bash
 cd /tmp
-tar -xzf server-deploy.tar.gz
-mv server voice_assistant_deploy
+git clone https://github.com/YOUR_USERNAME/voice_assistant.git
 ```
+
+> **Note**: Replace `YOUR_USERNAME` with your actual GitHub username. If you have a private repo, you'll need to setup SSH keys or use a personal access token.
 
 ### Step 3: Run Deployment Script
 
 ```bash
-cd /tmp/voice_assistant_deploy/deploy
+cd /tmp/voice_assistant/server/deploy
 sudo bash deploy.sh
 ```
 
 The script will:
 - Install Python, pip, nginx
-- Create service user
+- Create service user (`voiceassistant`)
+- Copy server files to `/opt/voice_assistant/`
 - Setup virtual environment
 - Install Python dependencies
 - Create systemd service
 - Start the service
+
+**Note**: The deployment script expects files in `/tmp/voice_assistant/server/`. It will copy all server files to `/opt/voice_assistant/` where the application will run.
 
 ### Step 4: Configure Environment Variables
 
@@ -294,43 +391,33 @@ SSH into your Raspberry Pi:
 ssh pi@raspberrypi.local
 ```
 
-Ensure audio hardware is configured (see main README.md).
+Ensure audio hardware is configured (see main README.md in the root of the repository).
 
-### Step 2: Copy Client Files
+### Step 2: Clone Repository
 
-On your local machine:
-
-```bash
-cd voice_assistant/
-tar -czf client-deploy.tar.gz pi_client/
-```
-
-Upload to Pi:
-
-```bash
-scp client-deploy.tar.gz pi@raspberrypi.local:/tmp/
-```
-
-On the Pi:
+Clone this repository to your Pi:
 
 ```bash
 cd /tmp
-tar -xzf client-deploy.tar.gz
-mv pi_client voice_assistant_client
+git clone https://github.com/YOUR_USERNAME/voice_assistant.git
 ```
+
+> **Note**: Replace `YOUR_USERNAME` with your actual GitHub username. If you have a private repo, you'll need to setup SSH keys or use a personal access token.
 
 ### Step 3: Run Installation Script
 
 ```bash
-cd /tmp/voice_assistant_client/deploy
+cd /tmp/voice_assistant/pi_client/deploy
 bash install_client.sh
 ```
 
 Follow the prompts. The script will:
-- Install system dependencies
-- Create virtual environment
-- Setup directory structure
-- Create systemd service
+- Install system dependencies (python3-pyaudio, python3-rpi.gpio, etc.)
+- Create virtual environment at `~/venvs/pi_client`
+- Copy client files to `~/voice_assistant_client/`
+- Create systemd service (`voice-assistant-client.service`)
+
+**Note**: The installation script expects files in `/tmp/voice_assistant/pi_client/`. It will copy all client files to `~/voice_assistant_client/` where the application will run.
 
 ### Step 4: Configure Environment Variables
 
@@ -582,26 +669,80 @@ du -sh /tmp
 
 ### Update Server Code
 
-When you update the code:
+When you update the code in your Git repository:
 
+**On your local machine:**
 ```bash
-# 1. Upload new files
-scp -r server/* user@server:/opt/voice_assistant/
+# 1. Commit and push your changes
+git add .
+git commit -m "Update server code"
+git push origin main
+```
 
-# 2. On server, update dependencies if needed
+**On the server:**
+```bash
+# 1. Navigate to a temporary location
+cd /tmp
+rm -rf voice_assistant  # Remove old clone if exists
+git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+
+# 2. Copy updated files to installation directory
+sudo cp -r /tmp/voice_assistant/server/* /opt/voice_assistant/
+
+# 3. Update dependencies if needed
 sudo -u voiceassistant /opt/voice_assistant/venv/bin/pip install -r /opt/voice_assistant/requirements.txt
 
-# 3. Restart service
+# 4. Restart service
+sudo systemctl restart voice-assistant-server.service
+
+# 5. Clean up
+rm -rf /tmp/voice_assistant
+```
+
+**Alternative (if you keep a Git clone on the server):**
+```bash
+# If you've kept the repo on the server
+cd /path/to/voice_assistant
+git pull origin main
+sudo cp -r server/* /opt/voice_assistant/
 sudo systemctl restart voice-assistant-server.service
 ```
 
 ### Update Client Code
 
-```bash
-# 1. Upload new files
-scp -r pi_client/* pi@raspberrypi.local:~/voice_assistant_client/
+When you update the code in your Git repository:
 
-# 2. On Pi, restart service
+**On your local machine:**
+```bash
+# 1. Commit and push your changes
+git add .
+git commit -m "Update client code"
+git push origin main
+```
+
+**On the Pi:**
+```bash
+# 1. Navigate to a temporary location
+cd /tmp
+rm -rf voice_assistant  # Remove old clone if exists
+git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+
+# 2. Copy updated files
+cp -r /tmp/voice_assistant/pi_client/* ~/voice_assistant_client/
+
+# 3. Restart service
+sudo systemctl restart voice-assistant-client.service
+
+# 4. Clean up
+rm -rf /tmp/voice_assistant
+```
+
+**Alternative (if you keep a Git clone on the Pi):**
+```bash
+# If you've kept the repo on the Pi
+cd /path/to/voice_assistant
+git pull origin main
+cp -r pi_client/* ~/voice_assistant_client/
 sudo systemctl restart voice-assistant-client.service
 ```
 
@@ -699,36 +840,136 @@ If you get 429 errors:
 - Check Cloudflare rate limits
 - Check Nginx rate limits
 
+### Git and Deployment Issues
+
+#### Git Clone Fails - Authentication Required
+
+If you get "repository not found" or authentication errors:
+
+**For HTTPS (Private Repos):**
+```bash
+# Use personal access token
+git clone https://YOUR_TOKEN@github.com/YOUR_USERNAME/voice_assistant.git
+```
+
+**For SSH (Recommended for Private Repos):**
+```bash
+# Generate SSH key (if not exists)
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+# Display public key
+cat ~/.ssh/id_ed25519.pub
+
+# Add this key to GitHub → Settings → SSH and GPG keys
+# Then clone using SSH
+git clone git@github.com:YOUR_USERNAME/voice_assistant.git
+```
+
+#### Deployment Script Can't Find Files
+
+Error: `Cannot find server files!` or `Expected to find main.py at...`
+
+**Solution:**
+1. Ensure you're running the script from the correct location:
+   - Server: `/tmp/voice_assistant/server/deploy/`
+   - Client: `/tmp/voice_assistant/pi_client/deploy/`
+2. Check the repository was cloned completely:
+   ```bash
+   ls -la /tmp/voice_assistant/
+   ls -la /tmp/voice_assistant/server/
+   ls -la /tmp/voice_assistant/pi_client/
+   ```
+
+#### Permission Denied When Copying Files
+
+Error: `Permission denied` when running deploy.sh
+
+**Solution:**
+```bash
+# Ensure you're running with sudo (server only)
+sudo bash deploy.sh
+
+# For client, run as regular user (NOT sudo)
+bash install_client.sh
+```
+
 ## Part 7: Backup and Recovery
+
+### What to Backup
+
+Since code is in Git, you only need to backup **configuration and secrets**:
+
+**Server - Configuration Files:**
+- `.env` file (contains API keys)
+- Nginx configuration (if customized)
+- SSL certificates (Cloudflare origin certificates)
+
+**Client - Configuration Files:**
+- `.env` file (contains API key and settings)
 
 ### Backup Server Configuration
 
 ```bash
 # On server
-sudo tar -czf ~/voice-assistant-backup.tar.gz \
+sudo tar -czf ~/voice-assistant-backup-$(date +%Y%m%d).tar.gz \
   /opt/voice_assistant/.env \
-  /opt/voice_assistant/deploy/ \
   /etc/nginx/sites-available/voice-assistant \
   /etc/ssl/certs/cloudflare-origin.pem \
   /etc/ssl/private/cloudflare-origin.key
+
+# Make it readable by your user
+sudo chown $USER:$USER ~/voice-assistant-backup-*.tar.gz
 ```
 
-Download backup:
+Download backup to your local machine:
 ```bash
-scp user@server:~/voice-assistant-backup.tar.gz .
+# On your local machine
+scp user@server:~/voice-assistant-backup-*.tar.gz ~/backups/
 ```
 
 ### Backup Client Configuration
 
 ```bash
 # On Pi
-tar -czf ~/client-backup.tar.gz \
+tar -czf ~/client-backup-$(date +%Y%m%d).tar.gz \
   ~/voice_assistant_client/.env
+
+# Download to local machine (from your Mac)
+scp pi@raspberrypi.local:~/client-backup-*.tar.gz ~/backups/
 ```
 
 ### Recovery
 
-To restore, extract backups and follow deployment steps, copying configuration files instead of creating new ones.
+**To restore after a server failure:**
+
+1. Deploy fresh installation following Part 1
+2. Extract backup:
+   ```bash
+   tar -xzf voice-assistant-backup-YYYYMMDD.tar.gz
+   sudo cp opt/voice_assistant/.env /opt/voice_assistant/.env
+   sudo chown voiceassistant:voiceassistant /opt/voice_assistant/.env
+   sudo chmod 600 /opt/voice_assistant/.env
+   ```
+3. Restore SSL certificates and Nginx config as needed
+4. Restart service: `sudo systemctl restart voice-assistant-server.service`
+
+**To restore client after Pi failure:**
+
+1. Deploy fresh installation following Part 2
+2. Extract backup:
+   ```bash
+   tar -xzf client-backup-YYYYMMDD.tar.gz
+   cp voice_assistant_client/.env ~/voice_assistant_client/.env
+   chmod 600 ~/voice_assistant_client/.env
+   ```
+3. Restart service: `sudo systemctl restart voice-assistant-client.service`
+
+### Git Repository Backup
+
+Your code is already backed up in Git, but ensure you:
+- Push all changes regularly: `git push origin main`
+- Consider creating a private repository if you haven't already
+- Keep backups of your Git repository (GitHub already does this)
 
 ## Part 8: Cost Considerations
 
@@ -749,11 +990,66 @@ To restore, extract backups and follow deployment steps, copying configuration f
 
 Your voice assistant is now deployed in a secure, scalable client-server architecture!
 
+**What You've Achieved:**
 - ✅ Raspberry Pi handles local audio I/O
 - ✅ Server processes via fast Groq API
 - ✅ Cloudflare provides security and SSL
 - ✅ Everything is encrypted and authenticated
 - ✅ Systemd ensures services stay running
+- ✅ Git-based deployment for easy updates
+- ✅ Production-ready configuration
+
+**Quick Reference Commands:**
+
+**Server Management:**
+```bash
+# Check status
+sudo systemctl status voice-assistant-server.service
+
+# View logs
+sudo journalctl -u voice-assistant-server.service -f
+
+# Restart
+sudo systemctl restart voice-assistant-server.service
+
+# Update code
+cd /tmp && git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+sudo cp -r voice_assistant/server/* /opt/voice_assistant/
+sudo systemctl restart voice-assistant-server.service
+```
+
+**Client Management:**
+```bash
+# Check status
+sudo systemctl status voice-assistant-client.service
+
+# View logs
+sudo journalctl -u voice-assistant-client.service -f
+
+# Restart
+sudo systemctl restart voice-assistant-client.service
+
+# Update code
+cd /tmp && git clone https://github.com/YOUR_USERNAME/voice_assistant.git
+cp -r voice_assistant/pi_client/* ~/voice_assistant_client/
+sudo systemctl restart voice-assistant-client.service
+```
+
+**Testing:**
+```bash
+# Test server health
+curl https://yourdomain.com/health
+
+# Test from client
+curl https://yourdomain.com/health
+```
 
 Enjoy your voice assistant! 🎤🤖
+
+## Additional Resources
+
+- **Documentation**: See `/docs` folder for detailed guides
+- **Troubleshooting**: See `docs/TROUBLESHOOTING.md`
+- **Hardware Setup**: See `docs/HARDWARE.md`
+- **API Reference**: Visit `https://yourdomain.com/docs` after deployment
 

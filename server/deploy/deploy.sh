@@ -41,20 +41,24 @@ cd $INSTALL_DIR
 
 echo ""
 echo "[4/8] Copying application files..."
-# Note: This assumes the script is run from the deployment directory
-# Adjust paths as needed for your deployment method
-if [ -d "/tmp/voice_assistant_deploy" ]; then
-    cp -r /tmp/voice_assistant_deploy/server/* $INSTALL_DIR/
+# This script expects to be run from the cloned Git repository
+# Expected location: /tmp/voice_assistant/server/deploy/
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVER_DIR="$(dirname "$SCRIPT_DIR")"
+
+if [ -f "$SERVER_DIR/main.py" ]; then
+    echo "Copying files from: $SERVER_DIR"
+    cp -r "$SERVER_DIR"/* $INSTALL_DIR/
+    echo "Files copied successfully"
 else
-    echo "WARNING: Source files not found in /tmp/voice_assistant_deploy"
-    echo "Please manually copy the server files to $INSTALL_DIR"
-    echo "Expected structure:"
-    echo "  $INSTALL_DIR/main.py"
-    echo "  $INSTALL_DIR/config.py"
-    echo "  $INSTALL_DIR/requirements.txt"
-    echo "  $INSTALL_DIR/services/"
-    echo "  $INSTALL_DIR/middleware/"
-    echo "  $INSTALL_DIR/models/"
+    echo "ERROR: Cannot find server files!"
+    echo "Expected to find main.py at: $SERVER_DIR/main.py"
+    echo ""
+    echo "Please ensure you:"
+    echo "  1. Cloned the repository: git clone https://github.com/YOUR_USERNAME/voice_assistant.git"
+    echo "  2. Are running this script from: /tmp/voice_assistant/server/deploy/"
+    echo ""
+    exit 1
 fi
 
 echo ""
