@@ -391,11 +391,16 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
-# Device access permissions
-DeviceAllow=/dev/snd rw
+# Device access permissions - allow all audio and GPIO devices
+DeviceAllow=/dev/snd
 DeviceAllow=/dev/gpiomem rw
 DeviceAllow=/dev/mem rw
-DevicePolicy=closed
+DeviceAllow=char-alsa rw
+DevicePolicy=auto
+
+# Disable restrictive sandboxing for hardware access
+PrivateDevices=no
+ProtectHome=no
 
 [Install]
 WantedBy=multi-user.target
