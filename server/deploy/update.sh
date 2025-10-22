@@ -47,7 +47,14 @@ echo ""
 echo "[4/7] Updating application files..."
 # Copy server files from the repo (exclude venv and .env)
 cd "$TEMP_DIR/server"
-rsync -av --exclude='venv' --exclude='.env' --exclude='__pycache__' ./ "$INSTALL_DIR/"
+
+# Remove old files but preserve venv and .env
+find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name 'venv' ! -name '.env' -exec rm -rf {} +
+
+# Copy new files
+cp -r * "$INSTALL_DIR/" 2>/dev/null || true
+cp -r .[!.]* "$INSTALL_DIR/" 2>/dev/null || true
+
 echo "✓ Files updated"
 
 echo ""
