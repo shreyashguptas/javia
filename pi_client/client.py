@@ -127,11 +127,17 @@ def setup():
     except Exception as e:
         print(f"[WARNING] Could not list playback devices: {e}")
     
-    # Generate beep sounds (if they don't exist)
-    if not START_BEEP_FILE.exists() or not STOP_BEEP_FILE.exists():
-        generate_beep_sounds()
+    # Generate beep sounds (always regenerate to ensure they're correct)
+    print("\n[INIT] Setting up audio feedback beeps...")
+    generate_beep_sounds()
+    
+    # Verify beep files exist
+    if START_BEEP_FILE.exists() and STOP_BEEP_FILE.exists():
+        print(f"[INIT] ✓ Beep files ready:")
+        print(f"[INIT]   - Start: {START_BEEP_FILE}")
+        print(f"[INIT]   - Stop:  {STOP_BEEP_FILE}")
     else:
-        print("[INIT] Beep sounds already exist, skipping generation")
+        print(f"[WARNING] Beep files missing! Audio feedback disabled.")
     
     print("\n[READY] System ready! Press button to start...\n")
 
@@ -144,7 +150,7 @@ def generate_beep_sounds():
         
         # Start beep: Pleasant rising tone (500Hz -> 800Hz)
         print("[INIT] Generating start beep sound...")
-        duration = 0.15  # 150ms
+        duration = 0.2  # 200ms - slightly longer for better audibility
         t = np.linspace(0, duration, int(sample_rate * duration))
         
         # Frequency sweep from 500Hz to 800Hz
@@ -160,7 +166,8 @@ def generate_beep_sounds():
             np.ones(len(t)//2),             # Sustain
             np.linspace(1, 0, len(t)//4)    # Smooth release
         ])
-        start_beep = (tone * envelope * 0.3 * 32767).astype(np.int16)
+        # Increased volume from 0.3 to 0.6 for better audibility
+        start_beep = (tone * envelope * 0.6 * 32767).astype(np.int16)
         
         # Save start beep
         with wave.open(str(START_BEEP_FILE), 'wb') as wf:
@@ -169,9 +176,11 @@ def generate_beep_sounds():
             wf.setframerate(sample_rate)
             wf.writeframes(start_beep.tobytes())
         
+        print(f"[INIT] ✓ Start beep saved: {START_BEEP_FILE} ({len(start_beep) * 2} bytes)")
+        
         # Stop beep: Pleasant falling tone (700Hz -> 400Hz)
         print("[INIT] Generating stop beep sound...")
-        duration = 0.12  # 120ms
+        duration = 0.15  # 150ms
         t = np.linspace(0, duration, int(sample_rate * duration))
         
         # Frequency sweep from 700Hz to 400Hz
@@ -187,7 +196,8 @@ def generate_beep_sounds():
             np.ones(len(t)//2),             # Sustain
             np.linspace(1, 0, len(t)//4)    # Smooth release
         ])
-        stop_beep = (tone * envelope * 0.3 * 32767).astype(np.int16)
+        # Increased volume from 0.3 to 0.6 for better audibility
+        stop_beep = (tone * envelope * 0.6 * 32767).astype(np.int16)
         
         # Save stop beep
         with wave.open(str(STOP_BEEP_FILE), 'wb') as wf:
@@ -196,56 +206,57 @@ def generate_beep_sounds():
             wf.setframerate(sample_rate)
             wf.writeframes(stop_beep.tobytes())
         
-        print("[INIT] Beep sounds generated successfully")
+        print(f"[INIT] ✓ Stop beep saved: {STOP_BEEP_FILE} ({len(stop_beep) * 2} bytes)")
+        print("[INIT] ✓ Beep sounds generated successfully")
         
     except Exception as e:
         print(f"[WARNING] Could not generate beep sounds: {e}")
+        import traceback
+        print(f"[WARNING] Traceback: {traceback.format_exc()}")
 
 def play_beep(beep_file, description=""):
     """Play a short beep sound through the amplifier"""
     if not beep_file.exists():
-        print(f"[BEEP] Warning: Beep file not found: {beep_file}")
+        print(f"[BEEP] ⚠ Warning: Beep file not found: {beep_file}")
+        print(f"[BEEP] Expected at: {beep_file}")
         return
     
     process = None
     try:
-        print(f"[BEEP] Playing {description} sound...")
+        print(f"[BEEP] 🔊 Playing {description} beep...")
         
         # Enable amplifier
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.HIGH)
-        time.sleep(0.03)  # Minimal stabilization for speed
+        time.sleep(0.05)  # Stabilization time - critical for audibility
         
-        # Play beep (suppressing all output for speed)
-        process = subprocess.Popen(
+        # Play beep with blocking call for reliability
+        result = subprocess.run(
             ['aplay', '-q', '-D', 'plughw:0,0', str(beep_file)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            capture_output=True,
+            timeout=1.0
         )
         
-        # Wait for beep to finish (max 500ms for responsiveness)
-        try:
-            process.wait(timeout=0.5)
-        except subprocess.TimeoutExpired:
-            process.kill()
+        if result.returncode != 0:
+            print(f"[BEEP] ⚠ aplay returned error: {result.returncode}")
+            if result.stderr:
+                print(f"[BEEP] Error: {result.stderr.decode()}")
+        else:
+            print(f"[BEEP] ✓ {description} beep completed")
         
-        # Very short delay before disabling amp
-        time.sleep(0.02)
+        # Small delay to ensure audio completes
+        time.sleep(0.05)
         
         # Disable amplifier
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
         
-    except Exception as e:
-        print(f"[BEEP] Error playing beep: {e}")
+    except subprocess.TimeoutExpired:
+        print(f"[BEEP] ⚠ Timeout playing beep")
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
-        if process and process.poll() is None:
-            try:
-                process.terminate()
-                process.wait(timeout=0.2)
-            except:
-                try:
-                    process.kill()
-                except:
-                    pass
+    except Exception as e:
+        print(f"[BEEP] ⚠ Error: {e}")
+        import traceback
+        print(f"[BEEP] Traceback: {traceback.format_exc()}")
+        GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
 
 # ==================== BUTTON HANDLING ====================
 
@@ -257,10 +268,11 @@ def wait_for_button_press():
         time.sleep(0.01)
     
     print("[BUTTON] *** BUTTON PRESSED! Starting recording... ***")
-    time.sleep(0.05)  # Debounce
     
-    # Play start beep to indicate mic is listening
+    # Play start beep IMMEDIATELY (before debounce for instant feedback)
     play_beep(START_BEEP_FILE, "start")
+    
+    time.sleep(0.05)  # Debounce
 
 def wait_for_button_release():
     """Wait for button press again to stop recording"""
