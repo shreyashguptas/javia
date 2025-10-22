@@ -1,73 +1,85 @@
 # Raspberry Pi Client Deployment
 
-This directory contains scripts for deploying and maintaining the Voice Assistant client on Raspberry Pi.
+This directory contains the setup script for deploying and maintaining the Voice Assistant client on Raspberry Pi.
 
 ## 📁 Directory Structure
 
 ```
 deploy/
-├── README.md                 # This file - deployment overview
-├── install_client.sh         # Initial client installation (run once)
-└── update/                   # Update scripts (run after code changes)
-    ├── update.sh            # Client update script
-    └── README.md            # Update documentation
+├── README.md      # This file - deployment overview
+└── setup.sh       # One script for install/update/fix (idempotent)
 ```
 
-## 🚀 Initial Installation
+## 🚀 One Script for Everything
 
-**Run this ONCE when first setting up the Raspberry Pi:**
+The `setup.sh` script handles **everything**: initial installation, updates, and fixes. You can run it as many times as you want - it's completely idempotent.
 
-```bash
-# On your Raspberry Pi
-cd /tmp
-git clone https://github.com/shreyashguptas/javia.git
-cd javia/pi_client/deploy
-bash install_client.sh
-```
+### Prerequisites
 
-This script will:
-- Install system dependencies (PyAudio, GPIO, etc.)
-- Create Python virtual environment
-- Copy client files to `~/javia_client`
-- Configure .env file (prompts for SERVER_URL and CLIENT_API_KEY)
-- Install systemd service
-- Enable autostart on boot
+Before running the script, ensure:
+- Hardware is wired correctly (see docs/HARDWARE.md)
+- I2S is enabled in `/boot/firmware/config.txt`
+- Server is deployed and accessible
 
-**Prerequisites:**
-- Hardware must be wired correctly (see docs/HARDWARE.md)
-- I2S must be enabled in `/boot/firmware/config.txt`
-- Server must be deployed and accessible
-
-## 🔄 Updating After Code Changes
-
-**Run this whenever you push code changes to GitHub:**
+### First Time Installation
 
 ```bash
 # SSH to your Raspberry Pi
-ssh user@pi-zero-2-w-1.local
+ssh user@pi-zero-2-w.local
 
-# Run the update script (as regular user, NOT sudo)
-bash ~/javia_client/deploy/update/update.sh
+# Clone the repository
+cd /tmp
+git clone https://github.com/shreyashguptas/javia.git
+cd javia
+
+# Run setup
+bash pi_client/deploy/setup.sh
 ```
 
-The update script will:
-- Fetch latest code from GitHub
-- Update all application files
-- Preserve your `.env` configuration
-- **Prompt for new SERVER_API_KEY** (in case it changed on server)
-- Update Python dependencies (only if requirements.txt changed)
-- Restart the service
+The script will:
+- ✅ Install system dependencies (PyAudio, GPIO, etc.)
+- ✅ Create Python virtual environment
+- ✅ Copy client files to `~/javia_client`
+- ✅ Prompt for SERVER_URL and CLIENT_API_KEY
+- ✅ Create systemd service
+- ✅ Add user to audio group
+- ✅ Enable autostart on boot
 
-See **[update/README.md](update/README.md)** for detailed update documentation.
+### Updating After Code Changes
+
+When you make changes to the code on your Mac and push to GitHub:
+
+```bash
+# SSH to your Raspberry Pi
+ssh user@pi-zero-2-w.local
+
+# Pull latest changes
+cd /tmp/javia
+git pull
+
+# Run the SAME script again
+bash pi_client/deploy/setup.sh
+```
+
+The script will:
+- ✅ Install any missing dependencies
+- ✅ Copy latest client files
+- ✅ Give you option to keep or update configuration
+- ✅ Update virtual environment
+- ✅ Restart the service
+
+**It's that simple!** No need to remember which script to run - it's always the same one.
+
+### Fixing Issues
+
+If you encounter any issues (audio not working, service not starting, etc.), just run the setup script again:
+
+```bash
+cd /tmp/javia
+bash pi_client/deploy/setup.sh
+```
 
 ## 📝 Quick Reference
-
-### When to Use Each Script
-
-| Script | When to Use | Frequency |
-|--------|-------------|-----------|
-| `install_client.sh` | First-time Pi setup | Once |
-| `update/update.sh` | After pushing code changes | Every update |
 
 ### Important Paths
 
@@ -116,11 +128,21 @@ arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -d 5 test.wav
 
 # Test playback
 aplay -D plughw:0,0 test.wav
+
+# Check audio group membership
+groups $USER
+# Should include: audio gpio
+
+# Check if beep files exist
+ls -lh ~/javia/audio/*.wav
 ```
 
-## 🔑 API Key Synchronization
+## 🔑 Configuration Management
 
-The update script will prompt you to enter the SERVER_API_KEY from your server. This ensures the Pi client can authenticate with the server.
+When you run `setup.sh` on an already-configured system, it will:
+1. Detect existing configuration
+2. Ask if you want to keep it or enter new values
+3. For updates, just choose option 1 to keep existing config
 
 **To find your SERVER_API_KEY on the server:**
 ```bash
@@ -128,7 +150,7 @@ ssh user@your-server-ip
 sudo cat /opt/javia/.env | grep SERVER_API_KEY
 ```
 
-Copy the key and paste it when the Pi update script prompts you.
+The CLIENT_API_KEY on the Pi must match the SERVER_API_KEY on the server.
 
 ## 🔒 Security Notes
 
@@ -137,10 +159,10 @@ Copy the key and paste it when the Pi update script prompts you.
 - ✅ Service runs as your user (not root)
 - ✅ API keys never committed to git
 
-## 📚 Documentation
+## 📚 Additional Documentation
 
-- **[update/README.md](update/README.md)** - Detailed update instructions
 - **[../../docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md)** - Complete deployment guide
 - **[../../docs/HARDWARE.md](../../docs/HARDWARE.md)** - Hardware wiring guide
 - **[../../docs/TROUBLESHOOTING.md](../../docs/TROUBLESHOOTING.md)** - Common issues
+- **[../../docs/GETTING_STARTED.md](../../docs/GETTING_STARTED.md)** - Getting started guide
 
