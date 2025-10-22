@@ -84,7 +84,8 @@ javia/                 # Git repository root
 sudo apt update && sudo apt install -y git
 cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
 cd javia/server/deploy && sudo bash deploy.sh
-# Edit /opt/javia/.env with your API keys
+# Script will prompt for GROQ_API_KEY and auto-generate SERVER_API_KEY
+# SAVE the generated SERVER_API_KEY!
 # Setup Nginx + SSL (see Part 1)
 ```
 
@@ -179,51 +180,47 @@ The script will:
 - Copy server files to `/opt/javia/`
 - Setup virtual environment
 - Install Python dependencies
+- **Prompt you for your GROQ_API_KEY**
+- **Automatically generate a SERVER_API_KEY using UUID7**
+- Configure `.env` file automatically
 - Create systemd service
 - Start the service
 
 **Note**: The deployment script expects files in `/tmp/javia/server/`. It will copy all server files to `/opt/javia/` where the application will run.
 
-### Step 4: Configure Environment Variables
+### Step 4: API Configuration (Automated)
 
-Edit the server configuration:
+During deployment (Step 7 of the script), you will be prompted to:
+
+1. **Enter your GROQ_API_KEY**: Paste your Groq API key when prompted
+2. **Save the generated SERVER_API_KEY**: The script will automatically generate a secure UUID7-based API key and display it prominently
+
+**Important**: When the script displays the `SERVER_API_KEY`, **copy and save it immediately**! You will need this exact key to configure the Raspberry Pi client later.
+
+The script automatically updates the `.env` file with both keys, so you don't need to manually edit it.
+
+**If you need to change the API keys later**, edit:
 
 ```bash
 sudo nano /opt/javia/.env
 ```
 
-Set the following values:
+After manual edits, restart the service:
+
+```bash
+sudo systemctl restart voice-assistant-server.service
+```
+
+**Optional configuration** (advanced users):
+
+You can customize model settings and other parameters in `/opt/javia/.env`:
 
 ```env
-# Required: Your Groq API key
-GROQ_API_KEY=your_actual_groq_api_key_here
-
-# Required: Generate a secure random key for authentication
-SERVER_API_KEY=your_secure_random_key_here
-
 # Optional: Customize models
 WHISPER_MODEL=whisper-large-v3-turbo
 LLM_MODEL=openai/gpt-oss-20b
 TTS_MODEL=playai-tts
 TTS_VOICE=Chip-PlayAI
-```
-
-**Generate a secure API key**:
-
-```bash
-# Option 1: Use openssl
-openssl rand -hex 32
-
-# Option 2: Use Python
-python3 -c "import secrets; print(secrets.token_hex(32))"
-```
-
-Save your `SERVER_API_KEY` - you'll need it for the Pi client!
-
-After editing, restart the service:
-
-```bash
-sudo systemctl restart voice-assistant-server.service
 ```
 
 ### Step 5: Verify Service is Running
