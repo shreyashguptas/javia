@@ -18,7 +18,6 @@ import subprocess
 from pathlib import Path
 from urllib.parse import unquote
 import threading
-from queue import Queue
 import RPi.GPIO as GPIO
 import pyaudio
 import numpy as np
@@ -69,10 +68,8 @@ RESPONSE_FILE = AUDIO_DIR / "response.wav"
 START_BEEP_FILE = AUDIO_DIR / "start_beep.wav"
 STOP_BEEP_FILE = AUDIO_DIR / "stop_beep.wav"
 
-# Performance optimizations: Caching and pre-initialization
+# Performance optimizations: Caching
 _CACHED_AUDIO_DEVICE_INDEX = None
-_PYAUDIO_INSTANCE = None
-_BEEP_PRELOADED = False
 
 # ==================== INITIALIZATION ====================
 
@@ -377,9 +374,8 @@ class StreamingAudioRecorder:
     - Minimal CPU usage during recording
     - Fastest possible capture
     """
-    def __init__(self, max_duration_seconds=300):
+    def __init__(self):
         self.frames = []
-        self.max_samples = int(SAMPLE_RATE * max_duration_seconds * CHANNELS)
         self.chunk_count = 0
         
     def add_chunk(self, audio_data):
@@ -394,60 +390,6 @@ class StreamingAudioRecorder:
     def get_duration(self):
         """Get recording duration in seconds"""
         return self.chunk_count * CHUNK_SIZE / SAMPLE_RATE
-
-def amplify_audio_batch(frames, gain=2.0):
-    """
-    Amplify audio data with optimized batch processing.
-    
-    PERFORMANCE OPTIMIZATIONS:
-    - Batch processing: Process all frames at once instead of individually
-    - Pre-allocated buffer: Single numpy array allocation for entire recording
-    - In-place operations: Minimize memory allocations
-    - Efficient clipping: Single clip operation on entire buffer
-    
-    Args:
-        frames: List of audio chunks (bytes)
-        gain: Amplification factor (default 2.0)
-    
-    Returns:
-        bytes: Amplified audio data ready for WAV file
-    """
-    if gain == 1.0:
-        # No amplification needed - just concatenate
-        return b''.join(frames)
-    
-    try:
-        # Calculate total size for pre-allocation
-        total_bytes = sum(len(frame) for frame in frames)
-        total_samples = total_bytes // 2  # 2 bytes per int16 sample
-        
-        # Pre-allocate single buffer for entire recording (major optimization)
-        audio_buffer = np.empty(total_samples, dtype=np.int16)
-        
-        # Copy all chunks into pre-allocated buffer
-        offset = 0
-        for frame in frames:
-            frame_array = np.frombuffer(frame, dtype=np.int16)
-            frame_len = len(frame_array)
-            audio_buffer[offset:offset + frame_len] = frame_array
-            offset += frame_len
-        
-        # Batch amplification with in-place operations
-        # Use float32 for intermediate calculation to avoid overflow
-        audio_float = audio_buffer.astype(np.float32)
-        audio_float *= gain
-        
-        # Clip to valid int16 range
-        np.clip(audio_float, -32768, 32767, out=audio_float)
-        
-        # Convert back to int16 in-place
-        audio_buffer = audio_float.astype(np.int16)
-        
-        return audio_buffer.tobytes()
-        
-    except Exception as e:
-        print(f"[WARNING] Batch amplification failed: {e}, falling back to concatenation")
-        return b''.join(frames)
 
 def get_audio_device_index(audio):
     """
