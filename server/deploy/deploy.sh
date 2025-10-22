@@ -55,7 +55,7 @@ else
     echo "Expected to find main.py at: $SERVER_DIR/main.py"
     echo ""
     echo "Please ensure you:"
-    echo "  1. Cloned the repository: git clone https://github.com/YOUR_USERNAME/javia.git"
+    echo "  1. Cloned the repository: git clone https://github.com/shreyashguptas/javia.git"
     echo "  2. Are running this script from: /tmp/javia/server/deploy/"
     echo ""
     exit 1
