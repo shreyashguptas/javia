@@ -74,61 +74,70 @@ pip install -r requirements.txt
 
 echo ""
 echo "[7/9] Setting up environment file..."
+
+# Create .env from template if it doesn't exist
 if [ ! -f "$INSTALL_DIR/.env" ]; then
     echo "Creating .env file from template..."
     cp env.example .env
-    echo ""
-    
-    # Prompt for GROQ API Key
-    echo "==================================="
-    echo "API Configuration"
-    echo "==================================="
-    echo ""
-    read -p "Enter your GROQ_API_KEY: " GROQ_KEY
-    
-    # Generate SERVER_API_KEY using uuid7
-    echo ""
-    echo "Generating SERVER_API_KEY using UUID7..."
-    # Install uuid6 package (provides uuid7 support) in a temporary way
-    python3 -c "import sys; import subprocess; subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'uuid6'])"
-    SERVER_KEY=$(python3 -c "from uuid6 import uuid7; print(str(uuid7()))")
-    
-    echo ""
-    echo "==================================="
-    echo "GENERATED SERVER_API_KEY (SAVE THIS!):"
-    echo "$SERVER_KEY"
-    echo "==================================="
-    echo ""
-    echo "IMPORTANT: Copy and save the SERVER_API_KEY above!"
-    echo "You will need it to configure the Raspberry Pi client."
-    echo ""
-    read -p "Press Enter after you've saved the SERVER_API_KEY..."
-    
-    # Update .env file with the values
-    GROQ_KEY="$GROQ_KEY" SERVER_KEY="$SERVER_KEY" python3 << 'EOF'
+else
+    echo ".env file already exists, will update configuration..."
+fi
+
+echo ""
+# Prompt for GROQ API Key
+echo "==================================="
+echo "API Configuration"
+echo "==================================="
+echo ""
+echo "Enter your GROQ_API_KEY (or press Enter to keep existing value):"
+read -p "GROQ_API_KEY: " GROQ_KEY
+
+# Generate SERVER_API_KEY using uuid7
+echo ""
+echo "Generating SERVER_API_KEY using UUID7..."
+# Install uuid6 package (provides uuid7 support) in a temporary way
+python3 -c "import sys; import subprocess; subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'uuid6'])" 2>/dev/null || true
+SERVER_KEY=$(python3 -c "from uuid6 import uuid7; print(str(uuid7()))")
+
+echo ""
+echo "==================================="
+echo "GENERATED SERVER_API_KEY (SAVE THIS!):"
+echo "$SERVER_KEY"
+echo "==================================="
+echo ""
+echo "IMPORTANT: Copy and save the SERVER_API_KEY above!"
+echo "You will need it to configure the Raspberry Pi client."
+echo ""
+read -p "Press Enter after you've saved the SERVER_API_KEY..."
+
+# Update .env file with the values
+GROQ_KEY="$GROQ_KEY" SERVER_KEY="$SERVER_KEY" python3 << 'EOF'
 import os
 import re
 
-groq_key = os.environ['GROQ_KEY']
+groq_key = os.environ.get('GROQ_KEY', '').strip()
 server_key = os.environ['SERVER_KEY']
 
 with open('.env', 'r') as f:
     content = f.read()
 
-# Replace GROQ_API_KEY
-content = re.sub(r'GROQ_API_KEY=.*', f'GROQ_API_KEY={groq_key}', content)
-# Replace SERVER_API_KEY
+# Replace GROQ_API_KEY only if user provided one
+if groq_key:
+    content = re.sub(r'GROQ_API_KEY=.*', f'GROQ_API_KEY={groq_key}', content)
+    print("✓ Updated GROQ_API_KEY")
+else:
+    print("⊘ Kept existing GROQ_API_KEY value")
+
+# Always replace SERVER_API_KEY
 content = re.sub(r'SERVER_API_KEY=.*', f'SERVER_API_KEY={server_key}', content)
+print("✓ Updated SERVER_API_KEY")
 
 with open('.env', 'w') as f:
     f.write(content)
 EOF
-    
-    echo ""
-    echo "Environment file configured successfully!"
-else
-    echo ".env file already exists, skipping configuration"
-fi
+
+echo ""
+echo "Environment file configured successfully!"
 
 echo ""
 echo "[8/9] Setting permissions..."
