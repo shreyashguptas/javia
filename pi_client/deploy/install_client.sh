@@ -59,17 +59,58 @@ pip install python-dotenv
 
 echo ""
 echo "[5/6] Setting up environment file..."
+
+# Create .env from template if it doesn't exist
 if [ ! -f "$INSTALL_DIR/.env" ]; then
+    echo "Creating .env file from template..."
     cp env.example .env
-    echo ""
-    echo "IMPORTANT: Edit $INSTALL_DIR/.env and set:"
-    echo "  - SERVER_URL (e.g., https://yourdomain.com)"
-    echo "  - CLIENT_API_KEY (must match server's SERVER_API_KEY)"
-    echo ""
-    read -p "Press Enter after you've edited the .env file..."
 else
-    echo ".env file already exists"
+    echo ".env file already exists, will update configuration..."
 fi
+
+echo ""
+echo "==================================="
+echo "Client Configuration"
+echo "==================================="
+echo ""
+echo "Enter your SERVER_URL (e.g., https://yourdomain.com):"
+read -p "SERVER_URL: " SERVER_URL_INPUT
+
+echo ""
+echo "Enter your CLIENT_API_KEY (must match server's SERVER_API_KEY):"
+read -p "CLIENT_API_KEY: " CLIENT_API_KEY_INPUT
+
+# Update .env file with the values
+SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" python3 << 'EOF'
+import os
+import re
+
+server_url = os.environ.get('SERVER_URL_INPUT', '').strip()
+client_api_key = os.environ.get('CLIENT_API_KEY_INPUT', '').strip()
+
+with open('.env', 'r') as f:
+    content = f.read()
+
+# Replace SERVER_URL if provided
+if server_url:
+    content = re.sub(r'SERVER_URL=.*', f'SERVER_URL={server_url}', content)
+    print("✓ Updated SERVER_URL")
+else:
+    print("⊘ Kept existing SERVER_URL value")
+
+# Replace CLIENT_API_KEY if provided
+if client_api_key:
+    content = re.sub(r'CLIENT_API_KEY=.*', f'CLIENT_API_KEY={client_api_key}', content)
+    print("✓ Updated CLIENT_API_KEY")
+else:
+    print("⊘ Kept existing CLIENT_API_KEY value")
+
+with open('.env', 'w') as f:
+    f.write(content)
+EOF
+
+echo ""
+echo "Environment file configured successfully!"
 
 # Secure the .env file
 chmod 600 $INSTALL_DIR/.env
