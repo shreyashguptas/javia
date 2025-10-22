@@ -422,7 +422,19 @@ def record_audio():
         print("[AUDIO] " + "="*40)
         print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
         
-        # Close stream before playing beep to avoid conflicts
+        # Validate recording length
+        if len(frames) == 0:
+            print("[ERROR] No audio data recorded")
+            return False
+        
+        # Calculate total recording time
+        total_seconds = chunks_recorded / (SAMPLE_RATE / CHUNK_SIZE)
+        print(f"[AUDIO] Recording complete ({total_seconds:.1f} seconds)")
+        
+        # Get sample width BEFORE terminating audio object
+        sample_width = audio.get_sample_size(AUDIO_FORMAT)
+        
+        # Now close audio resources before playing beep to avoid conflicts
         if stream is not None:
             stream.stop_stream()
             stream.close()
@@ -437,18 +449,6 @@ def record_audio():
         # Wait for button release
         while GPIO.input(BUTTON_PIN) == GPIO.LOW:
             time.sleep(0.01)
-        
-        # Validate recording length
-        if len(frames) == 0:
-            print("[ERROR] No audio data recorded")
-            return False
-        
-        # Calculate total recording time
-        total_seconds = chunks_recorded / (SAMPLE_RATE / CHUNK_SIZE)
-        print(f"[AUDIO] Recording complete ({total_seconds:.1f} seconds)")
-        
-        # Get sample width before terminating
-        sample_width = audio.get_sample_size(AUDIO_FORMAT)
         
         # Amplify audio if gain is not 1.0
         if MICROPHONE_GAIN != 1.0:
