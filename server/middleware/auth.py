@@ -1,7 +1,7 @@
 """Authentication middleware for API key validation"""
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
-from server.config import settings
+from config import settings
 
 # Define the API key header
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)

@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple
 import requests
-from server.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 

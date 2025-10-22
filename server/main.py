@@ -9,14 +9,14 @@ from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, F
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from server.config import settings
-from server.middleware.auth import verify_api_key
-from server.models.requests import (
+from config import settings
+from middleware.auth import verify_api_key
+from models.requests import (
     ProcessAudioResponse,
     ErrorResponse,
     HealthResponse
 )
-from server.services.groq_service import (
+from services.groq_service import (
     transcribe_audio,
     query_llm,
     generate_speech,
@@ -244,7 +244,7 @@ def cleanup_temp_files(*files: Path):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "server.main:app",
+        "main:app",
         host=settings.host,
         port=settings.port,
         log_level=settings.log_level,

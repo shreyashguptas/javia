@@ -8,7 +8,7 @@ User=voiceassistant
 Group=voiceassistant
 WorkingDirectory=/opt/javia
 Environment="PATH=/opt/javia/venv/bin"
-ExecStart=/opt/javia/venv/bin/uvicorn server.main:app --host 0.0.0.0 --port 8000
+ExecStart=/opt/javia/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=10
 
