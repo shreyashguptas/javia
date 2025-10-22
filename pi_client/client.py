@@ -56,6 +56,7 @@ CHUNK_SIZE = 1024
 AUDIO_FORMAT = pyaudio.paInt16
 MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))
 FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
+BEEP_VOLUME = float(os.getenv('BEEP_VOLUME', '0.4'))  # 0.0-1.0, matches TTS output
 
 # File paths
 AUDIO_DIR = Path(os.path.expanduser("~/javia/audio"))
@@ -148,26 +149,38 @@ def generate_beep_sounds():
     try:
         sample_rate = 44100  # Standard sample rate for beeps
         
+        # Volume level to match voice response output (normalized)
+        # Configurable via BEEP_VOLUME in .env (0.0-1.0)
+        beep_volume = BEEP_VOLUME
+        
         # Start beep: Pleasant rising tone (500Hz -> 800Hz)
         print("[INIT] Generating start beep sound...")
-        duration = 0.2  # 200ms - slightly longer for better audibility
-        t = np.linspace(0, duration, int(sample_rate * duration))
+        duration = 0.2  # 200ms
+        num_samples = int(sample_rate * duration)
+        t = np.linspace(0, duration, num_samples)
         
         # Frequency sweep from 500Hz to 800Hz
         start_freq = 500
         end_freq = 800
-        frequency = np.linspace(start_freq, end_freq, len(t))
+        frequency = np.linspace(start_freq, end_freq, num_samples)
         phase = 2 * np.pi * np.cumsum(frequency) / sample_rate
         
-        # Generate tone with smooth envelope
+        # Generate tone
         tone = np.sin(phase)
+        
+        # Generate envelope with exact length matching
+        attack_len = num_samples // 4
+        sustain_len = num_samples // 2
+        release_len = num_samples - attack_len - sustain_len  # Ensure exact match
+        
         envelope = np.concatenate([
-            np.linspace(0, 1, len(t)//4),  # Fast attack
-            np.ones(len(t)//2),             # Sustain
-            np.linspace(1, 0, len(t)//4)    # Smooth release
+            np.linspace(0, 1, attack_len),   # Fast attack
+            np.ones(sustain_len),            # Sustain
+            np.linspace(1, 0, release_len)   # Smooth release
         ])
-        # Increased volume from 0.3 to 0.6 for better audibility
-        start_beep = (tone * envelope * 0.6 * 32767).astype(np.int16)
+        
+        # Apply envelope and volume
+        start_beep = (tone * envelope * beep_volume * 32767).astype(np.int16)
         
         # Save start beep
         with wave.open(str(START_BEEP_FILE), 'wb') as wf:
@@ -181,23 +194,31 @@ def generate_beep_sounds():
         # Stop beep: Pleasant falling tone (700Hz -> 400Hz)
         print("[INIT] Generating stop beep sound...")
         duration = 0.15  # 150ms
-        t = np.linspace(0, duration, int(sample_rate * duration))
+        num_samples = int(sample_rate * duration)
+        t = np.linspace(0, duration, num_samples)
         
         # Frequency sweep from 700Hz to 400Hz
         start_freq = 700
         end_freq = 400
-        frequency = np.linspace(start_freq, end_freq, len(t))
+        frequency = np.linspace(start_freq, end_freq, num_samples)
         phase = 2 * np.pi * np.cumsum(frequency) / sample_rate
         
-        # Generate tone with smooth envelope
+        # Generate tone
         tone = np.sin(phase)
+        
+        # Generate envelope with exact length matching
+        attack_len = num_samples // 4
+        sustain_len = num_samples // 2
+        release_len = num_samples - attack_len - sustain_len  # Ensure exact match
+        
         envelope = np.concatenate([
-            np.linspace(0, 1, len(t)//4),  # Fast attack
-            np.ones(len(t)//2),             # Sustain
-            np.linspace(1, 0, len(t)//4)    # Smooth release
+            np.linspace(0, 1, attack_len),   # Fast attack
+            np.ones(sustain_len),            # Sustain
+            np.linspace(1, 0, release_len)   # Smooth release
         ])
-        # Increased volume from 0.3 to 0.6 for better audibility
-        stop_beep = (tone * envelope * 0.6 * 32767).astype(np.int16)
+        
+        # Apply envelope and volume
+        stop_beep = (tone * envelope * beep_volume * 32767).astype(np.int16)
         
         # Save stop beep
         with wave.open(str(STOP_BEEP_FILE), 'wb') as wf:
@@ -207,7 +228,7 @@ def generate_beep_sounds():
             wf.writeframes(stop_beep.tobytes())
         
         print(f"[INIT] ✓ Stop beep saved: {STOP_BEEP_FILE} ({len(stop_beep) * 2} bytes)")
-        print("[INIT] ✓ Beep sounds generated successfully")
+        print(f"[INIT] ✓ Beep sounds generated successfully (volume: {int(beep_volume*100)}%)")
         
     except Exception as e:
         print(f"[WARNING] Could not generate beep sounds: {e}")
