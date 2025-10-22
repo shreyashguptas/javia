@@ -181,18 +181,38 @@ with open('.env', 'w') as f:
 EOF
     fi
 else
-    # First time setup
+    # First time setup - require values
     echo ""
     echo "==================================="
-    echo "Client Configuration"
+    echo "Client Configuration (REQUIRED)"
     echo "==================================="
     echo ""
-    echo "Enter your SERVER_URL (e.g., https://yourdomain.com):"
-    read -p "SERVER_URL: " SERVER_URL_INPUT
+    
+    # Require SERVER_URL
+    while true; do
+        echo "Enter your SERVER_URL (e.g., https://yourdomain.com):"
+        read -p "SERVER_URL: " SERVER_URL_INPUT
+        if [ -n "$SERVER_URL_INPUT" ]; then
+            break
+        else
+            echo "❌ SERVER_URL cannot be empty. Please enter a valid URL."
+            echo ""
+        fi
+    done
     
     echo ""
-    echo "Enter your CLIENT_API_KEY (must match server's SERVER_API_KEY):"
-    read -p "CLIENT_API_KEY: " CLIENT_API_KEY_INPUT
+    
+    # Require CLIENT_API_KEY
+    while true; do
+        echo "Enter your CLIENT_API_KEY (must match server's SERVER_API_KEY):"
+        read -p "CLIENT_API_KEY: " CLIENT_API_KEY_INPUT
+        if [ -n "$CLIENT_API_KEY_INPUT" ]; then
+            break
+        else
+            echo "❌ CLIENT_API_KEY cannot be empty. Please enter a valid API key."
+            echo ""
+        fi
+    done
     
     # Update .env file
     SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" python3 << 'EOF'
@@ -226,6 +246,47 @@ fi
 
 # Secure the .env file
 chmod 600 "$INSTALL_DIR/.env"
+
+# Validate configuration
+echo ""
+echo "Validating configuration..."
+cd "$INSTALL_DIR"
+python3 << 'EOF'
+import os
+from dotenv import load_dotenv
+
+# Load the .env file from current directory
+load_dotenv('.env')
+
+server_url = os.getenv('SERVER_URL', '')
+client_api_key = os.getenv('CLIENT_API_KEY', '')
+
+errors = []
+
+# Check SERVER_URL
+if not server_url or server_url in ['https://yourdomain.com', 'http://localhost:8000']:
+    errors.append("SERVER_URL is not configured or using default value")
+
+# Check CLIENT_API_KEY  
+if not client_api_key or client_api_key in ['YOUR_API_KEY_HERE', 'YOUR_SECURE_API_KEY_HERE']:
+    errors.append("CLIENT_API_KEY is not configured or using default value")
+
+if errors:
+    print("❌ Configuration errors found:")
+    for error in errors:
+        print(f"  - {error}")
+    exit(1)
+else:
+    print("✓ Configuration validated successfully")
+EOF
+
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Configuration validation failed!"
+    echo "Please check your .env file: $INSTALL_DIR/.env"
+    exit 1
+fi
+
 echo "✓ Environment configured"
 echo ""
 
@@ -280,18 +341,51 @@ echo ""
 # ==================== STEP 8: START SERVICE ====================
 echo "[8/8] Starting service..."
 sudo systemctl start voice-assistant-client.service
-echo "✓ Service started"
-echo ""
 
-# ==================== COMPLETION ====================
-echo "==========================================="
-echo "Setup Complete!"
-echo "==========================================="
-echo ""
+# Wait for service to initialize
+sleep 2
 
-if [ "$NEEDS_LOGOUT" = true ]; then
-    echo "⚠️  IMPORTANT: You must log out and log back in for audio group permissions to take effect!"
+# Check if service is actually running
+echo ""
+echo "Checking service status..."
+if systemctl is-active --quiet voice-assistant-client.service; then
+    echo "✅ Service is RUNNING successfully!"
     echo ""
+    echo "==========================================="
+    echo "Setup Complete!"
+    echo "==========================================="
+    echo ""
+    
+    if [ "$NEEDS_LOGOUT" = true ]; then
+        echo "⚠️  IMPORTANT: You must log out and log back in for audio group permissions to take effect!"
+        echo ""
+    fi
+    
+    echo "✅ Client is ready! You can now press the button to use the voice assistant."
+    echo ""
+else
+    echo "❌ Service FAILED to start!"
+    echo ""
+    echo "==========================================="
+    echo "Setup Failed - Service Not Running"
+    echo "==========================================="
+    echo ""
+    echo "Error logs (last 20 lines):"
+    echo "-------------------------------------"
+    sudo journalctl -u voice-assistant-client.service -n 20 --no-pager
+    echo "-------------------------------------"
+    echo ""
+    echo "Common issues:"
+    echo "  - Invalid SERVER_URL or CLIENT_API_KEY in .env"
+    echo "  - Missing audio group permissions (log out and back in)"
+    echo "  - Hardware issues (GPIO, audio devices)"
+    echo ""
+    echo "To fix:"
+    echo "  1. Check the error logs above"
+    echo "  2. Edit .env if needed: nano $INSTALL_DIR/.env"
+    echo "  3. Run this script again: bash $SCRIPT_DIR/setup.sh"
+    echo ""
+    exit 1
 fi
 
 echo "Service Status:"

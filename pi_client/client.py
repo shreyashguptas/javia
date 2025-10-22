@@ -101,9 +101,10 @@ def setup():
     print(f"[INIT] Amplifier SD pin configured on GPIO{AMPLIFIER_SD_PIN}")
     
     # Check API key
-    if CLIENT_API_KEY == "YOUR_API_KEY_HERE":
+    if CLIENT_API_KEY in ["YOUR_API_KEY_HERE", "YOUR_SECURE_API_KEY_HERE", ""]:
         print("\n[ERROR] CLIENT API KEY NOT SET!")
         print("[ERROR] Please set your API key in the .env file.")
+        print("[ERROR] Run the setup script: bash ~/javia_client/deploy/setup.sh")
         sys.exit(1)
     
     # Check server URL

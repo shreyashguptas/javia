@@ -40,10 +40,17 @@ The script will:
 - ✅ Install system dependencies (PyAudio, GPIO, etc.)
 - ✅ Create Python virtual environment
 - ✅ Copy client files to `~/javia_client`
-- ✅ Prompt for SERVER_URL and CLIENT_API_KEY
+- ✅ Prompt for SERVER_URL and CLIENT_API_KEY (first time only)
+- ✅ Validate configuration
 - ✅ Create systemd service
 - ✅ Add user to audio group
 - ✅ Enable autostart on boot
+- ✅ Start the service and verify it's running
+
+**If the service fails to start**, the script will:
+- ❌ Show error logs explaining why
+- 💡 Provide troubleshooting steps
+- 🔄 Allow you to fix and re-run the script
 
 ### Updating After Code Changes
 
@@ -78,6 +85,28 @@ If you encounter any issues (audio not working, service not starting, etc.), jus
 cd /tmp/javia
 bash pi_client/deploy/setup.sh
 ```
+
+## ✅ Verify Client is Working
+
+After running the setup script, check if the client is running:
+
+```bash
+# Quick check - is the service running?
+systemctl is-active voice-assistant-client.service && echo "✅ Running!" || echo "❌ Not running"
+
+# Detailed status
+sudo systemctl status voice-assistant-client.service
+
+# View live logs (press Ctrl+C to exit)
+sudo journalctl -u voice-assistant-client.service -f
+```
+
+**If running successfully**, you'll see:
+- Status: `active (running)`
+- Log message: `[READY] System ready! Press button to start...`
+- **You can now press your button and speak!**
+
+**If not running**, check the logs for errors and re-run the setup script.
 
 ## 📝 Quick Reference
 
