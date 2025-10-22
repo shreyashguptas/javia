@@ -391,8 +391,11 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
-# Audio device access
-DeviceAllow=/dev/snd
+# Device access permissions
+DeviceAllow=/dev/snd rw
+DeviceAllow=/dev/gpiomem rw
+DeviceAllow=/dev/mem rw
+DevicePolicy=closed
 
 [Install]
 WantedBy=multi-user.target
