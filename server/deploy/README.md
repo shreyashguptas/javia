@@ -1,123 +1,106 @@
-# Server Deployment Scripts
+# Server Deployment
 
-## Initial Deployment
+This directory contains scripts for deploying and maintaining the Voice Assistant server.
 
-Use `deploy.sh` for first-time installation:
+## 📁 Directory Structure
+
+```
+deploy/
+├── README.md                 # This file - deployment overview
+├── deploy.sh                 # Initial server deployment (run once)
+├── update/                   # Update scripts (run after code changes)
+│   ├── update.sh            # Server update script
+│   └── README.md            # Update documentation
+├── systemd/                  # Systemd service files
+│   └── voice-assistant-server.service
+└── nginx/                    # Nginx configuration (optional)
+```
+
+## 🚀 Initial Deployment
+
+**Run this ONCE when first setting up the server:**
 
 ```bash
-# On your server (Debian VM)
+# On your Debian server
 cd /tmp
 git clone https://github.com/shreyashguptas/javia.git
 cd javia/server/deploy
 sudo bash deploy.sh
 ```
 
-This will:
-- Install system dependencies
+This script will:
+- Install system dependencies (Python, nginx, git)
 - Create service user
 - Set up Python virtual environment
-- Configure .env file (prompts for API keys)
+- Configure .env file (prompts for GROQ_API_KEY)
+- Generate SERVER_API_KEY (save this for Pi client!)
 - Install systemd service
 - Configure nginx
 - Install Cloudflare tunnel
 
-## Updating the Server
+**After initial deployment, continue with Cloudflare setup** (see output instructions).
 
-After you've pushed code changes to GitHub, use `update.sh`:
+## 🔄 Updating After Code Changes
+
+**Run this whenever you push code changes to GitHub:**
 
 ```bash
 # SSH to your server
-ssh your-username@your-server-ip
+ssh user@your-server-ip
 
 # Run the update script
-sudo bash /opt/javia/deploy/update.sh
+sudo bash /opt/javia/deploy/update/update.sh
 ```
 
-**Or**, if you first need to get the update script itself (if it didn't exist before):
+See **[update/README.md](update/README.md)** for detailed update documentation.
+
+## 📝 Quick Reference
+
+### When to Use Each Script
+
+| Script | When to Use | Frequency |
+|--------|-------------|-----------|
+| `deploy.sh` | First-time server setup | Once |
+| `update/update.sh` | After pushing code changes | Every update |
+
+### Important Paths
+
+- **Installation directory**: `/opt/javia`
+- **Service user**: `voiceassistant`
+- **Virtual environment**: `/opt/javia/venv`
+- **Configuration**: `/opt/javia/.env`
+- **Service file**: `/etc/systemd/system/voice-assistant-server.service`
+- **Nginx config**: `/etc/nginx/sites-available/voice-assistant`
+
+### Common Commands
 
 ```bash
-# Get the latest update script
-cd /tmp
-git clone https://github.com/shreyashguptas/javia.git javia_temp
-sudo cp javia_temp/server/deploy/update.sh /opt/javia/deploy/
-sudo chmod +x /opt/javia/deploy/update.sh
-rm -rf javia_temp
+# View service status
+sudo systemctl status voice-assistant-server.service
 
-# Now run it
-sudo /opt/javia/deploy/update.sh
-```
+# View logs
+sudo journalctl -u voice-assistant-server.service -f
 
-### What the Update Script Does
-
-1. ✅ Backs up your `.env` file (preserves API keys)
-2. ✅ Fetches latest code from GitHub
-3. ✅ Stops the service
-4. ✅ Updates all application files
-5. ✅ Restores your `.env` file
-6. ✅ Updates Python dependencies (if requirements.txt changed)
-7. ✅ Restarts the service
-8. ✅ Shows service status and recent logs
-
-### Important Notes
-
-- **Your `.env` file is preserved** - API keys and configuration won't be lost
-- **Virtual environment is preserved** - Only dependencies are updated
-- **Service is automatically restarted** - No manual intervention needed
-- **Zero downtime** is not guaranteed - there will be a brief service interruption during update
-
-## Troubleshooting
-
-### View Logs
-```bash
-# Live logs
-journalctl -u voice-assistant-server.service -f
-
-# Last 50 lines
-journalctl -u voice-assistant-server.service -n 50
-```
-
-### Check Service Status
-```bash
-systemctl status voice-assistant-server.service
-```
-
-### Restart Service Manually
-```bash
+# Restart service
 sudo systemctl restart voice-assistant-server.service
-```
 
-### Check if Service is Running
-```bash
+# Test server locally
 curl http://localhost:8000/health
-# Should return: {"status":"healthy","version":"1.0.0"}
+
+# Test server publicly
+curl https://yourdomain.com/health
 ```
 
-### Roll Back to Previous Version
+## 🔒 Security Notes
 
-If the update breaks something:
+- ✅ `.env` file contains sensitive API keys
+- ✅ File permissions set to 600 (owner read/write only)
+- ✅ Service runs as non-root user `voiceassistant`
+- ✅ API keys never committed to git
 
-```bash
-# Stop the service
-sudo systemctl stop voice-assistant-server.service
+## 📚 Documentation
 
-# Clone a specific previous commit
-cd /tmp
-git clone https://github.com/shreyashguptas/javia.git javia_rollback
-cd javia_rollback
-git checkout <PREVIOUS_COMMIT_HASH>
-
-# Copy files
-cd server
-sudo rsync -av --exclude='venv' --exclude='.env' --exclude='__pycache__' ./ /opt/javia/
-
-# Restart
-sudo systemctl start voice-assistant-server.service
-```
-
-## Files
-
-- `deploy.sh` - Initial deployment script
-- `update.sh` - Update script for code changes
-- `systemd/voice-assistant-server.service` - Systemd service file
-- `nginx/voice-assistant.conf` - Nginx configuration (optional, deploy.sh creates inline)
+- **[update/README.md](update/README.md)** - Detailed update instructions
+- **[../../docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md)** - Complete deployment guide
+- **[../../docs/TROUBLESHOOTING.md](../../docs/TROUBLESHOOTING.md)** - Common issues
 

@@ -63,13 +63,53 @@ done
 echo "✓ Files updated"
 
 echo ""
-echo "[5/7] Restoring .env file..."
+echo "[5/7] Restoring .env file and updating SERVER_API_KEY..."
 if [ -f "/tmp/javia_client_env_backup_$$" ]; then
     cp "/tmp/javia_client_env_backup_$$" "$INSTALL_DIR/.env"
     chmod 600 "$INSTALL_DIR/.env"
     echo "✓ .env file restored"
 else
     echo "⚠ No backup .env found - you may need to reconfigure"
+fi
+
+# Prompt for new SERVER_API_KEY
+echo ""
+echo "==================================="
+echo "API Key Configuration"
+echo "==================================="
+echo ""
+echo "Enter the SERVER_API_KEY from your server:"
+echo "(You can find it on the server at: /opt/javia/.env)"
+echo "(Or press Enter to keep the existing CLIENT_API_KEY)"
+read -p "SERVER_API_KEY: " NEW_API_KEY
+
+if [ -n "$NEW_API_KEY" ]; then
+    # Update CLIENT_API_KEY in .env file
+    cd "$INSTALL_DIR"
+    python3 << 'EOF'
+import os
+import re
+
+new_key = os.environ.get('NEW_API_KEY', '').strip()
+
+if new_key:
+    with open('.env', 'r') as f:
+        content = f.read()
+    
+    # Replace CLIENT_API_KEY
+    content = re.sub(r'CLIENT_API_KEY=.*', f'CLIENT_API_KEY={new_key}', content)
+    
+    with open('.env', 'w') as f:
+        f.write(content)
+    
+    print("✓ Updated CLIENT_API_KEY with new SERVER_API_KEY")
+else:
+    print("⊘ Keeping existing CLIENT_API_KEY")
+EOF
+    export NEW_API_KEY="$NEW_API_KEY"
+    echo "✓ API key updated in .env file"
+else
+    echo "⊘ Keeping existing CLIENT_API_KEY"
 fi
 
 echo ""
