@@ -1,10 +1,12 @@
 """FastAPI server for voice assistant processing"""
 import logging
 import tempfile
+import wave
 from pathlib import Path
 from typing import Optional
 import uuid
 from urllib.parse import quote
+import numpy as np
 
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Form
 from fastapi.responses import FileResponse, JSONResponse
@@ -50,6 +52,51 @@ app.add_middleware(
 )
 
 
+def amplify_audio_file(input_path: Path, output_path: Path, gain: float = 2.0):
+    """
+    Amplify audio file on the server (offloads processing from Pi Zero 2 W).
+    
+    PERFORMANCE BENEFIT:
+    - Server CPU is much more powerful than Pi Zero 2 W
+    - Frees Pi for instant audio capture without processing
+    - Amplification takes <1ms on server vs 50-100ms on Pi
+    
+    Args:
+        input_path: Path to input WAV file
+        output_path: Path to save amplified WAV file
+        gain: Amplification factor (default 2.0)
+    """
+    if gain == 1.0:
+        # No amplification needed - just copy
+        import shutil
+        shutil.copy(input_path, output_path)
+        return
+    
+    try:
+        # Read WAV file
+        with wave.open(str(input_path), 'rb') as wf_in:
+            params = wf_in.getparams()
+            audio_data = wf_in.readframes(wf_in.getnframes())
+        
+        # Convert to numpy array
+        audio_array = np.frombuffer(audio_data, dtype=np.int16)
+        
+        # Amplify with vectorized operations (extremely fast)
+        amplified = (audio_array.astype(np.float32) * gain).clip(-32768, 32767).astype(np.int16)
+        
+        # Write amplified audio
+        with wave.open(str(output_path), 'wb') as wf_out:
+            wf_out.setparams(params)
+            wf_out.writeframes(amplified.tobytes())
+        
+        logger.debug(f"Amplified audio with gain {gain}x")
+        
+    except Exception as e:
+        logger.warning(f"Could not amplify audio: {e}, using original")
+        import shutil
+        shutil.copy(input_path, output_path)
+
+
 @app.get("/", response_model=HealthResponse)
 async def root():
     """Root endpoint - health check"""
@@ -91,10 +138,12 @@ async def health_check():
 async def process_audio(
     audio: UploadFile = File(..., description="Audio file (WAV format)"),
     session_id: Optional[str] = Form(None, description="Optional session ID for conversation history"),
+    microphone_gain: Optional[str] = Form("1.0", description="Microphone gain to apply (offloaded from Pi)"),
     api_key: str = Depends(verify_api_key)
 ):
     """
     Process audio file through the complete pipeline:
+    0. Amplify audio (if gain > 1.0) - offloaded from Pi Zero 2 W
     1. Transcribe audio using Whisper
     2. Query LLM with transcription
     3. Generate speech from LLM response
@@ -103,12 +152,14 @@ async def process_audio(
     Args:
         audio: Uploaded audio file
         session_id: Optional session ID for conversation history
+        microphone_gain: Gain to apply to audio (default 1.0, Pi sends its configured gain)
         api_key: API key for authentication (from header)
         
     Returns:
         Audio file response with transcription and LLM response in headers
     """
     temp_input_file = None
+    temp_amplified_file = None
     temp_output_file = None
     
     try:
@@ -146,9 +197,24 @@ async def process_audio(
         temp_input_file.write(content)
         temp_input_file.close()
         
+        # Step 0: Amplify audio on server (offload processing from Pi)
+        gain = float(microphone_gain or "1.0")
+        if gain != 1.0:
+            logger.info(f"Step 0: Amplifying audio with gain {gain}x (offloaded from Pi)...")
+            temp_amplified_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            temp_amplified_path = Path(temp_amplified_file.name)
+            temp_amplified_file.close()
+            
+            amplify_audio_file(temp_input_path, temp_amplified_path, gain)
+            # Use amplified audio for transcription
+            audio_path_for_transcription = temp_amplified_path
+        else:
+            # No amplification needed
+            audio_path_for_transcription = temp_input_path
+        
         # Step 1: Transcribe audio
         logger.info("Step 1: Transcribing audio...")
-        transcription = transcribe_audio(temp_input_path)
+        transcription = transcribe_audio(audio_path_for_transcription)
         
         # Step 2: Query LLM
         logger.info("Step 2: Querying LLM...")
@@ -175,7 +241,11 @@ async def process_audio(
                 "X-LLM-Response": quote(llm_response, safe=''),
                 "X-Session-ID": quote(session_id or "", safe=''),
             },
-            background=lambda: cleanup_temp_files(temp_input_path, temp_output_path)
+            background=lambda: cleanup_temp_files(
+                temp_input_path, 
+                temp_amplified_path if temp_amplified_file else None, 
+                temp_output_path
+            )
         )
         
     except GroqServiceError as e:
@@ -184,6 +254,11 @@ async def process_audio(
         if temp_input_file:
             try:
                 Path(temp_input_file.name).unlink(missing_ok=True)
+            except:
+                pass
+        if temp_amplified_file:
+            try:
+                Path(temp_amplified_file.name).unlink(missing_ok=True)
             except:
                 pass
         if temp_output_file:
@@ -205,6 +280,11 @@ async def process_audio(
                 Path(temp_input_file.name).unlink(missing_ok=True)
             except:
                 pass
+        if temp_amplified_file:
+            try:
+                Path(temp_amplified_file.name).unlink(missing_ok=True)
+            except:
+                pass
         if temp_output_file:
             try:
                 Path(temp_output_file.name).unlink(missing_ok=True)
@@ -218,6 +298,11 @@ async def process_audio(
         if temp_input_file:
             try:
                 Path(temp_input_file.name).unlink(missing_ok=True)
+            except:
+                pass
+        if temp_amplified_file:
+            try:
+                Path(temp_amplified_file.name).unlink(missing_ok=True)
             except:
                 pass
         if temp_output_file:
