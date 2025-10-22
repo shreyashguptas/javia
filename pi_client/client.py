@@ -291,6 +291,16 @@ def record_audio():
     try:
         audio = pyaudio.PyAudio()
         
+        # List all available devices for debugging
+        print("[AUDIO] Available audio devices:")
+        for i in range(audio.get_device_count()):
+            try:
+                info = audio.get_device_info_by_index(i)
+                if info['maxInputChannels'] > 0:
+                    print(f"[AUDIO]   Device {i}: {info['name']} (Inputs: {info['maxInputChannels']})")
+            except Exception as e:
+                continue
+        
         # Find I2S input device
         device_index = None
         for i in range(audio.get_device_count()):
@@ -300,25 +310,40 @@ def record_audio():
                                                       'voicehat' in info['name'].lower() or
                                                       'sndrpigooglevoi' in info['name'].lower()):
                     device_index = i
-                    print(f"[AUDIO] Using device: {info['name']}")
+                    print(f"[AUDIO] Using Google Voice HAT: {info['name']}")
                     break
             except Exception as e:
                 continue
         
+        # If Voice HAT not found, try to find any valid input device
         if device_index is None:
-            print("[WARNING] Google Voice HAT not found, using default input device")
-            device_index = None
+            print("[WARNING] Google Voice HAT not found, searching for alternative input device...")
+            for i in range(audio.get_device_count()):
+                try:
+                    info = audio.get_device_info_by_index(i)
+                    if info['maxInputChannels'] > 0:
+                        device_index = i
+                        print(f"[AUDIO] Using alternative device: {info['name']}")
+                        break
+                except Exception as e:
+                    continue
         
-        # Validate device
-        if device_index is not None:
-            try:
-                device_info = audio.get_device_info_by_index(device_index)
-                if device_info['maxInputChannels'] < 1:
-                    print("[WARNING] Selected device has no input channels, using default")
-                    device_index = None
-            except Exception as e:
-                print(f"[WARNING] Could not validate device: {e}, using default")
-                device_index = None
+        # Final validation
+        if device_index is None:
+            print("[ERROR] No input devices found!")
+            print("[ERROR] Please check your audio hardware configuration")
+            print("[ERROR] Run 'arecord -l' to see available recording devices")
+            return False
+        
+        # Validate selected device
+        try:
+            device_info = audio.get_device_info_by_index(device_index)
+            if device_info['maxInputChannels'] < 1:
+                print("[ERROR] Selected device has no input channels")
+                return False
+        except Exception as e:
+            print(f"[ERROR] Could not validate device: {e}")
+            return False
         
         # Open stream
         stream = audio.open(
