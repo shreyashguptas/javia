@@ -58,6 +58,8 @@ FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
 AUDIO_DIR = Path(os.path.expanduser("~/javia/audio"))
 RECORDING_FILE = AUDIO_DIR / "recording.wav"
 RESPONSE_FILE = AUDIO_DIR / "response.wav"
+START_BEEP_FILE = AUDIO_DIR / "start_beep.wav"
+STOP_BEEP_FILE = AUDIO_DIR / "stop_beep.wav"
 
 # ==================== INITIALIZATION ====================
 
@@ -121,6 +123,113 @@ def setup():
         print(f"[WARNING] Could not list playback devices: {e}")
     
     print("\n[READY] System ready! Press button to start...\n")
+    
+    # Generate beep sounds
+    generate_beep_sounds()
+
+# ==================== BEEP SOUNDS ====================
+
+def generate_beep_sounds():
+    """Generate pleasant beep sounds for start and stop feedback"""
+    try:
+        sample_rate = 44100  # Standard sample rate for beeps
+        
+        # Start beep: Pleasant rising tone (500Hz -> 800Hz)
+        print("[INIT] Generating start beep sound...")
+        duration = 0.15  # 150ms
+        t = np.linspace(0, duration, int(sample_rate * duration))
+        
+        # Frequency sweep from 500Hz to 800Hz
+        start_freq = 500
+        end_freq = 800
+        frequency = np.linspace(start_freq, end_freq, len(t))
+        phase = 2 * np.pi * np.cumsum(frequency) / sample_rate
+        
+        # Generate tone with smooth envelope
+        tone = np.sin(phase)
+        envelope = np.concatenate([
+            np.linspace(0, 1, len(t)//4),  # Fast attack
+            np.ones(len(t)//2),             # Sustain
+            np.linspace(1, 0, len(t)//4)    # Smooth release
+        ])
+        start_beep = (tone * envelope * 0.3 * 32767).astype(np.int16)
+        
+        # Save start beep
+        with wave.open(str(START_BEEP_FILE), 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(start_beep.tobytes())
+        
+        # Stop beep: Pleasant falling tone (700Hz -> 400Hz)
+        print("[INIT] Generating stop beep sound...")
+        duration = 0.12  # 120ms
+        t = np.linspace(0, duration, int(sample_rate * duration))
+        
+        # Frequency sweep from 700Hz to 400Hz
+        start_freq = 700
+        end_freq = 400
+        frequency = np.linspace(start_freq, end_freq, len(t))
+        phase = 2 * np.pi * np.cumsum(frequency) / sample_rate
+        
+        # Generate tone with smooth envelope
+        tone = np.sin(phase)
+        envelope = np.concatenate([
+            np.linspace(0, 1, len(t)//4),  # Fast attack
+            np.ones(len(t)//2),             # Sustain
+            np.linspace(1, 0, len(t)//4)    # Smooth release
+        ])
+        stop_beep = (tone * envelope * 0.3 * 32767).astype(np.int16)
+        
+        # Save stop beep
+        with wave.open(str(STOP_BEEP_FILE), 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(stop_beep.tobytes())
+        
+        print("[INIT] Beep sounds generated successfully")
+        
+    except Exception as e:
+        print(f"[WARNING] Could not generate beep sounds: {e}")
+
+def play_beep(beep_file, description=""):
+    """Play a short beep sound through the amplifier"""
+    if not beep_file.exists():
+        print(f"[WARNING] Beep file not found: {beep_file}")
+        return
+    
+    process = None
+    try:
+        # Enable amplifier
+        GPIO.output(AMPLIFIER_SD_PIN, GPIO.HIGH)
+        time.sleep(0.05)  # Short stabilization
+        
+        # Play beep
+        process = subprocess.Popen(
+            ['aplay', '-D', 'plughw:0,0', str(beep_file)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        
+        # Wait for beep to finish (max 1 second)
+        process.wait(timeout=1)
+        
+        # Small delay before disabling amp
+        time.sleep(0.05)
+        
+        # Disable amplifier
+        GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
+        
+    except Exception as e:
+        print(f"[WARNING] Could not play beep: {e}")
+        GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=0.5)
+            except:
+                process.kill()
 
 # ==================== BUTTON HANDLING ====================
 
@@ -133,6 +242,9 @@ def wait_for_button_press():
     
     print("[BUTTON] *** BUTTON PRESSED! Starting recording... ***")
     time.sleep(0.05)  # Debounce
+    
+    # Play start beep to indicate mic is listening
+    play_beep(START_BEEP_FILE, "start")
 
 def wait_for_button_release():
     """Wait for button press again to stop recording"""
@@ -147,6 +259,10 @@ def wait_for_button_release():
         time.sleep(0.01)
     
     print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+    
+    # Play stop beep to indicate mic stopped listening
+    play_beep(STOP_BEEP_FILE, "stop")
+    
     time.sleep(0.05)  # Debounce
     
     # Wait for release
