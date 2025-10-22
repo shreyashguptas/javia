@@ -67,6 +67,9 @@ RESPONSE_FILE = AUDIO_DIR / "response.wav"
 START_BEEP_FILE = AUDIO_DIR / "start_beep.wav"
 STOP_BEEP_FILE = AUDIO_DIR / "stop_beep.wav"
 
+# Performance optimization: Cached audio device index
+_CACHED_AUDIO_DEVICE_INDEX = None
+
 # ==================== INITIALIZATION ====================
 
 def setup():
@@ -327,16 +330,120 @@ def wait_for_button_release():
 
 # ==================== AUDIO RECORDING ====================
 
-def amplify_audio(audio_data, gain=2.0):
-    """Amplify audio data by the specified gain factor"""
-    audio_array = np.frombuffer(audio_data, dtype=np.int16)
-    amplified = audio_array * gain
-    amplified = np.clip(amplified, -32768, 32767)
-    amplified = amplified.astype(np.int16)
-    return amplified.tobytes()
+def amplify_audio_batch(frames, gain=2.0):
+    """
+    Amplify audio data with optimized batch processing.
+    
+    PERFORMANCE OPTIMIZATIONS:
+    - Batch processing: Process all frames at once instead of individually
+    - Pre-allocated buffer: Single numpy array allocation for entire recording
+    - In-place operations: Minimize memory allocations
+    - Efficient clipping: Single clip operation on entire buffer
+    
+    Args:
+        frames: List of audio chunks (bytes)
+        gain: Amplification factor (default 2.0)
+    
+    Returns:
+        bytes: Amplified audio data ready for WAV file
+    """
+    if gain == 1.0:
+        # No amplification needed - just concatenate
+        return b''.join(frames)
+    
+    try:
+        # Calculate total size for pre-allocation
+        total_bytes = sum(len(frame) for frame in frames)
+        total_samples = total_bytes // 2  # 2 bytes per int16 sample
+        
+        # Pre-allocate single buffer for entire recording (major optimization)
+        audio_buffer = np.empty(total_samples, dtype=np.int16)
+        
+        # Copy all chunks into pre-allocated buffer
+        offset = 0
+        for frame in frames:
+            frame_array = np.frombuffer(frame, dtype=np.int16)
+            frame_len = len(frame_array)
+            audio_buffer[offset:offset + frame_len] = frame_array
+            offset += frame_len
+        
+        # Batch amplification with in-place operations
+        # Use float32 for intermediate calculation to avoid overflow
+        audio_float = audio_buffer.astype(np.float32)
+        audio_float *= gain
+        
+        # Clip to valid int16 range
+        np.clip(audio_float, -32768, 32767, out=audio_float)
+        
+        # Convert back to int16 in-place
+        audio_buffer = audio_float.astype(np.int16)
+        
+        return audio_buffer.tobytes()
+        
+    except Exception as e:
+        print(f"[WARNING] Batch amplification failed: {e}, falling back to concatenation")
+        return b''.join(frames)
+
+def get_audio_device_index(audio):
+    """
+    Find and cache the I2S audio input device index.
+    
+    PERFORMANCE OPTIMIZATION:
+    - Caches device index globally to avoid repeated enumeration
+    - Only scans devices once per program execution
+    
+    Args:
+        audio: PyAudio instance
+    
+    Returns:
+        int: Device index or None if not found
+    """
+    global _CACHED_AUDIO_DEVICE_INDEX
+    
+    # Return cached value if available
+    if _CACHED_AUDIO_DEVICE_INDEX is not None:
+        return _CACHED_AUDIO_DEVICE_INDEX
+    
+    # Find I2S input device (first time only)
+    device_index = None
+    device_count = audio.get_device_count()
+    
+    # First pass: Look for Voice HAT devices
+    for i in range(device_count):
+        try:
+            info = audio.get_device_info_by_index(i)
+            if info['maxInputChannels'] > 0 and ('googlevoicehat' in info['name'].lower() or 
+                                                  'voicehat' in info['name'].lower() or
+                                                  'sndrpigooglevoi' in info['name'].lower()):
+                device_index = i
+                break
+        except Exception:
+            continue
+    
+    # Second pass: If Voice HAT not found, use any valid input device
+    if device_index is None:
+        for i in range(device_count):
+            try:
+                info = audio.get_device_info_by_index(i)
+                if info['maxInputChannels'] > 0:
+                    device_index = i
+                    break
+            except Exception:
+                continue
+    
+    # Cache the result
+    _CACHED_AUDIO_DEVICE_INDEX = device_index
+    return device_index
 
 def record_audio():
-    """Record audio from I2S microphone until button is pressed again"""
+    """
+    Record audio from I2S microphone until button is pressed again.
+    
+    PERFORMANCE OPTIMIZATIONS:
+    - Uses cached device index (avoids repeated enumeration)
+    - Batch audio amplification (processes entire recording at once)
+    - Pre-allocated buffers in amplification function
+    """
     print("[AUDIO] Setting up recording...")
     
     audio = None
@@ -345,29 +452,8 @@ def record_audio():
     try:
         audio = pyaudio.PyAudio()
         
-        # Find I2S input device (quickly, without debug output)
-        device_index = None
-        for i in range(audio.get_device_count()):
-            try:
-                info = audio.get_device_info_by_index(i)
-                if info['maxInputChannels'] > 0 and ('googlevoicehat' in info['name'].lower() or 
-                                                      'voicehat' in info['name'].lower() or
-                                                      'sndrpigooglevoi' in info['name'].lower()):
-                    device_index = i
-                    break
-            except Exception as e:
-                continue
-        
-        # If Voice HAT not found, try to find any valid input device
-        if device_index is None:
-            for i in range(audio.get_device_count()):
-                try:
-                    info = audio.get_device_info_by_index(i)
-                    if info['maxInputChannels'] > 0:
-                        device_index = i
-                        break
-                except Exception as e:
-                    continue
+        # Use cached device lookup (major performance improvement)
+        device_index = get_audio_device_index(audio)
         
         # Final validation
         if device_index is None:
@@ -451,24 +537,16 @@ def record_audio():
         while GPIO.input(BUTTON_PIN) == GPIO.LOW:
             time.sleep(0.01)
         
-        # Amplify audio if gain is not 1.0
-        if MICROPHONE_GAIN != 1.0:
-            print(f"[AUDIO] Applying gain of {MICROPHONE_GAIN}x...")
-            amplified_frames = []
-            for frame in frames:
-                try:
-                    amplified_frames.append(amplify_audio(frame, MICROPHONE_GAIN))
-                except Exception as e:
-                    print(f"[WARNING] Could not amplify chunk: {e}")
-                    amplified_frames.append(frame)
-            frames = amplified_frames
+        # Batch amplification (major performance improvement over per-chunk processing)
+        print(f"[AUDIO] Processing audio with gain {MICROPHONE_GAIN}x...")
+        audio_data = amplify_audio_batch(frames, MICROPHONE_GAIN)
         
         # Save to WAV file
         with wave.open(str(RECORDING_FILE), 'wb') as wf:
             wf.setnchannels(CHANNELS)
             wf.setsampwidth(sample_width)
             wf.setframerate(SAMPLE_RATE)
-            wf.writeframes(b''.join(frames))
+            wf.writeframes(audio_data)
         
         # Validate saved file
         if not RECORDING_FILE.exists():
