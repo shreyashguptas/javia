@@ -5,6 +5,11 @@ Records audio, sends to server for processing, plays response
 """
 
 import os
+
+# Suppress JACK server startup attempts (must be set before importing pyaudio)
+os.environ['JACK_NO_START_SERVER'] = '1'
+os.environ['JACK_NO_AUDIO_RESERVATION'] = '1'
+
 import sys
 import time
 import wave
@@ -16,9 +21,6 @@ import RPi.GPIO as GPIO
 import pyaudio
 import numpy as np
 from dotenv import load_dotenv
-
-# Suppress JACK server startup attempts (improves performance)
-os.environ['JACK_NO_START_SERVER'] = '1'
 
 # Suppress ALSA warnings
 from ctypes import *
@@ -88,6 +90,7 @@ def setup():
         print(f"[INIT] Could not clean old files: {e}")
     
     # Setup GPIO
+    GPIO.setwarnings(False)  # Suppress warnings about channels already in use
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     print(f"[INIT] Button configured on GPIO{BUTTON_PIN}")
@@ -153,30 +156,30 @@ def generate_beep_sounds():
         # Configurable via BEEP_VOLUME in .env (0.0-1.0)
         beep_volume = BEEP_VOLUME
         
-        # Start beep: Pleasant rising tone (500Hz -> 800Hz)
+        # Start beep: Short rising tone (600Hz -> 900Hz)
         print("[INIT] Generating start beep sound...")
-        duration = 0.2  # 200ms
+        duration = 0.1  # 100ms - short and snappy
         num_samples = int(sample_rate * duration)
         t = np.linspace(0, duration, num_samples)
         
-        # Frequency sweep from 500Hz to 800Hz
-        start_freq = 500
-        end_freq = 800
+        # Frequency sweep from 600Hz to 900Hz
+        start_freq = 600
+        end_freq = 900
         frequency = np.linspace(start_freq, end_freq, num_samples)
         phase = 2 * np.pi * np.cumsum(frequency) / sample_rate
         
         # Generate tone
         tone = np.sin(phase)
         
-        # Generate envelope with exact length matching
-        attack_len = num_samples // 4
+        # Generate envelope with exact length matching - quick attack/release
+        attack_len = num_samples // 5
         sustain_len = num_samples // 2
         release_len = num_samples - attack_len - sustain_len  # Ensure exact match
         
         envelope = np.concatenate([
-            np.linspace(0, 1, attack_len),   # Fast attack
-            np.ones(sustain_len),            # Sustain
-            np.linspace(1, 0, release_len)   # Smooth release
+            np.linspace(0, 1, attack_len),   # Quick attack
+            np.ones(sustain_len),            # Brief sustain
+            np.linspace(1, 0, release_len)   # Quick release
         ])
         
         # Apply envelope and volume
@@ -191,30 +194,31 @@ def generate_beep_sounds():
         
         print(f"[INIT] ✓ Start beep saved: {START_BEEP_FILE} ({len(start_beep) * 2} bytes)")
         
-        # Stop beep: Pleasant falling tone (700Hz -> 400Hz)
+        # Stop beep: Reverse of start (falling tone 900Hz -> 600Hz)
         print("[INIT] Generating stop beep sound...")
-        duration = 0.15  # 150ms
+        # Use same duration for consistency
+        duration = 0.1  # 100ms
         num_samples = int(sample_rate * duration)
         t = np.linspace(0, duration, num_samples)
         
-        # Frequency sweep from 700Hz to 400Hz
-        start_freq = 700
-        end_freq = 400
+        # Frequency sweep from 900Hz to 600Hz (reverse of start)
+        start_freq = 900
+        end_freq = 600
         frequency = np.linspace(start_freq, end_freq, num_samples)
         phase = 2 * np.pi * np.cumsum(frequency) / sample_rate
         
         # Generate tone
         tone = np.sin(phase)
         
-        # Generate envelope with exact length matching
-        attack_len = num_samples // 4
+        # Generate envelope with exact length matching - same as start beep
+        attack_len = num_samples // 5
         sustain_len = num_samples // 2
         release_len = num_samples - attack_len - sustain_len  # Ensure exact match
         
         envelope = np.concatenate([
-            np.linspace(0, 1, attack_len),   # Fast attack
-            np.ones(sustain_len),            # Sustain
-            np.linspace(1, 0, release_len)   # Smooth release
+            np.linspace(0, 1, attack_len),   # Quick attack
+            np.ones(sustain_len),            # Brief sustain
+            np.linspace(1, 0, release_len)   # Quick release
         ])
         
         # Apply envelope and volume
@@ -416,6 +420,23 @@ def record_audio():
                 continue
         
         print("[AUDIO] " + "="*40)
+        print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+        
+        # Close stream before playing beep to avoid conflicts
+        if stream is not None:
+            stream.stop_stream()
+            stream.close()
+            stream = None
+        if audio is not None:
+            audio.terminate()
+            audio = None
+        
+        # Play stop beep to indicate recording stopped
+        play_beep(STOP_BEEP_FILE, "stop")
+        
+        # Wait for button release
+        while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+            time.sleep(0.01)
         
         # Validate recording length
         if len(frames) == 0:
