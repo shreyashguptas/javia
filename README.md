@@ -1,6 +1,6 @@
-# Raspberry Pi Voice Assistant
+# J.A.V.I.A.
 
-A distributed voice assistant with client-server architecture: Raspberry Pi handles audio I/O, server processes via Groq API.
+Your mentor that you can ask any question, brainstorm ideas, solve problems, learn new topics, clear doubs and confusion.
 
 ## 🎯 Project Overview
 
