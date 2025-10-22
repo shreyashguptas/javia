@@ -294,24 +294,80 @@ echo ""
 echo "[7/8] Setting up system permissions and service..."
 
 NEEDS_LOGOUT=false
+GROUPS_ASSIGNED_BUT_NOT_ACTIVE=false
 
-# Add user to audio group if not already
+# Check if groups are ACTIVE in current session (not just assigned)
+CURRENT_GROUPS=$(id -Gn)
+
+# Add user to audio group if not already assigned
 if ! groups $USER | grep -q "\baudio\b"; then
     sudo usermod -a -G audio $USER
     echo "✓ User added to audio group"
     NEEDS_LOGOUT=true
 else
-    echo "✓ User already in audio group"
+    echo "✓ User assigned to audio group"
+    # Check if it's active in current session
+    if ! echo "$CURRENT_GROUPS" | grep -q "\baudio\b"; then
+        echo "  ⚠️  But audio group is NOT active in this session!"
+        GROUPS_ASSIGNED_BUT_NOT_ACTIVE=true
+    fi
 fi
 
-# Add user to gpio group if not already
+# Add user to gpio group if not already assigned
 if ! groups $USER | grep -q "\bgpio\b"; then
     sudo usermod -a -G gpio $USER
     echo "✓ User added to gpio group"
     NEEDS_LOGOUT=true
 else
-    echo "✓ User already in gpio group"
+    echo "✓ User assigned to gpio group"
+    # Check if it's active in current session
+    if ! echo "$CURRENT_GROUPS" | grep -q "\bgpio\b"; then
+        echo "  ⚠️  But gpio group is NOT active in this session!"
+        GROUPS_ASSIGNED_BUT_NOT_ACTIVE=true
+    fi
 fi
+
+# If groups are assigned but not active, we must exit
+if [ "$GROUPS_ASSIGNED_BUT_NOT_ACTIVE" = true ]; then
+    echo ""
+    echo "================================================================"
+    echo "❌ CRITICAL: Group Permissions Not Active"
+    echo "================================================================"
+    echo ""
+    echo "You are assigned to the audio/gpio groups, but they are NOT"
+    echo "active in your current session. This WILL cause the service to fail."
+    echo ""
+    echo "YOU MUST LOG OUT AND LOG BACK IN for group permissions to work."
+    echo ""
+    echo "Steps:"
+    echo "  1. Exit this SSH session: exit"
+    echo "  2. SSH back in: ssh $USER@$(hostname)"
+    echo "  3. Run this script again: bash /tmp/javia/pi_client/deploy/setup.sh"
+    echo ""
+    echo "================================================================"
+    exit 1
+fi
+
+if [ "$NEEDS_LOGOUT" = true ]; then
+    echo ""
+    echo "================================================================"
+    echo "⚠️  Groups Added - Logout Required"
+    echo "================================================================"
+    echo ""
+    echo "You have been added to audio/gpio groups."
+    echo ""
+    echo "YOU MUST LOG OUT AND LOG BACK IN for changes to take effect."
+    echo ""
+    echo "Steps:"
+    echo "  1. Exit this SSH session: exit"
+    echo "  2. SSH back in: ssh $USER@$(hostname)"
+    echo "  3. Run this script again: bash /tmp/javia/pi_client/deploy/setup.sh"
+    echo ""
+    echo "================================================================"
+    exit 0
+fi
+
+echo "✓ All required groups are active in this session"
 
 # Create systemd service file
 echo "Creating systemd service..."

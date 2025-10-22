@@ -26,7 +26,9 @@ Before running the script, ensure:
 ```bash
 # SSH to your Raspberry Pi
 ssh user@pi-zero-2-w.local
+```
 
+```bash
 # Clone the repository
 cd
 cd /tmp
@@ -54,7 +56,12 @@ The script will:
 - 💡 Provide troubleshooting steps
 - 🔄 Allow you to fix and re-run the script
 
-**⚠️ First-Time Setup**: If this is your first time running the script, you'll be added to the `audio` and `gpio` groups. You **must log out and log back in** for these permissions to take effect before the client will work.
+**⚠️ IMPORTANT - Group Permissions**:
+- The script requires you to be in `audio` and `gpio` groups
+- If you're not in these groups, the script will add you and **EXIT**
+- If you're assigned to the groups but they're not active in your current session, the script will **EXIT**
+- **You MUST log out and log back in**, then run the script again
+- The script will NOT start the service until group permissions are active
 
 ### Updating After Code Changes
 
