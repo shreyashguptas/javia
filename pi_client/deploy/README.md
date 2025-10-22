@@ -28,7 +28,9 @@ Before running the script, ensure:
 ssh user@pi-zero-2-w.local
 
 # Clone the repository
+cd
 cd /tmp
+rm -rf javia
 git clone https://github.com/shreyashguptas/javia.git
 cd javia
 
@@ -43,7 +45,7 @@ The script will:
 - ✅ Prompt for SERVER_URL and CLIENT_API_KEY (first time only)
 - ✅ Validate configuration
 - ✅ Create systemd service
-- ✅ Add user to audio group
+- ✅ Add user to `audio` and `gpio` groups (required for hardware access)
 - ✅ Enable autostart on boot
 - ✅ Start the service and verify it's running
 
@@ -51,6 +53,8 @@ The script will:
 - ❌ Show error logs explaining why
 - 💡 Provide troubleshooting steps
 - 🔄 Allow you to fix and re-run the script
+
+**⚠️ First-Time Setup**: If this is your first time running the script, you'll be added to the `audio` and `gpio` groups. You **must log out and log back in** for these permissions to take effect before the client will work.
 
 ### Updating After Code Changes
 

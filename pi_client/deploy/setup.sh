@@ -290,8 +290,10 @@ fi
 echo "✓ Environment configured"
 echo ""
 
-# ==================== STEP 7: AUDIO GROUP & SYSTEMD ====================
+# ==================== STEP 7: AUDIO & GPIO GROUPS & SYSTEMD ====================
 echo "[7/8] Setting up system permissions and service..."
+
+NEEDS_LOGOUT=false
 
 # Add user to audio group if not already
 if ! groups $USER | grep -q "\baudio\b"; then
@@ -300,7 +302,15 @@ if ! groups $USER | grep -q "\baudio\b"; then
     NEEDS_LOGOUT=true
 else
     echo "✓ User already in audio group"
-    NEEDS_LOGOUT=false
+fi
+
+# Add user to gpio group if not already
+if ! groups $USER | grep -q "\bgpio\b"; then
+    sudo usermod -a -G gpio $USER
+    echo "✓ User added to gpio group"
+    NEEDS_LOGOUT=true
+else
+    echo "✓ User already in gpio group"
 fi
 
 # Create systemd service file
@@ -357,12 +367,14 @@ if systemctl is-active --quiet voice-assistant-client.service; then
     echo ""
     
     if [ "$NEEDS_LOGOUT" = true ]; then
-        echo "⚠️  IMPORTANT: You must log out and log back in for audio group permissions to take effect!"
+        echo "⚠️  IMPORTANT: You must log out and log back in for group permissions to take effect!"
+        echo ""
+        echo "After logging back in, the client will work when you press the button."
+        echo ""
+    else
+        echo "✅ Client is ready! You can now press the button to use the voice assistant."
         echo ""
     fi
-    
-    echo "✅ Client is ready! You can now press the button to use the voice assistant."
-    echo ""
 else
     echo "❌ Service FAILED to start!"
     echo ""
@@ -377,13 +389,14 @@ else
     echo ""
     echo "Common issues:"
     echo "  - Invalid SERVER_URL or CLIENT_API_KEY in .env"
-    echo "  - Missing audio group permissions (log out and back in)"
-    echo "  - Hardware issues (GPIO, audio devices)"
+    echo "  - Missing gpio/audio group permissions (need to log out and back in)"
+    echo "  - Hardware issues (GPIO pins, audio devices)"
     echo ""
     echo "To fix:"
     echo "  1. Check the error logs above"
-    echo "  2. Edit .env if needed: nano $INSTALL_DIR/.env"
-    echo "  3. Run this script again: bash $SCRIPT_DIR/setup.sh"
+    echo "  2. If you see 'No access to /dev/mem': Log out and log back in (group membership)"
+    echo "  3. Edit .env if needed: nano $INSTALL_DIR/.env"
+    echo "  4. Run this script again: bash $SCRIPT_DIR/setup.sh"
     echo ""
     exit 1
 fi
