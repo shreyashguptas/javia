@@ -21,12 +21,12 @@ VENV_DIR="$INSTALL_DIR/venv"
 SERVICE_USER="voiceassistant"
 SERVICE_GROUP="voiceassistant"
 
-echo "[1/8] Installing system dependencies..."
+echo "[1/9] Installing system dependencies..."
 apt update
 apt install -y python3 python3-pip python3-venv nginx git
 
 echo ""
-echo "[2/8] Creating service user..."
+echo "[2/9] Creating service user..."
 if ! id -u $SERVICE_USER > /dev/null 2>&1; then
     useradd -r -s /bin/false -d $INSTALL_DIR $SERVICE_USER
     echo "Created user: $SERVICE_USER"
@@ -35,16 +35,20 @@ else
 fi
 
 echo ""
-echo "[3/8] Creating installation directory..."
+echo "[3/9] Determining source directory..."
+# This script expects to be run from the cloned Git repository
+# Expected location: /tmp/javia/server/deploy/
+# Must resolve paths BEFORE changing directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVER_DIR="$(dirname "$SCRIPT_DIR")"
+
+echo ""
+echo "[4/9] Creating installation directory..."
 mkdir -p $INSTALL_DIR
 cd $INSTALL_DIR
 
 echo ""
-echo "[4/8] Copying application files..."
-# This script expects to be run from the cloned Git repository
-# Expected location: /tmp/javia/server/deploy/
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVER_DIR="$(dirname "$SCRIPT_DIR")"
+echo "[5/9] Copying application files..."
 
 if [ -f "$SERVER_DIR/main.py" ]; then
     echo "Copying files from: $SERVER_DIR"
@@ -62,14 +66,14 @@ else
 fi
 
 echo ""
-echo "[5/8] Creating Python virtual environment..."
+echo "[6/9] Creating Python virtual environment..."
 python3 -m venv $VENV_DIR
 source $VENV_DIR/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
 echo ""
-echo "[6/8] Setting up environment file..."
+echo "[7/9] Setting up environment file..."
 if [ ! -f "$INSTALL_DIR/.env" ]; then
     echo "Creating .env file from template..."
     cp env.example .env
@@ -84,12 +88,12 @@ else
 fi
 
 echo ""
-echo "[7/8] Setting permissions..."
+echo "[8/9] Setting permissions..."
 chown -R $SERVICE_USER:$SERVICE_GROUP $INSTALL_DIR
 chmod 600 $INSTALL_DIR/.env
 
 echo ""
-echo "[8/8] Installing systemd service..."
+echo "[9/9] Installing systemd service..."
 cp deploy/systemd/voice-assistant-server.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable voice-assistant-server.service
