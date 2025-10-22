@@ -10,6 +10,7 @@ import requests
 import wave
 import numpy as np
 from pathlib import Path
+from urllib.parse import unquote
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -160,9 +161,9 @@ def test_audio_processing():
             print(f"Response code: {response.status_code}")
             
             if response.status_code == 200:
-                # Get metadata from headers
-                transcription = response.headers.get('X-Transcription', '')
-                llm_response = response.headers.get('X-LLM-Response', '')
+                # Get metadata from headers (URL-decode to handle Unicode characters)
+                transcription = unquote(response.headers.get('X-Transcription', ''))
+                llm_response = unquote(response.headers.get('X-LLM-Response', ''))
                 
                 print(f"✓ Audio processing successful")
                 print(f"  Transcription: {transcription[:100] if transcription else '(empty - expected for test audio)'}")

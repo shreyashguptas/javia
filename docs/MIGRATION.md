@@ -256,6 +256,42 @@ source ~/venvs/pi/bin/activate
 python3 javia.py
 ```
 
+## Version Updates
+
+### v1.1.0 - Unicode Character Encoding Fix
+
+**Issue:** Server returned 500 error when LLM response contained Unicode characters (e.g., smart quotes, accented characters).
+
+**Error message:**
+```
+'latin-1' codec can't encode character '\u2019' in position 186: ordinal not in range(256)
+```
+
+**Solution:** HTTP response headers are now URL-encoded to support Unicode characters.
+
+**Files changed:**
+- `server/main.py` - Added URL encoding for response headers
+- `pi_client/client.py` - Added URL decoding for response headers
+- `server/test_server.py` - Added URL decoding for test compatibility
+- `pi_client/test_client.py` - Added URL decoding for test compatibility
+
+**Migration:**
+If you're running an older version, update both server and client:
+
+```bash
+# Update server
+cd ~/voice_assistant/server
+git pull
+sudo systemctl restart voice-assistant-server
+
+# Update client
+cd ~/voice_assistant/pi_client
+git pull
+sudo systemctl restart voice-assistant-client
+```
+
+**Backward compatibility:** This change is backward compatible. The URL encoding only affects special characters; regular ASCII text remains unchanged.
+
 ## Questions?
 
 See:

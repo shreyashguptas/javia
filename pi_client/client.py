@@ -11,6 +11,7 @@ import wave
 import requests
 import subprocess
 from pathlib import Path
+from urllib.parse import unquote
 import RPi.GPIO as GPIO
 import pyaudio
 import numpy as np
@@ -348,9 +349,9 @@ def send_to_server():
             print(f"[SERVER] Response code: {response.status_code}")
             
             if response.status_code == 200:
-                # Get metadata from headers
-                transcription = response.headers.get('X-Transcription', '')
-                llm_response = response.headers.get('X-LLM-Response', '')
+                # Get metadata from headers (URL-decode to handle Unicode characters)
+                transcription = unquote(response.headers.get('X-Transcription', ''))
+                llm_response = unquote(response.headers.get('X-LLM-Response', ''))
                 
                 print(f"[SUCCESS] Transcription: \"{transcription}\"")
                 print(f"[SUCCESS] LLM Response: \"{llm_response}\"")

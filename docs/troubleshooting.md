@@ -153,6 +153,12 @@ ping api.groq.com
 curl -I https://api.groq.com
 ```
 
+**500 Internal Server Error - Character Encoding:**
+- Error: `'latin-1' codec can't encode character...`
+- Cause: LLM response contains Unicode characters (e.g., smart quotes, special characters)
+- Solution: Fixed in latest version - server now URL-encodes headers
+- Ensure both server and client code are up to date
+
 ### 9. Power Issues
 
 **Check:**

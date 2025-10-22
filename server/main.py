@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 import uuid
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Form
 from fastapi.responses import FileResponse, JSONResponse
@@ -162,6 +163,7 @@ async def process_audio(
         generate_speech(llm_response, temp_output_path)
         
         # Return audio file with metadata in headers
+        # URL-encode header values to handle Unicode characters (HTTP headers must be latin-1 compatible)
         logger.info("Processing complete, returning audio file")
         
         return FileResponse(
@@ -169,9 +171,9 @@ async def process_audio(
             media_type="audio/wav",
             filename="response.wav",
             headers={
-                "X-Transcription": transcription,
-                "X-LLM-Response": llm_response,
-                "X-Session-ID": session_id or "",
+                "X-Transcription": quote(transcription, safe=''),
+                "X-LLM-Response": quote(llm_response, safe=''),
+                "X-Session-ID": quote(session_id or "", safe=''),
             },
             background=lambda: cleanup_temp_files(temp_input_path, temp_output_path)
         )

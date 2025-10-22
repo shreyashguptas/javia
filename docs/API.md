@@ -69,10 +69,12 @@ Process audio through complete pipeline: transcription → LLM → TTS.
 **Response**: `200 OK`
 - **Content-Type**: `audio/wav`
 - **Headers**:
-  - `X-Transcription`: Transcribed text from audio
-  - `X-LLM-Response`: LLM response text
-  - `X-Session-ID`: Session ID (if provided)
+  - `X-Transcription`: Transcribed text from audio (URL-encoded to support Unicode)
+  - `X-LLM-Response`: LLM response text (URL-encoded to support Unicode)
+  - `X-Session-ID`: Session ID (if provided, URL-encoded)
 - **Body**: Audio file (WAV format) containing TTS response
+
+**Note**: All response headers are URL-encoded to support Unicode characters (e.g., smart quotes, accented characters). Clients should URL-decode these values using `urllib.parse.unquote()` in Python or equivalent in other languages.
 
 **Error Responses**:
 - `400 Bad Request`: Invalid file format, size, or corrupted audio
@@ -95,6 +97,7 @@ curl -X POST \
 **Python Example**:
 ```python
 import requests
+from urllib.parse import unquote
 
 headers = {'X-API-Key': 'your_api_key'}
 files = {'audio': ('recording.wav', open('recording.wav', 'rb'), 'audio/wav')}
@@ -109,9 +112,9 @@ response = requests.post(
 )
 
 if response.status_code == 200:
-    # Get metadata
-    transcription = response.headers.get('X-Transcription')
-    llm_response = response.headers.get('X-LLM-Response')
+    # Get metadata (URL-decode to handle Unicode characters)
+    transcription = unquote(response.headers.get('X-Transcription', ''))
+    llm_response = unquote(response.headers.get('X-LLM-Response', ''))
     
     # Save audio
     with open('response.wav', 'wb') as f:
