@@ -24,16 +24,20 @@ sudo apt update
 sudo apt install -y python3-pyaudio python3-rpi.gpio python3-requests python3-numpy python3-pip
 
 echo ""
-echo "[2/6] Creating installation directory..."
+echo "[2/6] Determining source directory..."
+# This script expects to be run from the cloned Git repository
+# Expected location: /tmp/voice_assistant/pi_client/deploy/
+# Must resolve paths BEFORE changing directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLIENT_DIR="$(dirname "$SCRIPT_DIR")"
+
+echo ""
+echo "[3/6] Creating installation directory..."
 mkdir -p $INSTALL_DIR
 cd $INSTALL_DIR
 
 echo ""
-echo "[3/6] Copying client files..."
-# This script expects to be run from the cloned Git repository
-# Expected location: /tmp/javia/pi_client/deploy/
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLIENT_DIR="$(dirname "$SCRIPT_DIR")"
+echo "[4/6] Copying client files..."
 
 if [ -f "$CLIENT_DIR/client.py" ]; then
     echo "Copying files from: $CLIENT_DIR"
@@ -44,21 +48,21 @@ else
     echo "Expected to find client.py at: $CLIENT_DIR/client.py"
     echo ""
     echo "Please ensure you:"
-    echo "  1. Cloned the repository: git clone https://github.com/YOUR_USERNAME/javia.git"
-    echo "  2. Are running this script from: /tmp/javia/pi_client/deploy/"
+    echo "  1. Cloned the repository: git clone https://github.com/YOUR_USERNAME/voice_assistant.git"
+    echo "  2. Are running this script from: /tmp/voice_assistant/pi_client/deploy/"
     echo ""
     exit 1
 fi
 
 echo ""
-echo "[4/6] Creating Python virtual environment..."
+echo "[5/6] Creating Python virtual environment..."
 python3 -m venv --system-site-packages $VENV_DIR
 source $VENV_DIR/bin/activate
 pip install --upgrade pip
 pip install python-dotenv
 
 echo ""
-echo "[5/6] Setting up environment file..."
+echo "[6/6] Setting up environment file..."
 
 # Create .env from template if it doesn't exist
 if [ ! -f "$INSTALL_DIR/.env" ]; then
@@ -116,7 +120,7 @@ echo "Environment file configured successfully!"
 chmod 600 $INSTALL_DIR/.env
 
 echo ""
-echo "[6/6] Setting up systemd service..."
+echo "[7/7] Setting up systemd service..."
 cat > /tmp/voice-assistant-client.service <<EOF
 [Unit]
 Description=Voice Assistant Client
