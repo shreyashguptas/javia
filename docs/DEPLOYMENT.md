@@ -6,7 +6,20 @@ This guide covers deploying the voice assistant in a client-server architecture.
 
 - **Raspberry Pi Client**: Records audio, sends to server, plays response
 - **Debian Server**: Processes audio via Groq API, returns speech response
-- **Cloudflare**: Provides DNS, SSL/TLS, DDoS protection
+- **Cloudflare Tunnel**: Provides automatic SSL/TLS, secure tunneling, DDoS protection
+
+### Why Cloudflare Tunnel?
+
+This deployment uses **Cloudflare Tunnel** (cloudflared) which provides several advantages:
+
+- ✅ **No public IP required** - Works behind NAT/firewall
+- ✅ **No port forwarding** - No need to open ports 80/443
+- ✅ **Automatic SSL/TLS** - Zero certificate management
+- ✅ **Built-in DDoS protection** - Enterprise-grade security
+- ✅ **Free tier available** - No cost for basic usage
+- ✅ **Simple setup** - 5 commands to get running
+
+Traditional deployments require managing SSL certificates, opening firewall ports, and exposing your server's IP. Cloudflare Tunnel eliminates all of that!
 
 ## Deployment Approach
 
@@ -56,9 +69,11 @@ javia/                 # Git repository root
 - **CPU**: 2+ cores recommended
 - **RAM**: 2GB+ recommended
 - **Disk**: 10GB+ free space
-- **Network**: Static public IP address
-- **Ports**: 80, 443 open to internet
+- **Network**: Internet connection (public IP not required with Cloudflare Tunnel!)
+- **Ports**: No inbound ports need to be open (Cloudflare Tunnel uses outbound connections)
 - **Git**: Installed
+
+**Note:** With Cloudflare Tunnel, your server can be behind NAT/firewall and doesn't need a public IP address or open ports!
 
 ### Raspberry Pi Requirements
 
@@ -78,7 +93,7 @@ javia/                 # Git repository root
 
 **For the impatient**, here's the entire deployment in brief:
 
-**Server (5 minutes):**
+**Server (10 minutes):**
 ```bash
 # On your server
 sudo apt update && sudo apt install -y git
@@ -86,7 +101,8 @@ cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
 cd javia/server/deploy && sudo bash deploy.sh
 # Script will prompt for GROQ_API_KEY and auto-generate SERVER_API_KEY
 # SAVE the generated SERVER_API_KEY!
-# Setup Nginx + SSL (see Part 1)
+# Then setup Cloudflare Tunnel (see Part 1, Step 6)
+# Commands: cloudflared tunnel login → create → configure → route → start
 ```
 
 **Pi Client (5 minutes):**
@@ -175,7 +191,7 @@ sudo bash deploy.sh
 ```
 
 The script will:
-- Install Python, pip, nginx
+- Install Python, pip, nginx, wget
 - Create service user (`voiceassistant`)
 - Copy server files to `/opt/javia/`
 - Setup virtual environment
@@ -185,6 +201,8 @@ The script will:
 - Configure `.env` file automatically
 - Create systemd service
 - Start the service
+- **Configure Nginx as a reverse proxy (HTTP on port 80)**
+- **Install Cloudflare Tunnel (cloudflared) for automatic SSL**
 
 **Note**: The deployment script expects files in `/tmp/javia/server/`. It will copy all server files to `/opt/javia/` where the application will run.
 
@@ -249,120 +267,138 @@ View logs:
 sudo journalctl -u voice-assistant-server.service -f
 ```
 
-### Step 6: Configure Nginx
+### Step 6: Setup Cloudflare Tunnel (Automatic SSL)
 
-Edit the Nginx configuration:
+The deployment script has already:
+- ✅ Configured Nginx as a reverse proxy on port 80
+- ✅ Installed Cloudflare Tunnel (cloudflared)
+   - If not then go here - https://pkg.cloudflareclient.com/#debian
+
+Now you need to configure the tunnel to connect your domain to the server.
+
+**Prerequisites:**
+- Your domain must already be added to Cloudflare
+- Your domain's nameservers must point to Cloudflare
+
+#### 6.1: Authenticate with Cloudflare
+
+Run the following command:
 
 ```bash
-sudo nano /opt/javia/deploy/nginx/voice-assistant.conf
+cloudflared tunnel login
 ```
 
-Update the following:
+This will:
+1. Display a URL in the terminal
+2. Open your browser (or copy the URL to a browser)
+3. Ask you to select your domain and authorize the tunnel
+4. Save authentication credentials to `~/.cloudflared/cert.pem`
 
-1. Replace `yourdomain.com` with your actual domain (appears multiple times)
-2. Update SSL certificate paths (we'll set these up with Cloudflare)
+#### 6.2: Create a Tunnel
 
-Copy to Nginx:
+Create a named tunnel:
 
 ```bash
-sudo cp /opt/javia/deploy/nginx/voice-assistant.conf /etc/nginx/sites-available/voice-assistant
-sudo ln -s /etc/nginx/sites-available/voice-assistant /etc/nginx/sites-enabled/
+cloudflared tunnel create javia-voice-assistant
 ```
 
-Remove default site:
+This will:
+- Create a tunnel with the name `javia-voice-assistant`
+- Display a **Tunnel ID** (UUID) - **save this!**
+- Create a credentials file at `~/.cloudflared/<TUNNEL_ID>.json`
 
-```bash
-sudo rm /etc/nginx/sites-enabled/default
+Example output:
+```
+Tunnel credentials written to /root/.cloudflared/12345678-abcd-efgh-ijkl-123456789012.json
+Created tunnel javia-voice-assistant with id 12345678-abcd-efgh-ijkl-123456789012
 ```
 
-### Step 7: Setup Cloudflare SSL Certificates
+#### 6.3: Configure the Tunnel
 
-#### 7.1: Create Origin Certificate in Cloudflare
-
-1. Log into Cloudflare dashboard
-2. Select your domain
-3. Go to **SSL/TLS** → **Origin Server**
-4. Click **Create Certificate**
-5. Select:
-   - **Generate private key and CSR with Cloudflare**
-   - **RSA** key
-   - **Valid for 15 years**
-   - Hostnames: `yourdomain.com` and `*.yourdomain.com`
-6. Click **Create**
-7. Copy both:
-   - **Origin Certificate** (save as `cloudflare-origin.pem`)
-   - **Private Key** (save as `cloudflare-origin.key`)
-
-#### 7.2: Install Certificate on Server
-
-Create SSL directory:
+Create the tunnel configuration file (replace `YOUR_DOMAIN` with your actual domain and `<TUNNEL_ID>` with the ID from step 6.2):
 
 ```bash
-sudo mkdir -p /etc/ssl/private
-sudo chmod 700 /etc/ssl/private
+sudo mkdir -p /etc/cloudflared
+
+sudo tee /etc/cloudflared/config.yml > /dev/null <<EOF
+tunnel: <TUNNEL_ID>
+credentials-file: /root/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: YOUR_DOMAIN.com
+    service: http://localhost:80
+  - service: http_status:404
+EOF
 ```
 
-Save origin certificate:
+**Example** (if your tunnel ID is `12345678-abcd-efgh-ijkl-123456789012` and domain is `voice.example.com`):
 
 ```bash
-sudo nano /etc/ssl/certs/cloudflare-origin.pem
-# Paste the origin certificate, save and exit
+sudo tee /etc/cloudflared/config.yml > /dev/null <<EOF
+tunnel: 12345678-abcd-efgh-ijkl-123456789012
+credentials-file: /root/.cloudflared/12345678-abcd-efgh-ijkl-123456789012.json
+
+ingress:
+  - hostname: voice.example.com
+    service: http://localhost:80
+  - service: http_status:404
+EOF
 ```
 
-Save private key:
+#### 6.4: Route Your Domain to the Tunnel
+
+This command automatically creates a CNAME record in your Cloudflare DNS:
 
 ```bash
-sudo nano /etc/ssl/private/cloudflare-origin.key
-# Paste the private key, save and exit
+cloudflared tunnel route dns javia-voice-assistant YOUR_DOMAIN.com
 ```
 
-Set permissions:
+Replace `YOUR_DOMAIN.com` with your actual domain (e.g., `voice.example.com`).
 
-```bash
-sudo chmod 644 /etc/ssl/certs/cloudflare-origin.pem
-sudo chmod 600 /etc/ssl/private/cloudflare-origin.key
+You should see:
+```
+Created CNAME record for YOUR_DOMAIN.com which will route to tunnel ...
 ```
 
-#### 7.3: Configure SSL Mode in Cloudflare
+#### 6.5: Install and Start the Tunnel Service
 
-1. Go to **SSL/TLS** → **Overview**
-2. Set encryption mode to **Full (strict)**
-3. This ensures end-to-end encryption
-
-### Step 8: Configure Cloudflare DNS
-
-1. Go to **DNS** → **Records**
-2. Add an A record:
-   - **Type**: A
-   - **Name**: @ (or your subdomain)
-   - **IPv4 address**: Your server's public IP
-   - **Proxy status**: ✅ Proxied (orange cloud)
-   - **TTL**: Auto
-3. Click **Save**
-
-DNS propagation typically takes a few minutes.
-
-### Step 9: Start Nginx
-
-Test Nginx configuration:
+Install the tunnel as a system service:
 
 ```bash
-sudo nginx -t
+sudo cloudflared service install
 ```
 
-If successful, start Nginx:
+Start and enable the service:
 
 ```bash
-sudo systemctl enable nginx
-sudo systemctl start nginx
+sudo systemctl start cloudflared
+sudo systemctl enable cloudflared
 ```
 
-### Step 10: Test Server
-
-Test from outside:
+Check the status:
 
 ```bash
-# From your local machine
+sudo systemctl status cloudflared
+```
+
+You should see "active (running)".
+
+### Step 7: Test Server
+
+Test locally first:
+
+```bash
+# Test the application directly
+curl http://localhost:8000/health
+
+# Test through Nginx
+curl http://localhost:80/health
+```
+
+Test from your local machine (after tunnel is running):
+
+```bash
+# From your Mac or another computer
 curl https://yourdomain.com/health
 ```
 
@@ -377,6 +413,8 @@ Test API documentation:
 Open in browser: `https://yourdomain.com/docs`
 
 You should see the FastAPI documentation interface.
+
+**Note:** SSL/TLS is handled automatically by Cloudflare Tunnel! Your connection is encrypted end-to-end without any manual certificate management.
 
 ## Part 2: Raspberry Pi Client Deployment
 
@@ -531,14 +569,21 @@ This will:
 
 #### 4.1: Firewall (UFW)
 
+With Cloudflare Tunnel, you only need SSH open (and even that can be restricted):
+
 ```bash
 sudo apt install ufw
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow 22/tcp    # SSH
-sudo ufw allow 80/tcp    # HTTP
-sudo ufw allow 443/tcp   # HTTPS
+sudo ufw allow 22/tcp    # SSH only
 sudo ufw enable
+```
+
+**Note:** With Cloudflare Tunnel, you don't need to open ports 80 or 443! The tunnel creates outbound connections to Cloudflare, making your server more secure.
+
+**Optional - Restrict SSH:** For even better security, restrict SSH to your IP:
+```bash
+sudo ufw allow from YOUR_IP_ADDRESS to any port 22
 ```
 
 #### 4.2: Fail2Ban (Optional)
@@ -584,11 +629,16 @@ sudo systemctl restart ssh
 
 ### Cloudflare Security
 
-#### 4.1: Enable DDoS Protection
+Cloudflare Tunnel provides built-in security benefits:
 
-Already enabled by default with proxied DNS.
+- ✅ **No exposed ports** - Tunnel creates outbound connections only
+- ✅ **Automatic SSL/TLS** - End-to-end encryption with no certificate management
+- ✅ **DDoS Protection** - Already enabled by default
+- ✅ **No public IP exposure** - Server IP is hidden from attackers
 
-#### 4.2: Configure Rate Limiting
+#### Additional Cloudflare Security (Optional)
+
+**4.1: Configure Rate Limiting**
 
 1. Go to **Security** → **WAF**
 2. Create rate limiting rule:
@@ -597,10 +647,16 @@ Already enabled by default with proxied DNS.
    - **Then**: Block
    - **Threshold**: 60 requests per minute per IP
 
-#### 4.3: Enable Bot Protection
+**4.2: Enable Bot Protection**
 
 1. Go to **Security** → **Bots**
 2. Enable **Bot Fight Mode** (free tier)
+
+**4.3: Enable Cloudflare Access (Optional)**
+
+For additional authentication layer:
+1. Go to **Zero Trust** → **Access**
+2. Create access policies to restrict who can access your domain
 
 ## Part 5: Monitoring and Maintenance
 
@@ -768,17 +824,38 @@ curl http://localhost:8000/health
 
 If not, check application logs.
 
-#### SSL Certificate Errors
+#### Cloudflare Tunnel Issues
 
-Verify certificate files exist:
+**Tunnel not connecting:**
+
+Check tunnel status:
 ```bash
-ls -l /etc/ssl/certs/cloudflare-origin.pem
-ls -l /etc/ssl/private/cloudflare-origin.key
+sudo systemctl status cloudflared
 ```
 
-Test Nginx config:
+View tunnel logs:
 ```bash
-sudo nginx -t
+sudo journalctl -u cloudflared -f
+```
+
+Common issues:
+- Tunnel configuration file has wrong tunnel ID
+- Credentials file path is incorrect
+- Domain not routed to tunnel
+
+**Verify tunnel configuration:**
+```bash
+cat /etc/cloudflared/config.yml
+```
+
+**List your tunnels:**
+```bash
+cloudflared tunnel list
+```
+
+**Test tunnel manually:**
+```bash
+sudo cloudflared tunnel run javia-voice-assistant
 ```
 
 ### Client Issues
@@ -898,8 +975,10 @@ Since code is in Git, you only need to backup **configuration and secrets**:
 
 **Server - Configuration Files:**
 - `.env` file (contains API keys)
-- Nginx configuration (if customized)
-- SSL certificates (Cloudflare origin certificates)
+- Cloudflare Tunnel configuration (`/etc/cloudflared/config.yml`)
+- Cloudflare Tunnel credentials (`/root/.cloudflared/*.json`)
+
+**Note:** Nginx configuration is automatically generated by the deployment script
 
 **Client - Configuration Files:**
 - `.env` file (contains API key and settings)
@@ -910,9 +989,8 @@ Since code is in Git, you only need to backup **configuration and secrets**:
 # On server
 sudo tar -czf ~/voice-assistant-backup-$(date +%Y%m%d).tar.gz \
   /opt/javia/.env \
-  /etc/nginx/sites-available/voice-assistant \
-  /etc/ssl/certs/cloudflare-origin.pem \
-  /etc/ssl/private/cloudflare-origin.key
+  /etc/cloudflared/config.yml \
+  /root/.cloudflared/
 
 # Make it readable by your user
 sudo chown $USER:$USER ~/voice-assistant-backup-*.tar.gz
@@ -939,16 +1017,25 @@ scp pi@raspberrypi.local:~/client-backup-*.tar.gz ~/backups/
 
 **To restore after a server failure:**
 
-1. Deploy fresh installation following Part 1
-2. Extract backup:
+1. Deploy fresh installation following Part 1 (Steps 1-5)
+2. Extract and restore backup:
    ```bash
    tar -xzf voice-assistant-backup-YYYYMMDD.tar.gz
+   
+   # Restore .env
    sudo cp opt/javia/.env /opt/javia/.env
    sudo chown voiceassistant:voiceassistant /opt/javia/.env
    sudo chmod 600 /opt/javia/.env
+   
+   # Restore Cloudflare Tunnel config
+   sudo cp -r root/.cloudflared /root/
+   sudo cp etc/cloudflared/config.yml /etc/cloudflared/config.yml
    ```
-3. Restore SSL certificates and Nginx config as needed
-4. Restart service: `sudo systemctl restart voice-assistant-server.service`
+3. Restart services:
+   ```bash
+   sudo systemctl restart voice-assistant-server.service
+   sudo systemctl restart cloudflared
+   ```
 
 **To restore client after Pi failure:**
 
