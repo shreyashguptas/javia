@@ -17,6 +17,9 @@ import pyaudio
 import numpy as np
 from dotenv import load_dotenv
 
+# Suppress JACK server startup attempts (improves performance)
+os.environ['JACK_NO_START_SERVER'] = '1'
+
 # Suppress ALSA warnings
 from ctypes import *
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
@@ -73,10 +76,12 @@ def setup():
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[INIT] Audio directory: {AUDIO_DIR}")
     
-    # Clean up old recordings
+    # Clean up old recordings (but keep beep files)
     try:
-        for old_file in AUDIO_DIR.glob("*.wav"):
-            old_file.unlink()
+        if RECORDING_FILE.exists():
+            RECORDING_FILE.unlink()
+        if RESPONSE_FILE.exists():
+            RESPONSE_FILE.unlink()
         print(f"[INIT] Cleaned up old audio files")
     except Exception as e:
         print(f"[INIT] Could not clean old files: {e}")
@@ -122,10 +127,13 @@ def setup():
     except Exception as e:
         print(f"[WARNING] Could not list playback devices: {e}")
     
-    print("\n[READY] System ready! Press button to start...\n")
+    # Generate beep sounds (if they don't exist)
+    if not START_BEEP_FILE.exists() or not STOP_BEEP_FILE.exists():
+        generate_beep_sounds()
+    else:
+        print("[INIT] Beep sounds already exist, skipping generation")
     
-    # Generate beep sounds
-    generate_beep_sounds()
+    print("\n[READY] System ready! Press button to start...\n")
 
 # ==================== BEEP SOUNDS ====================
 
@@ -196,40 +204,48 @@ def generate_beep_sounds():
 def play_beep(beep_file, description=""):
     """Play a short beep sound through the amplifier"""
     if not beep_file.exists():
-        print(f"[WARNING] Beep file not found: {beep_file}")
+        print(f"[BEEP] Warning: Beep file not found: {beep_file}")
         return
     
     process = None
     try:
+        print(f"[BEEP] Playing {description} sound...")
+        
         # Enable amplifier
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.HIGH)
-        time.sleep(0.05)  # Short stabilization
+        time.sleep(0.03)  # Minimal stabilization for speed
         
-        # Play beep
+        # Play beep (suppressing all output for speed)
         process = subprocess.Popen(
-            ['aplay', '-D', 'plughw:0,0', str(beep_file)],
+            ['aplay', '-q', '-D', 'plughw:0,0', str(beep_file)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
         
-        # Wait for beep to finish (max 1 second)
-        process.wait(timeout=1)
+        # Wait for beep to finish (max 500ms for responsiveness)
+        try:
+            process.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            process.kill()
         
-        # Small delay before disabling amp
-        time.sleep(0.05)
+        # Very short delay before disabling amp
+        time.sleep(0.02)
         
         # Disable amplifier
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
         
     except Exception as e:
-        print(f"[WARNING] Could not play beep: {e}")
+        print(f"[BEEP] Error playing beep: {e}")
         GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
         if process and process.poll() is None:
             try:
                 process.terminate()
-                process.wait(timeout=0.5)
+                process.wait(timeout=0.2)
             except:
-                process.kill()
+                try:
+                    process.kill()
+                except:
+                    pass
 
 # ==================== BUTTON HANDLING ====================
 
@@ -291,17 +307,7 @@ def record_audio():
     try:
         audio = pyaudio.PyAudio()
         
-        # List all available devices for debugging
-        print("[AUDIO] Available audio devices:")
-        for i in range(audio.get_device_count()):
-            try:
-                info = audio.get_device_info_by_index(i)
-                if info['maxInputChannels'] > 0:
-                    print(f"[AUDIO]   Device {i}: {info['name']} (Inputs: {info['maxInputChannels']})")
-            except Exception as e:
-                continue
-        
-        # Find I2S input device
+        # Find I2S input device (quickly, without debug output)
         device_index = None
         for i in range(audio.get_device_count()):
             try:
@@ -310,20 +316,17 @@ def record_audio():
                                                       'voicehat' in info['name'].lower() or
                                                       'sndrpigooglevoi' in info['name'].lower()):
                     device_index = i
-                    print(f"[AUDIO] Using Google Voice HAT: {info['name']}")
                     break
             except Exception as e:
                 continue
         
         # If Voice HAT not found, try to find any valid input device
         if device_index is None:
-            print("[WARNING] Google Voice HAT not found, searching for alternative input device...")
             for i in range(audio.get_device_count()):
                 try:
                     info = audio.get_device_info_by_index(i)
                     if info['maxInputChannels'] > 0:
                         device_index = i
-                        print(f"[AUDIO] Using alternative device: {info['name']}")
                         break
                 except Exception as e:
                     continue
@@ -332,7 +335,6 @@ def record_audio():
         if device_index is None:
             print("[ERROR] No input devices found!")
             print("[ERROR] Please check your audio hardware configuration")
-            print("[ERROR] Run 'arecord -l' to see available recording devices")
             return False
         
         # Validate selected device
@@ -549,6 +551,11 @@ def apply_fade_in_out(wav_file, fade_duration_ms=50):
             framerate = params.framerate
             n_frames = params.nframes
         
+        # Validate we have audio data
+        if n_frames == 0:
+            print(f"[WARNING] Audio file is empty, skipping fade")
+            return
+        
         # Determine dtype based on sample width
         if sampwidth == 1:
             dtype = np.uint8
@@ -568,12 +575,12 @@ def apply_fade_in_out(wav_file, fade_duration_ms=50):
         fade_frames = min(fade_frames, n_frames // 4)
         
         if fade_frames < 10:
-            print(f"[WARNING] Audio too short for fade effect")
+            print(f"[WARNING] Audio too short for fade effect ({n_frames} frames)")
             return
         
         fade_samples = fade_frames * channels
         
-        print(f"[DEBUG] Applying {fade_duration_ms}ms fade ({fade_frames} frames)")
+        print(f"[DEBUG] Applying {fade_duration_ms}ms fade ({fade_frames} frames, {fade_samples} samples)")
         
         # Create fade curves
         fade_in_curve = np.linspace(0, 1, fade_samples)
@@ -594,7 +601,20 @@ def apply_fade_in_out(wav_file, fade_duration_ms=50):
                 
                 # Process beginning
                 beginning_data = wf_in.readframes(fade_frames)
+                if len(beginning_data) == 0:
+                    print(f"[WARNING] No beginning data to fade")
+                    return
+                    
                 beginning_array = np.frombuffer(beginning_data, dtype=dtype).copy()
+                
+                # Ensure arrays match in size
+                if len(beginning_array) != len(fade_in_curve):
+                    print(f"[WARNING] Size mismatch: audio={len(beginning_array)}, fade={len(fade_in_curve)}")
+                    # Truncate or pad fade curve to match
+                    if len(beginning_array) < len(fade_in_curve):
+                        fade_in_curve = fade_in_curve[:len(beginning_array)]
+                    else:
+                        beginning_array = beginning_array[:len(fade_in_curve)]
                 
                 if is_unsigned:
                     beginning_array = beginning_array.astype(np.int16) - 128
@@ -621,7 +641,20 @@ def apply_fade_in_out(wav_file, fade_duration_ms=50):
                 
                 # Process ending
                 ending_data = wf_in.readframes(fade_frames)
+                if len(ending_data) == 0:
+                    print(f"[WARNING] No ending data to fade")
+                    return
+                    
                 ending_array = np.frombuffer(ending_data, dtype=dtype).copy()
+                
+                # Ensure arrays match in size
+                if len(ending_array) != len(fade_out_curve):
+                    print(f"[WARNING] Size mismatch: audio={len(ending_array)}, fade={len(fade_out_curve)}")
+                    # Truncate or pad fade curve to match
+                    if len(ending_array) < len(fade_out_curve):
+                        fade_out_curve = fade_out_curve[:len(ending_array)]
+                    else:
+                        ending_array = ending_array[:len(fade_out_curve)]
                 
                 if is_unsigned:
                     ending_array = ending_array.astype(np.int16) - 128

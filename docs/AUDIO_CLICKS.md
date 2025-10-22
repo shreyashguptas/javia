@@ -1,5 +1,36 @@
 # Audio Clicks and Pops Prevention
 
+## Audio Feedback Beeps
+
+The Pi client now includes pleasant audio feedback to indicate when the microphone is listening:
+
+### Start Beep
+- **When**: Button pressed (mic starts listening)
+- **Sound**: Rising tone (500Hz → 800Hz)
+- **Duration**: 150ms
+- **Purpose**: Confirms the assistant is ready to hear you
+
+### Stop Beep
+- **When**: Button pressed again (mic stops listening)
+- **Sound**: Falling tone (700Hz → 400Hz)  
+- **Duration**: 120ms
+- **Purpose**: Confirms the assistant has stopped recording
+
+### Technical Details
+- Beeps are **pre-generated** during startup (no latency during button press)
+- Generated using smooth sine wave sweeps with envelope shaping
+- **Optimized for speed**: Minimal amplifier on/off time (~100ms total)
+- **No JACK warnings**: Environment variable suppresses unnecessary audio server attempts
+
+### Performance Optimizations
+The beeps are designed for maximum responsiveness:
+- Generated once at startup, then cached
+- Amplifier enabled for minimal time (30ms before, 20ms after)
+- Playback uses `-q` flag for silent operation
+- Total beep latency: ~150-200ms
+
+---
+
 ## The Problem
 
 Clicking or popping sounds from the speaker at:
