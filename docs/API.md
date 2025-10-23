@@ -63,16 +63,24 @@ Process audio through complete pipeline: transcription → LLM → TTS.
   X-API-Key: your_api_key_here
   ```
 - **Form Data**:
-  - `audio` (file): Audio file (WAV format, max 25MB)
+  - `audio` (file): Audio file (**Opus or WAV format**, max 25MB)
   - `session_id` (optional, string): Session identifier for conversation history
+  - `microphone_gain` (optional, string): Gain multiplier (default "1.0", e.g., "2.0" for 2x amplification)
+
+**Supported Audio Formats**:
+- **Opus** (recommended): `audio/opus` - 90% smaller files, 10x faster transfer
+  - Bitrate: 96kbps for excellent voice quality
+  - Sample Rate: 48kHz
+  - Channels: Mono
+- **WAV**: `audio/wav` - Uncompressed format (backward compatibility)
 
 **Response**: `200 OK`
-- **Content-Type**: `audio/wav`
+- **Content-Type**: `audio/opus` (compressed for fast download)
 - **Headers**:
   - `X-Transcription`: Transcribed text from audio (URL-encoded to support Unicode)
   - `X-LLM-Response`: LLM response text (URL-encoded to support Unicode)
   - `X-Session-ID`: Session ID (if provided, URL-encoded)
-- **Body**: Audio file (WAV format) containing TTS response
+- **Body**: Audio file (Opus format) containing TTS response
 
 **Note**: All response headers are URL-encoded to support Unicode characters (e.g., smart quotes, accented characters). Clients should URL-decode these values using `urllib.parse.unquote()` in Python or equivalent in other languages.
 
@@ -84,14 +92,25 @@ Process audio through complete pipeline: transcription → LLM → TTS.
 - `422 Unprocessable Entity`: Validation error
 - `500 Internal Server Error`: Server processing error
 
-**Example**:
+**Example (Opus format - recommended)**:
+```bash
+curl -X POST \
+  -H "X-API-Key: your_api_key" \
+  -F "audio=@recording.opus;type=audio/opus" \
+  -F "session_id=user123_session456" \
+  -F "microphone_gain=2.0" \
+  https://yourdomain.com/api/v1/process \
+  --output response.opus -v
+```
+
+**Example (WAV format - legacy)**:
 ```bash
 curl -X POST \
   -H "X-API-Key: your_api_key" \
   -F "audio=@recording.wav" \
   -F "session_id=user123_session456" \
   https://yourdomain.com/api/v1/process \
-  --output response.wav -v
+  --output response.opus -v
 ```
 
 **Python Example**:

@@ -44,7 +44,7 @@ echo "[1/8] Checking system dependencies..."
 
 # Check if packages are already installed to avoid unnecessary updates
 PACKAGES_TO_INSTALL=""
-for pkg in python3-pyaudio python3-rpi.gpio python3-requests python3-numpy python3-pip; do
+for pkg in python3-pyaudio python3-rpi.gpio python3-requests python3-numpy python3-pip libopus0 libopus-dev; do
     if ! dpkg -l | grep -q "^ii  $pkg "; then
         PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL $pkg"
     fi

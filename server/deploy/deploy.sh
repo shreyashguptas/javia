@@ -23,7 +23,7 @@ SERVICE_GROUP="voiceassistant"
 
 echo "[1/11] Installing system dependencies..."
 apt update
-apt install -y python3 python3-pip python3-venv nginx git wget
+apt install -y python3 python3-pip python3-venv nginx git wget libopus0 libopus-dev
 
 echo ""
 echo "[2/11] Creating service user..."

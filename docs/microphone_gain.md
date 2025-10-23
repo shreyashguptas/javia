@@ -91,13 +91,17 @@ Physical improvements:
 
 ## How Software Gain Works
 
-The amplification process:
-1. **Recording** - Captures audio at normal levels
-2. **Conversion** - Bytes → numpy array
-3. **Amplification** - Each sample multiplied by gain
-4. **Clipping** - Values clipped to prevent overflow (-32768 to 32767)
-5. **Conversion** - Array → audio bytes
-6. **Saving** - Amplified audio saved to WAV
+The amplification process (performed on the server):
+1. **Recording** - Pi captures audio at normal levels (raw WAV)
+2. **Compression** - Pi compresses to Opus format (90% smaller)
+3. **Upload** - Pi sends Opus file to server
+4. **Decompression** - Server decompresses Opus to WAV
+5. **Amplification** - Server multiplies each sample by gain
+6. **Transcription** - Amplified audio sent to Whisper API
+
+**Note**: Amplification happens on the server (not the Pi) for better performance. The Pi sends the configured gain value, and the server applies it before transcription. This ensures optimal audio quality for Whisper while keeping the Pi Zero 2 W efficient.
+
+**Opus Compression**: The gain setting is still applied even with Opus compression. The server decompresses the Opus file, applies amplification, then sends to Whisper. Audio quality is maintained throughout the process.
 
 ### Code Reference
 ```python

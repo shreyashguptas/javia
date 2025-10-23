@@ -3,4 +3,5 @@ RPi.GPIO>=0.7.1
 requests>=2.32.0
 python-dotenv>=1.0.0
 numpy>=1.24.0
+opuslib>=3.0.1
 
