@@ -30,7 +30,6 @@ ssh user@pi-zero-2-w.local
 
 ```bash
 # Clone the repository
-cd
 cd /tmp
 rm -rf javia
 git clone https://github.com/shreyashguptas/javia.git
