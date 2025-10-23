@@ -195,10 +195,35 @@ else
     echo "Found existing configuration!"
     echo ""
     
-    # Load current values
-    source "$INSTALL_DIR/.env"
-    CURRENT_GROQ_KEY="${GROQ_API_KEY:-NOT_SET}"
-    CURRENT_SERVER_KEY="${SERVER_API_KEY:-NOT_SET}"
+    # Load current values using Python (safer than sourcing)
+    CURRENT_VALUES=$(python3 << 'EOF'
+import os
+import re
+
+env_file = '.env'
+groq_key = 'NOT_SET'
+server_key = 'NOT_SET'
+
+try:
+    with open(env_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                if line.startswith('GROQ_API_KEY='):
+                    groq_key = line.split('=', 1)[1].strip()
+                elif line.startswith('SERVER_API_KEY='):
+                    server_key = line.split('=', 1)[1].strip()
+    print(f"GROQ_KEY={groq_key}")
+    print(f"SERVER_KEY={server_key}")
+except Exception as e:
+    print(f"GROQ_KEY=NOT_SET")
+    print(f"SERVER_KEY=NOT_SET")
+EOF
+)
+    
+    # Parse the output
+    CURRENT_GROQ_KEY=$(echo "$CURRENT_VALUES" | grep "^GROQ_KEY=" | cut -d'=' -f2)
+    CURRENT_SERVER_KEY=$(echo "$CURRENT_VALUES" | grep "^SERVER_KEY=" | cut -d'=' -f2)
     
     echo "==================================="
     echo "Current Configuration"
