@@ -97,7 +97,7 @@ javia/                 # Git repository root
 ```bash
 # On your server
 sudo apt update && sudo apt install -y git
-cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
+cd /tmp && git clone https://github.com/shreyashguptas/javia.git
 cd javia/server/deploy && sudo bash deploy.sh
 # Script will prompt for GROQ_API_KEY and auto-generate SERVER_API_KEY
 # SAVE the generated SERVER_API_KEY!
@@ -108,7 +108,7 @@ cd javia/server/deploy && sudo bash deploy.sh
 **Pi Client (5 minutes):**
 ```bash
 # On your Raspberry Pi
-cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
+cd /tmp && git clone https://github.com/shreyashguptas/javia.git
 cd javia/pi_client/deploy && bash install_client.sh
 # Edit ~/javia_client/.env with server URL and API key
 sudo systemctl start voice-assistant-client.service
@@ -134,7 +134,7 @@ Before deploying, ensure your code is in a Git repository:
    git init  # If not already initialized
    git add .
    git commit -m "Initial commit"
-   git remote add origin https://github.com/YOUR_USERNAME/javia.git
+   git remote add origin https://github.com/shreyashguptas/javia.git
    git push -u origin main
    ```
 
@@ -144,15 +144,15 @@ You'll need to authenticate when cloning. Options:
 1. **Personal Access Token** (recommended):
    - GitHub → Settings → Developer settings → Personal access tokens
    - Generate new token with `repo` scope
-   - Use: `git clone https://YOUR_TOKEN@github.com/YOUR_USERNAME/javia.git`
+   - Use: `git clone https://YOUR_TOKEN@github.com/shreyashguptas/javia.git`
 
 2. **SSH Keys** (more secure):
    - Generate SSH key on server/Pi: `ssh-keygen -t ed25519`
    - Add public key to GitHub: Settings → SSH keys
-   - Use: `git clone git@github.com:YOUR_USERNAME/javia.git`
+   - Use: `git clone git@github.com:shreyashguptas/javia.git`
 
 **For Public Repositories:**
-- Simply use: `git clone https://github.com/YOUR_USERNAME/javia.git`
+- Simply use: `git clone https://github.com/shreyashguptas/javia.git`
 
 ## Part 1: Server Deployment
 
@@ -178,7 +178,7 @@ Clone this repository to your server:
 
 ```bash
 cd /tmp
-git clone https://github.com/YOUR_USERNAME/javia.git
+git clone https://github.com/shreyashguptas/javia.git
 ```
 
 > **Note**: Replace `YOUR_USERNAME` with your actual GitHub username. If you have a private repo, you'll need to setup SSH keys or use a personal access token.
@@ -434,7 +434,7 @@ Clone this repository to your Pi:
 
 ```bash
 cd /tmp
-git clone https://github.com/YOUR_USERNAME/javia.git
+git clone https://github.com/shreyashguptas/javia.git
 ```
 
 > **Note**: Replace `YOUR_USERNAME` with your actual GitHub username. If you have a private repo, you'll need to setup SSH keys or use a personal access token.
@@ -737,7 +737,7 @@ git push origin main
 # 1. Navigate to a temporary location
 cd /tmp
 rm -rf javia  # Remove old clone if exists
-git clone https://github.com/YOUR_USERNAME/javia.git
+git clone https://github.com/shreyashguptas/javia.git
 
 # 2. Copy updated files to installation directory
 sudo cp -r /tmp/javia/server/* /opt/javia/
@@ -778,7 +778,7 @@ git push origin main
 # 1. Navigate to a temporary location
 cd /tmp
 rm -rf javia  # Remove old clone if exists
-git clone https://github.com/YOUR_USERNAME/javia.git
+git clone https://github.com/shreyashguptas/javia.git
 
 # 2. Copy updated files
 cp -r /tmp/javia/pi_client/* ~/javia_client/
@@ -923,7 +923,7 @@ If you get "repository not found" or authentication errors:
 **For HTTPS (Private Repos):**
 ```bash
 # Use personal access token
-git clone https://YOUR_TOKEN@github.com/YOUR_USERNAME/javia.git
+git clone https://YOUR_TOKEN@github.com/shreyashguptas/javia.git
 ```
 
 **For SSH (Recommended for Private Repos):**
@@ -936,7 +936,7 @@ cat ~/.ssh/id_ed25519.pub
 
 # Add this key to GitHub → Settings → SSH and GPG keys
 # Then clone using SSH
-git clone git@github.com:YOUR_USERNAME/javia.git
+git clone git@github.com:shreyashguptas/javia.git
 ```
 
 #### Deployment Script Can't Find Files
@@ -1097,7 +1097,7 @@ sudo journalctl -u voice-assistant-server.service -f
 sudo systemctl restart voice-assistant-server.service
 
 # Update code
-cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
+cd /tmp && git clone https://github.com/shreyashguptas/javia.git
 sudo cp -r javia/server/* /opt/javia/
 sudo systemctl restart voice-assistant-server.service
 ```
@@ -1114,7 +1114,7 @@ sudo journalctl -u voice-assistant-client.service -f
 sudo systemctl restart voice-assistant-client.service
 
 # Update code
-cd /tmp && git clone https://github.com/YOUR_USERNAME/javia.git
+cd /tmp && git clone https://github.com/shreyashguptas/javia.git
 cp -r javia/pi_client/* ~/javia_client/
 sudo systemctl restart voice-assistant-client.service
 ```

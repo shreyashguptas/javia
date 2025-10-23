@@ -26,7 +26,7 @@ ssh user@your-server
 # 2. Install Git and clone repository
 sudo apt update && sudo apt install -y git
 cd /tmp
-git clone https://github.com/YOUR_USERNAME/javia.git
+git clone https://github.com/shreyashguptas/javia.git
 
 # 3. Run deployment script
 cd /tmp/javia/server/deploy
@@ -100,7 +100,7 @@ ssh pi@raspberrypi.local
 
 # 2. Clone repository
 cd /tmp
-git clone https://github.com/YOUR_USERNAME/javia.git
+git clone https://github.com/shreyashguptas/javia.git
 
 # 3. Run installation script
 cd /tmp/javia/pi_client/deploy

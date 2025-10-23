@@ -16,7 +16,7 @@ This guide covers deploying the Voice Assistant server on a Debian-based system 
 ```bash
 # 1. Clone the repository to /tmp
 cd /tmp
-git clone https://github.com/YOUR_USERNAME/javia.git
+git clone https://github.com/shreyashguptas/javia.git
 
 # 2. Run the setup script as root
 cd javia/server/deploy
@@ -39,7 +39,7 @@ The script will:
 # 1. Pull latest code to /tmp
 cd /tmp
 rm -rf javia  # Remove old clone if exists
-git clone https://github.com/YOUR_USERNAME/javia.git
+git clone https://github.com/shreyashguptas/javia.git
 
 # 2. Run the same setup script
 cd javia/server/deploy

@@ -30,7 +30,7 @@ if [ ! -f "$CLIENT_DIR/client.py" ]; then
     echo "Expected to find client.py at: $CLIENT_DIR/client.py"
     echo ""
     echo "Please ensure you:"
-    echo "  1. Cloned the repository: git clone https://github.com/YOUR_USERNAME/javia.git"
+    echo "  1. Cloned the repository: git clone https://github.com/shreyashguptas/javia.git"
     echo "  2. Are running this script from: /tmp/javia/pi_client/deploy/setup.sh"
     echo ""
     exit 1
