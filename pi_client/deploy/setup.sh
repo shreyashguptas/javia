@@ -104,8 +104,9 @@ fi
 
 source "$VENV_DIR/bin/activate"
 pip install --upgrade pip > /dev/null 2>&1
-pip install python-dotenv > /dev/null 2>&1
-echo "✓ Virtual environment ready"
+echo "Installing Python dependencies from requirements.txt..."
+pip install -r "$INSTALL_DIR/requirements.txt"
+echo "✓ Virtual environment ready with all dependencies"
 echo ""
 
 # ==================== STEP 6: CONFIGURE .ENV ====================
