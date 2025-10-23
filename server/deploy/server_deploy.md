@@ -59,7 +59,7 @@ The script will:
 ### System Packages
 - `python3`, `python3-pip`, `python3-venv` - Python runtime
 - `nginx` - Reverse proxy
-- `git`, `wget` - Utilities
+- `git`, `wget`, `rsync` - Utilities
 - `libopus0`, `libopus-dev` - Opus audio codec (for compression)
 
 ### Python Packages (in virtual environment)

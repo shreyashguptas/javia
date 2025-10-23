@@ -56,7 +56,7 @@ echo "[1/10] Checking system dependencies..."
 
 # Check if packages are already installed to avoid unnecessary updates
 PACKAGES_TO_INSTALL=""
-for pkg in python3 python3-pip python3-venv nginx git wget libopus0 libopus-dev; do
+for pkg in python3 python3-pip python3-venv nginx git wget rsync libopus0 libopus-dev; do
     if ! dpkg -l | grep -q "^ii  $pkg "; then
         PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL $pkg"
     fi
