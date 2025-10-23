@@ -279,6 +279,27 @@ def generate_speech(text: str, output_path: Path) -> None:
                     raise TTSError("Received empty audio file")
                 
                 logger.info(f"Audio saved: {output_path} ({total_bytes} bytes)")
+                
+                # DIAGNOSTIC: Validate TTS output is valid WAV
+                try:
+                    with open(output_path, 'rb') as f:
+                        header_bytes = f.read(16)
+                        logger.info(f"[DIAGNOSTIC] TTS file first 16 bytes: {header_bytes.hex()}")
+                        logger.info(f"[DIAGNOSTIC] TTS file starts with RIFF: {header_bytes.startswith(b'RIFF')}")
+                        
+                        # Check if it's a valid WAV file
+                        if header_bytes.startswith(b'RIFF') and b'WAVE' in header_bytes:
+                            logger.info(f"[DIAGNOSTIC] ✓ TTS generated valid WAV file")
+                            # Try to read WAV parameters
+                            import wave
+                            with wave.open(str(output_path), 'rb') as wf:
+                                params = wf.getparams()
+                                logger.info(f"[DIAGNOSTIC] WAV params: {params.nchannels}ch, {params.sampwidth*8}bit, {params.framerate}Hz, {params.nframes} frames")
+                        else:
+                            logger.error(f"[DIAGNOSTIC] ✗ TTS did NOT generate valid WAV file!")
+                except Exception as e:
+                    logger.error(f"[DIAGNOSTIC] Error validating TTS output: {e}")
+                
                 return
                 
             elif response.status_code == 429:

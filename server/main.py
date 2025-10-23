@@ -171,6 +171,15 @@ def compress_wav_to_opus(wav_path: Path, opus_path: Path, bitrate: int = 96000):
     try:
         logger.debug(f"Compressing WAV to Opus: {wav_path}")
         
+        # DIAGNOSTIC: Validate input WAV before compression
+        try:
+            with open(wav_path, 'rb') as f:
+                header_bytes = f.read(16)
+                logger.info(f"[DIAGNOSTIC] Input WAV first 16 bytes: {header_bytes.hex()}")
+                logger.info(f"[DIAGNOSTIC] Input WAV starts with RIFF: {header_bytes.startswith(b'RIFF')}")
+        except Exception as e:
+            logger.error(f"[DIAGNOSTIC] Error reading input WAV header: {e}")
+        
         # Read WAV file
         with wave.open(str(wav_path), 'rb') as wf:
             sample_rate = wf.getframerate()
@@ -180,6 +189,7 @@ def compress_wav_to_opus(wav_path: Path, opus_path: Path, bitrate: int = 96000):
             pcm_data = wf.readframes(n_frames)
         
         logger.debug(f"WAV file: {sample_rate}Hz, {channels}ch, {sample_width*8}-bit, {n_frames} frames")
+        logger.info(f"[DIAGNOSTIC] PCM data size: {len(pcm_data)} bytes")
         
         # Validate format
         if sample_width != 2:
@@ -228,6 +238,21 @@ def compress_wav_to_opus(wav_path: Path, opus_path: Path, bitrate: int = 96000):
         compression_ratio = (1 - compressed_size / original_size) * 100
         
         logger.debug(f"Compressed: {original_size} → {compressed_size} bytes ({compression_ratio:.1f}% reduction)")
+        
+        # DIAGNOSTIC: Validate Opus output
+        try:
+            with open(opus_path, 'rb') as f:
+                opus_header = f.read(16)
+                logger.info(f"[DIAGNOSTIC] Opus file first 16 bytes: {opus_header.hex()}")
+                # Verify custom header format
+                if len(opus_header) >= 9:
+                    read_sample_rate = int.from_bytes(opus_header[0:4], 'little')
+                    read_channels = int.from_bytes(opus_header[4:5], 'little')
+                    read_num_packets = int.from_bytes(opus_header[5:9], 'little')
+                    logger.info(f"[DIAGNOSTIC] Opus header: {read_sample_rate}Hz, {read_channels}ch, {read_num_packets} packets")
+                    logger.info(f"[DIAGNOSTIC] ✓ Opus file created successfully")
+        except Exception as e:
+            logger.error(f"[DIAGNOSTIC] Error validating Opus output: {e}")
         
     except Exception as e:
         logger.error(f"Opus compression failed: {e}")

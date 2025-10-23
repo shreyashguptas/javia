@@ -468,6 +468,7 @@ def decompress_from_opus(opus_path, wav_path):
     """
     try:
         print(f"[OPUS] Decompressing Opus to WAV for playback...")
+        print(f"[DIAGNOSTIC] Input Opus file size: {opus_path.stat().st_size} bytes")
         
         # Read Opus file
         with open(opus_path, 'rb') as f:
@@ -476,31 +477,57 @@ def decompress_from_opus(opus_path, wav_path):
             channels = int.from_bytes(f.read(1), 'little')
             num_packets = int.from_bytes(f.read(4), 'little')
             
+            print(f"[DIAGNOSTIC] Opus decode params: {sample_rate}Hz, {channels}ch, {num_packets} packets")
+            
             # Create Opus decoder
             decoder = opuslib.Decoder(sample_rate, channels)
+            print(f"[DIAGNOSTIC] Opus decoder created")
             
             # Decode all packets
             pcm_chunks = []
-            for _ in range(num_packets):
+            for i in range(num_packets):
                 # Read packet length and packet
                 packet_len = int.from_bytes(f.read(2), 'little')
                 packet = f.read(packet_len)
                 
+                if i == 0:
+                    print(f"[DIAGNOSTIC] First packet: {packet_len} bytes")
+                
                 # Decode packet (frame size = 960 for 20ms at 48kHz)
                 pcm_data = decoder.decode(packet, 960)
                 pcm_chunks.append(pcm_data)
+            
+            print(f"[DIAGNOSTIC] Decoded {len(pcm_chunks)} packets")
         
         # Combine all PCM data
         full_pcm = b''.join(pcm_chunks)
+        print(f"[DIAGNOSTIC] Total PCM data: {len(full_pcm)} bytes")
         
         # Write WAV file
+        print(f"[DIAGNOSTIC] Writing WAV file to {wav_path}...")
         with wave.open(str(wav_path), 'wb') as wf:
             wf.setnchannels(channels)
             wf.setsampwidth(2)  # 16-bit
             wf.setframerate(sample_rate)
             wf.writeframes(full_pcm)
         
-        print(f"[OPUS] ✓ Decompressed to WAV: {wav_path.stat().st_size} bytes")
+        print(f"[DIAGNOSTIC] WAV file written")
+        
+        # Verify the file was written correctly
+        if wav_path.exists():
+            file_size = wav_path.stat().st_size
+            print(f"[OPUS] ✓ Decompressed to WAV: {file_size} bytes")
+            
+            # Check if file starts with RIFF
+            with open(wav_path, 'rb') as f:
+                header = f.read(4)
+                print(f"[DIAGNOSTIC] Written WAV first 4 bytes: {header.hex()} (should be RIFF)")
+                if not header.startswith(b'RIFF'):
+                    print(f"[DIAGNOSTIC] ✗ ERROR: WAV file doesn't start with RIFF!")
+        else:
+            print(f"[DIAGNOSTIC] ✗ ERROR: WAV file not created!")
+            return False
+        
         return True
         
     except Exception as e:
@@ -842,10 +869,36 @@ def send_to_server():
                 
                 print(f"[SUCCESS] Opus audio saved: {RESPONSE_OPUS_FILE} ({total_bytes} bytes)")
                 
+                # DIAGNOSTIC: Validate received Opus file
+                try:
+                    with open(RESPONSE_OPUS_FILE, 'rb') as f:
+                        opus_header = f.read(16)
+                        print(f"[DIAGNOSTIC] Received Opus first 16 bytes: {opus_header.hex()}")
+                        if len(opus_header) >= 9:
+                            read_sample_rate = int.from_bytes(opus_header[0:4], 'little')
+                            read_channels = int.from_bytes(opus_header[4:5], 'little')
+                            read_num_packets = int.from_bytes(opus_header[5:9], 'little')
+                            print(f"[DIAGNOSTIC] Opus header: {read_sample_rate}Hz, {read_channels}ch, {read_num_packets} packets")
+                except Exception as e:
+                    print(f"[DIAGNOSTIC] Error reading Opus header: {e}")
+                
                 # Decompress Opus to WAV for playback
                 if not decompress_from_opus(RESPONSE_OPUS_FILE, RESPONSE_FILE):
                     print("[ERROR] Failed to decompress response audio")
                     return False
+                
+                # DIAGNOSTIC: Validate decompressed WAV file
+                try:
+                    with open(RESPONSE_FILE, 'rb') as f:
+                        wav_header = f.read(16)
+                        print(f"[DIAGNOSTIC] Decompressed WAV first 16 bytes: {wav_header.hex()}")
+                        print(f"[DIAGNOSTIC] WAV starts with RIFF: {wav_header.startswith(b'RIFF')}")
+                        if wav_header.startswith(b'RIFF'):
+                            print(f"[DIAGNOSTIC] ✓ Valid WAV file created")
+                        else:
+                            print(f"[DIAGNOSTIC] ✗ INVALID WAV file - missing RIFF header!")
+                except Exception as e:
+                    print(f"[DIAGNOSTIC] Error reading WAV header: {e}")
                 
                 return True
                 
@@ -1086,6 +1139,18 @@ def play_audio():
     process = None
     try:
         print("[PLAYBACK] Preparing audio...")
+        
+        # DIAGNOSTIC: Check WAV file before processing
+        try:
+            with open(RESPONSE_FILE, 'rb') as f:
+                header = f.read(16)
+                print(f"[DIAGNOSTIC] Pre-playback WAV first 16 bytes: {header.hex()}")
+                if header.startswith(b'RIFF'):
+                    print(f"[DIAGNOSTIC] ✓ WAV file valid before fade/padding")
+                else:
+                    print(f"[DIAGNOSTIC] ✗ WAV file INVALID before fade/padding - missing RIFF!")
+        except Exception as e:
+            print(f"[DIAGNOSTIC] Error checking WAV before playback: {e}")
         
         # Apply fade and padding to eliminate clicks
         apply_fade_in_out(RESPONSE_FILE, fade_duration_ms=FADE_DURATION_MS)
