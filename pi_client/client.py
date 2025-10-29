@@ -62,11 +62,10 @@ CHUNK_SIZE = 512  # Reduced from 1024 for lower latency (5.3ms vs 10.6ms per chu
 AUDIO_FORMAT = pyaudio.paInt16
 MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))
 FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
-BEEP_VOLUME = float(os.getenv('BEEP_VOLUME', '0.4'))  # 0.0-1.0, base volume for beeps
 
 # Volume Configuration
 VOLUME_STEP = int(os.getenv('VOLUME_STEP', '5'))  # Volume change per rotary encoder step (%)
-INITIAL_VOLUME = int(os.getenv('INITIAL_VOLUME', '70'))  # Initial volume on startup (%)
+INITIAL_VOLUME = int(os.getenv('INITIAL_VOLUME', '100'))  # Initial volume on startup (%) - CHANGED TO 100
 VERBOSE_OUTPUT = os.getenv('VERBOSE_OUTPUT', 'true').lower() == 'true'  # Control verbose logging
 
 # File paths
@@ -91,104 +90,8 @@ current_volume = INITIAL_VOLUME
 
 # ==================== INITIALIZATION ====================
 
-def set_system_volume(volume):
-    """
-    Set ALSA system volume.
-    
-    NOTE: The googlevoicehat driver does NOT support hardware volume control.
-    This is a limitation of the simple I2S driver design.
-    Volume control is disabled but the rotary encoder still works for future use.
-    
-    Args:
-        volume: Volume level (0-100)
-    
-    Returns:
-        bool: True if successful (or if no mixer available), False on error
-    """
-    try:
-        # Clamp volume to valid range
-        volume = max(0, min(100, volume))
-        
-        # First, check if any mixer controls exist
-        check_result = subprocess.run(
-            ['amixer', 'scontrols'],
-            capture_output=True,
-            timeout=2,
-            text=True
-        )
-        
-        if not check_result.stdout.strip():
-            # No mixer controls available - googlevoicehat driver limitation
-            # This is expected and not an error
-            return True
-        
-        # Try to set volume on available controls
-        # Try common control names in order
-        for control_name in ['Master', 'PCM', 'Speaker', 'Headphone']:
-            result = subprocess.run(
-                ['amixer', 'sset', control_name, f'{volume}%'],
-                capture_output=True,
-                timeout=2
-            )
-            
-            if result.returncode == 0:
-                return True
-        
-        # No valid control found but mixer exists - return True anyway
-        return True
-            
-    except Exception as e:
-        # Volume control is optional - don't treat as critical error
-        return True
-
-def get_system_volume():
-    """
-    Get current ALSA system volume.
-    
-    NOTE: The googlevoicehat driver does NOT support hardware volume control.
-    Returns None to indicate no mixer available (expected behavior).
-    
-    Returns:
-        int: Current volume (0-100) or None if no mixer available
-    """
-    try:
-        # First, check if any mixer controls exist
-        check_result = subprocess.run(
-            ['amixer', 'scontrols'],
-            capture_output=True,
-            timeout=2,
-            text=True
-        )
-        
-        if not check_result.stdout.strip():
-            # No mixer controls available - this is expected for googlevoicehat
-            return None
-        
-        # Try common control names
-        for control_name in ['Master', 'PCM', 'Speaker', 'Headphone']:
-            result = subprocess.run(
-                ['amixer', 'sget', control_name],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            
-            if result.returncode == 0:
-                # Parse output to find volume percentage
-                for line in result.stdout.split('\n'):
-                    if 'Mono:' in line or 'Front Left:' in line or 'Left:' in line:
-                        # Extract percentage from format like "[70%]"
-                        import re
-                        match = re.search(r'\[(\d+)%\]', line)
-                        if match:
-                            return int(match.group(1))
-        
-        # No mixer controls found - expected for googlevoicehat
-        return None
-            
-    except Exception as e:
-        # Volume control is optional - not a critical error
-        return None
+# REMOVED: All ALSA volume control code - doesn't work with googlevoicehat
+# Volume is controlled purely in software via current_volume variable
 
 def optimize_system_performance():
     """
@@ -252,21 +155,11 @@ def setup():
     amplifier_sd = OutputDevice(AMPLIFIER_SD_PIN, active_high=True, initial_value=False)
     print(f"[INIT] Amplifier SD pin configured on GPIO{AMPLIFIER_SD_PIN}")
     
-    # Initialize volume control
-    print(f"\n[INIT] Setting up volume control...")
-    
-    # Check if mixer controls are available
-    vol = get_system_volume()
-    if vol is not None:
-        current_volume = vol
-        set_system_volume(INITIAL_VOLUME)
-        current_volume = INITIAL_VOLUME
-        print(f"[INIT] ✓ Volume control enabled: {current_volume}%")
-    else:
-        current_volume = INITIAL_VOLUME
-        print(f"[INIT] ℹ Volume control not available (googlevoicehat driver limitation)")
-        print(f"[INIT] ℹ Rotary encoder tracks volume in software: {current_volume}%")
-        print(f"[INIT] ℹ Hardware volume is controlled by MAX98357A Gain setting")
+    # Initialize volume control (software only)
+    print(f"\n[INIT] Setting up software volume control...")
+    current_volume = INITIAL_VOLUME
+    print(f"[INIT] ✓ Volume control ready: {current_volume}% (100% = full volume)")
+    print(f"[INIT] ℹ Rotate encoder anytime to adjust volume (even during playback!)")
     
     # Setup rotary encoder callback for volume control
     def on_rotate():
@@ -285,11 +178,8 @@ def setup():
                 old_volume = current_volume
                 current_volume = new_volume
                 
-                # Try to set system volume (will succeed if mixer available)
-                set_system_volume(new_volume)
-                
-                # Always show volume change (software tracking)
-                print(f"[VOLUME] {'↑' if volume_change > 0 else '↓'} {old_volume}% → {current_volume}% (software)")
+                # Show volume change
+                print(f"[VOLUME] {'↑' if volume_change > 0 else '↓'} {old_volume}% → {current_volume}%")
             
             # Reset steps counter
             rotary_encoder.steps = 0
@@ -379,48 +269,21 @@ def apply_volume_to_audio(audio_data: bytes, volume_percent: int, sample_width: 
         # Unsupported sample width, return original
         return audio_data
 
-def scale_wav_file_volume(input_path: Path, output_path: Path, volume_percent: int):
-    """
-    Create a volume-scaled copy of a WAV file.
-    
-    Args:
-        input_path: Path to input WAV file
-        output_path: Path to output volume-scaled WAV file
-        volume_percent: Volume level 0-100 (%)
-    """
-    try:
-        # Read input WAV file
-        with wave.open(str(input_path), 'rb') as wf_in:
-            params = wf_in.getparams()
-            audio_data = wf_in.readframes(wf_in.getnframes())
-        
-        # Apply volume scaling
-        scaled_data = apply_volume_to_audio(audio_data, volume_percent, params.sampwidth)
-        
-        # Write scaled audio to output file
-        with wave.open(str(output_path), 'wb') as wf_out:
-            wf_out.setparams(params)
-            wf_out.writeframes(scaled_data)
-        
-        if VERBOSE_OUTPUT:
-            print(f"[AUDIO] Applied {volume_percent}% volume scaling")
-    
-    except Exception as e:
-        print(f"[WARNING] Could not scale audio volume: {e}")
-        # Fallback: copy original file
-        import shutil
-        shutil.copy(input_path, output_path)
+# REMOVED: scale_wav_file_volume() - no longer needed
+# All volume scaling happens in real-time during playback
 
 # ==================== BEEP SOUNDS ====================
 
 def generate_beep_sounds():
-    """Generate pleasant beep sounds for start and stop feedback"""
+    """
+    Generate pleasant beep sounds at FULL VOLUME (100%).
+    Volume scaling is applied in real-time during playback via current_volume.
+    """
     try:
         sample_rate = SAMPLE_RATE  # Match I2S device sample rate (48000 Hz)
         
-        # Volume level to match voice response output (normalized)
-        # Configurable via BEEP_VOLUME in .env (0.0-1.0)
-        beep_volume = BEEP_VOLUME
+        # Generate at FULL volume - scaling happens during playback
+        beep_volume = 1.0  # ALWAYS 100% - volume control happens at playback time
         
         # Start beep: Short rising tone (600Hz -> 900Hz)
         print("[INIT] Generating start beep sound...")
@@ -448,7 +311,7 @@ def generate_beep_sounds():
             np.linspace(1, 0, release_len)   # Quick release
         ])
         
-        # Apply envelope and volume
+        # Apply envelope at FULL volume (100%)
         start_beep = (tone * envelope * beep_volume * 32767).astype(np.int16)
         
         # Save start beep
@@ -498,7 +361,7 @@ def generate_beep_sounds():
             wf.writeframes(stop_beep.tobytes())
         
         print(f"[INIT] ✓ Stop beep saved: {STOP_BEEP_FILE} ({len(stop_beep) * 2} bytes)")
-        print(f"[INIT] ✓ Beep sounds generated successfully (volume: {int(beep_volume*100)}%)")
+        print(f"[INIT] ✓ Beep sounds generated at full volume (volume control during playback)")
         
     except Exception as e:
         print(f"[WARNING] Could not generate beep sounds: {e}")
@@ -507,63 +370,95 @@ def generate_beep_sounds():
 
 def play_beep_async(beep_file, description=""):
     """
-    Play a short beep sound through the amplifier asynchronously with volume control.
+    Play a short beep sound with REAL-TIME volume control.
     
-    PERFORMANCE OPTIMIZATION:
-    - Non-blocking: Starts playback and returns immediately
-    - Parallel execution: Recording can start while beep is playing
-    - Reduces perceived latency by ~100-150ms
-    
-    VOLUME CONTROL:
-    - Applies software volume scaling based on current_volume
-    - Ensures beeps respect the rotary encoder volume setting
+    REAL-TIME VOLUME:
+    - Beep respects current_volume setting
+    - Uses PyAudio streaming for real-time volume scaling
+    - No pre-processing - volume applied during playback
     """
     def _play_beep_thread():
         if not beep_file.exists():
             return
         
-        temp_beep_file = None
+        audio = None
+        stream = None
+        
         try:
-            # Create temporary volume-scaled beep file
-            temp_beep_file = AUDIO_DIR / f"temp_beep_{description}.wav"
+            # Read beep WAV file
+            with wave.open(str(beep_file), 'rb') as wf:
+                channels = wf.getnchannels()
+                sample_width = wf.getsampwidth()
+                sample_rate = wf.getframerate()
+                beep_data = wf.readframes(wf.getnframes())
             
-            # Apply current volume to beep
-            scale_wav_file_volume(beep_file, temp_beep_file, current_volume)
+            # Apply REAL-TIME volume scaling
+            scaled_beep = apply_volume_to_audio(beep_data, current_volume, sample_width)
+            
+            # Initialize PyAudio for playback
+            audio = pyaudio.PyAudio()
+            
+            # Find output device
+            device_index = None
+            for i in range(audio.get_device_count()):
+                info = audio.get_device_info_by_index(i)
+                device_name = info.get('name', '').lower()
+                max_output = info.get('maxOutputChannels', 0)
+                
+                if max_output > 0 and ('googlevoicehat' in device_name or 
+                                      'voicehat' in device_name or
+                                      'sndrpigooglevoi' in device_name):
+                    device_index = i
+                    break
+            
+            # Open output stream
+            stream = audio.open(
+                format=audio.get_format_from_width(sample_width),
+                channels=channels,
+                rate=sample_rate,
+                output=True,
+                output_device_index=device_index
+            )
             
             # Enable amplifier
             amplifier_sd.on()
-            time.sleep(0.02)  # Reduced from 0.05 for faster startup
+            time.sleep(0.02)
             
-            # Play volume-scaled beep
-            subprocess.run(
-                ['aplay', '-q', '-D', 'plughw:0,0', str(temp_beep_file)],
-                capture_output=True,
-                timeout=0.5
-            )
+            # Play scaled beep
+            stream.write(scaled_beep)
             
-            # Small delay for completion
+            # Wait for playback to complete
             time.sleep(0.02)
             
             # Disable amplifier
             amplifier_sd.off()
             
-            # Clean up temp file
-            if temp_beep_file and temp_beep_file.exists():
-                temp_beep_file.unlink()
+            # Clean up
+            if stream:
+                stream.stop_stream()
+                stream.close()
+            if audio:
+                audio.terminate()
             
         except Exception:
             amplifier_sd.off()
-            if temp_beep_file and temp_beep_file.exists():
-                try:
-                    temp_beep_file.unlink()
-                except:
-                    pass
+            try:
+                if stream:
+                    stream.stop_stream()
+                    stream.close()
+            except:
+                pass
+            try:
+                if audio:
+                    audio.terminate()
+            except:
+                pass
     
     # Start beep in background thread - returns immediately
     thread = threading.Thread(target=_play_beep_thread, daemon=True)
     thread.start()
     if VERBOSE_OUTPUT:
-        print(f"[BEEP] ▶ {description} beep started (volume: {current_volume}%)")
+        print(f"[BEEP] ▶ {description} beep (volume: {current_volume}%)")
 
 def play_beep(beep_file, description=""):
     """Legacy synchronous beep - kept for compatibility"""
