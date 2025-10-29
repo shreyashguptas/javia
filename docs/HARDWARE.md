@@ -7,7 +7,7 @@
 - **INMP441 MEMS Microphone** - I2S digital microphone (24-bit, up to 64kHz)
 - **MAX98357A I2S Amplifier** - 3W Class D amplifier with built-in DAC
 - **3W 4Ω Speaker** - Connected to MAX98357A output terminals
-- **Push Button** - Momentary switch (normally open)
+- **KY-040 Rotary Encoder** - Rotary encoder with push button (for volume control and push-to-talk)
 - **Breadboard and jumper wires** - For connections
 - **5V 5A Power Supply** - USB-C power adapter (27W recommended for Pi 5)
 
@@ -51,13 +51,23 @@ Red           →  OUT+ (screw terminal)
 Black         →  OUT- (screw terminal)
 ```
 
-### Button to Raspberry Pi
+### KY-040 Rotary Encoder to Raspberry Pi
 ```
-Button Terminal  →  Connection
-────────────────────────────────────────────────
-Terminal 1       →  GPIO17 (Pi Pin 11) [DIRECT]
-Terminal 2       →  Ground (breadboard negative rail)
+Rotary Encoder Pin  →  Connection
+──────────────────────────────────────────────────────────
+CLK                 →  GPIO22 (Pi Pin 15) [DIRECT]
+DT                  →  GPIO23 (Pi Pin 16) [DIRECT]
+SW (Button)         →  GPIO17 (Pi Pin 11) [DIRECT]
++ (VCC)             →  3.3V (Pi Pin 1 via breadboard+)
+GND (-)             →  Ground (breadboard negative rail)
 ```
+
+**Note on Rotary Encoder:**
+- **CLK & DT pins**: Used for detecting rotation direction (clockwise/counter-clockwise)
+- **SW pin**: Push button function - press to start/stop recording (same as old button)
+- **Rotation**: Turn clockwise to increase volume, counter-clockwise to decrease
+- **Volume step**: 5% per click (configurable in .env)
+- **No external pull-up resistors needed**: Internal pull-ups enabled in software
 
 ## Pin Reference
 
@@ -70,7 +80,7 @@ Pin  7             ●○  Pin  8
 Pin  9  (GND)      ●○  Pin 10
 Pin 11 (GPIO17)    ●○  Pin 12 (GPIO18/PCM_CLK)
 Pin 13 (GPIO27)    ●○  Pin 14 (GND)
-Pin 15             ●○  Pin 16
+Pin 15 (GPIO22)    ●○  Pin 16 (GPIO23)
 ...
 Pin 35 (GPIO19/PCM_FS)  ●○  Pin 36
 Pin 37             ●○  Pin 38 (GPIO20/PCM_DIN)
@@ -92,8 +102,10 @@ Pin 39 (GND)       ●○  Pin 40 (GPIO21/PCM_DOUT)
 - **Pin 40 (GPIO21/PCM_DOUT)** → Amplifier DIN (data from Pi to amp)
 
 **Control Pins** (direct wire connections):
-- **Pin 11 (GPIO17)** → Push button (other button terminal to ground)
+- **Pin 11 (GPIO17)** → Rotary encoder SW/button pin (push-to-talk)
 - **Pin 13 (GPIO27)** → Amplifier SD/Shutdown pin (prevents audio clicks)
+- **Pin 15 (GPIO22)** → Rotary encoder CLK pin (rotation detection)
+- **Pin 16 (GPIO23)** → Rotary encoder DT pin (rotation direction)
 
 ## Assembly Steps
 
@@ -136,12 +148,21 @@ Pin 39 (GND)       ●○  Pin 40 (GPIO21/PCM_DOUT)
 2. Connect speaker **black wire** to MAX98357A **OUT-** terminal
 3. Verify polarity is correct
 
-### 5. Button
-1. Connect one button terminal → Pi **Pin 11 (GPIO17)** [DIRECT wire to Pi]
-2. Connect other button terminal → breadboard **negative rail** (common ground)
-3. No pull-up resistor needed (software enables internal pull-up)
+### 5. Rotary Encoder
+1. Connect **CLK** → Pi **Pin 15 (GPIO22)** [DIRECT wire to Pi]
+2. Connect **DT** → Pi **Pin 16 (GPIO23)** [DIRECT wire to Pi]
+3. Connect **SW** → Pi **Pin 11 (GPIO17)** [DIRECT wire to Pi]
+4. Connect **+** (VCC) → breadboard **positive rail** (gets 3.3V)
+5. Connect **-** (GND) → breadboard **negative rail** (common ground)
+6. No pull-up resistors needed (software enables internal pull-ups)
 
-**Note**: Button ground goes to breadboard, NOT directly to Pi Pin 6
+**Functionality**:
+- **Press SW button**: Start/stop recording (push-to-talk)
+- **Turn clockwise**: Increase volume by 5% per step
+- **Turn counter-clockwise**: Decrease volume by 5% per step
+- **Volume range**: 0% to 100% (automatically clamped)
+
+**Note**: Rotary encoder ground goes to breadboard, NOT directly to Pi Pin 6
 
 ## Power Requirements
 
@@ -150,6 +171,7 @@ Pin 39 (GND)       ●○  Pin 40 (GPIO21/PCM_DOUT)
 - **INMP441 Microphone**: ~4.6mW (1.4mA @ 3.3V)
 - **MAX98357A Idle**: ~165mW (50mA @ 3.3V)
 - **MAX98357A Active**: Up to 3W when playing audio
+- **KY-040 Rotary Encoder**: ~1.65mW (0.5mA @ 3.3V)
 - **Total System**: 8-18W depending on CPU load and audio playback
 
 ### Recommended Power Supply
@@ -182,6 +204,16 @@ Pin 39 (GND)       ●○  Pin 40 (GPIO21/PCM_DOUT)
 - **Sample Rate**: 8kHz to 96kHz
 - **Bit Depth**: 16-bit to 32-bit
 - **Shutdown Pin**: Active high (HIGH = on, LOW = off)
+
+### KY-040 Rotary Encoder
+- **Type**: Incremental rotary encoder with push button
+- **Operating Voltage**: 3.3V to 5V (3.3V compatible)
+- **Pulses per Revolution**: 20 (with detents)
+- **Output Type**: Quadrature (CLK and DT signals 90° out of phase)
+- **Push Button**: Momentary switch (normally open)
+- **Rotation Detection**: Clockwise and counter-clockwise
+- **Power**: ~0.5mA @ 3.3V (negligible)
+- **Features**: Built-in pull-up resistors (optional - we enable internal pull-ups in software)
 
 ### googlevoicehat-soundcard Driver
 The software driver `googlevoicehat-soundcard` is used because:
@@ -220,7 +252,11 @@ Before first power-on:
 - [ ] GPIO21 connected to amplifier DIN pin
 - [ ] GPIO27 connected to amplifier SD pin
 - [ ] Speaker connected to amplifier output
-- [ ] Button connected to GPIO17 and GND
+- [ ] Rotary encoder CLK connected to GPIO22
+- [ ] Rotary encoder DT connected to GPIO23
+- [ ] Rotary encoder SW connected to GPIO17
+- [ ] Rotary encoder + connected to 3.3V (via breadboard)
+- [ ] Rotary encoder - connected to GND (via breadboard)
 - [ ] Power supply is 3A or higher
 
 After power-on:
@@ -251,11 +287,23 @@ After power-on:
 - Software controls this pin to prevent clicks
 - See `docs/TROUBLESHOOTING.md` for more details
 
-### Button Not Responding
+### Rotary Encoder Not Responding
 **Check:**
-1. Button connected to GPIO17 and GND
-2. Button makes contact when pressed
-3. No wiring to wrong GPIO pin
+1. SW pin connected to GPIO17 and GND
+2. CLK pin connected to GPIO22
+3. DT pin connected to GPIO23
+4. + pin connected to 3.3V (via breadboard)
+5. - pin connected to GND (via breadboard)
+6. No wiring to wrong GPIO pins
+7. Encoder makes contact when pressed/rotated
+
+### Volume Control Not Working
+**Check:**
+1. Run `amixer sget Master` to verify ALSA mixer is available
+2. Check that CLK and DT pins are properly connected
+3. Try rotating the encoder in both directions
+4. Check system logs for volume change messages
+5. Verify VOLUME_STEP is set in .env file (default: 5)
 
 ## Visual Wiring Summary
 
@@ -266,19 +314,24 @@ RASPBERRY PI 5                 BREADBOARD                    COMPONENTS
 ═════════════                  ══════════                    ══════════
 
 Pin 1 (3.3V) ────────────────► Positive Rail ──┬──────────► INMP441 VDD
-                                                └──────────► MAX98357A VDD
+                                                ├──────────► MAX98357A VDD
+                                                └──────────► Rotary Encoder +
 
 Pin 6 (GND) ─────────────────► Negative Rail ──┬──────────► INMP441 GND
                                                 ├──────────► INMP441 L/R
                                                 ├──────────► MAX98357A GND
-                                                └──────────► Button Terminal 2
+                                                └──────────► Rotary Encoder -
 
-Pin 11 (GPIO17) ──────────────────────────────────────────► Button Terminal 1
+Pin 11 (GPIO17) ──────────────────────────────────────────► Rotary Encoder SW
 
 Pin 12 (GPIO18) ──┬────────────────────────────────────────► INMP441 SCK
                   └────────────────────────────────────────► MAX98357A BCLK
 
 Pin 13 (GPIO27) ──────────────────────────────────────────► MAX98357A SD
+
+Pin 15 (GPIO22) ──────────────────────────────────────────► Rotary Encoder CLK
+
+Pin 16 (GPIO23) ──────────────────────────────────────────► Rotary Encoder DT
 
 Pin 35 (GPIO19) ──┬────────────────────────────────────────► INMP441 WS
                   └────────────────────────────────────────► MAX98357A LRC
@@ -294,10 +347,10 @@ MAX98357A OUT- ─────────────────────�
 
 ### Wire Count Summary
 - **2 wires**: Pi → Breadboard (3.3V and GND)
-- **5 wires**: Breadboard → Components (power and ground distribution)
-- **8 wires**: Pi GPIO → Components (direct signal wires)
+- **7 wires**: Breadboard → Components (power and ground distribution)
+- **10 wires**: Pi GPIO → Components (direct signal wires)
 - **2 wires**: Amplifier → Speaker
-- **Total: 17 wires**
+- **Total: 21 wires**
 
 ### Ground Distribution Explained
 ```
@@ -307,7 +360,7 @@ Breadboard Negative Rail (distributes to 4 connections)
       ├─→ INMP441 GND
       ├─→ INMP441 L/R
       ├─→ MAX98357A GND
-      └─→ Button (one terminal)
+      └─→ Rotary Encoder GND (-)
 ```
 
 **Key Point**: Only ONE wire goes from Pi to breadboard ground. The breadboard then distributes ground to all four components that need it.

@@ -18,7 +18,7 @@ import subprocess
 from pathlib import Path
 from urllib.parse import unquote
 import threading
-from gpiozero import Button, OutputDevice
+from gpiozero import Button, OutputDevice, RotaryEncoder
 import pyaudio
 import numpy as np
 from dotenv import load_dotenv
@@ -50,7 +50,9 @@ SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:8000')
 CLIENT_API_KEY = os.getenv('CLIENT_API_KEY', 'YOUR_API_KEY_HERE')
 
 # GPIO Configuration
-BUTTON_PIN = int(os.getenv('BUTTON_PIN', '17'))
+BUTTON_PIN = int(os.getenv('BUTTON_PIN', '17'))  # Rotary encoder SW pin
+ROTARY_CLK_PIN = int(os.getenv('ROTARY_CLK_PIN', '22'))  # Rotary encoder CLK pin
+ROTARY_DT_PIN = int(os.getenv('ROTARY_DT_PIN', '23'))  # Rotary encoder DT pin
 AMPLIFIER_SD_PIN = int(os.getenv('AMPLIFIER_SD_PIN', '27'))
 
 # Audio Configuration
@@ -61,6 +63,10 @@ AUDIO_FORMAT = pyaudio.paInt16
 MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))
 FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
 BEEP_VOLUME = float(os.getenv('BEEP_VOLUME', '0.4'))  # 0.0-1.0, matches TTS output
+
+# Volume Configuration
+VOLUME_STEP = int(os.getenv('VOLUME_STEP', '5'))  # Volume change per rotary encoder step (%)
+INITIAL_VOLUME = int(os.getenv('INITIAL_VOLUME', '70'))  # Initial volume on startup (%)
 
 # File paths
 AUDIO_DIR = Path(os.path.expanduser("~/javia/audio"))
@@ -76,9 +82,78 @@ _CACHED_AUDIO_DEVICE_INDEX = None
 
 # GPIO objects (initialized in setup())
 button = None
+rotary_encoder = None
 amplifier_sd = None
 
+# Volume state
+current_volume = INITIAL_VOLUME
+
 # ==================== INITIALIZATION ====================
+
+def set_system_volume(volume):
+    """
+    Set ALSA system volume.
+    
+    Args:
+        volume: Volume level (0-100)
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Clamp volume to valid range
+        volume = max(0, min(100, volume))
+        
+        # Set volume using amixer
+        result = subprocess.run(
+            ['amixer', 'sset', 'Master', f'{volume}%'],
+            capture_output=True,
+            timeout=2
+        )
+        
+        if result.returncode == 0:
+            return True
+        else:
+            print(f"[VOLUME] Warning: amixer returned {result.returncode}")
+            return False
+            
+    except Exception as e:
+        print(f"[VOLUME] Error setting volume: {e}")
+        return False
+
+def get_system_volume():
+    """
+    Get current ALSA system volume.
+    
+    Returns:
+        int: Current volume (0-100) or None if failed
+    """
+    try:
+        result = subprocess.run(
+            ['amixer', 'sget', 'Master'],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        
+        if result.returncode == 0:
+            # Parse output to find volume percentage
+            for line in result.stdout.split('\n'):
+                if 'Mono:' in line or 'Front Left:' in line or 'Left:' in line:
+                    # Extract percentage from format like "[70%]"
+                    import re
+                    match = re.search(r'\[(\d+)%\]', line)
+                    if match:
+                        return int(match.group(1))
+            print("[VOLUME] Could not parse volume from amixer output")
+            return None
+        else:
+            print(f"[VOLUME] amixer sget returned {result.returncode}")
+            return None
+            
+    except Exception as e:
+        print(f"[VOLUME] Error getting volume: {e}")
+        return None
 
 def optimize_system_performance():
     """
@@ -128,13 +203,62 @@ def setup():
         print(f"[INIT] Could not clean old files: {e}")
     
     # Setup GPIO using gpiozero (Pi 5 compatible)
-    global button, amplifier_sd
+    global button, rotary_encoder, amplifier_sd, current_volume
+    
+    # Setup rotary encoder button (SW pin)
     button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.05)
-    print(f"[INIT] Button configured on GPIO{BUTTON_PIN}")
+    print(f"[INIT] Rotary encoder button (SW) configured on GPIO{BUTTON_PIN}")
+    
+    # Setup rotary encoder for volume control
+    rotary_encoder = RotaryEncoder(ROTARY_CLK_PIN, ROTARY_DT_PIN, max_steps=0)
+    print(f"[INIT] Rotary encoder configured: CLK=GPIO{ROTARY_CLK_PIN}, DT=GPIO{ROTARY_DT_PIN}")
     
     # Setup amplifier shutdown pin (active high means on)
     amplifier_sd = OutputDevice(AMPLIFIER_SD_PIN, active_high=True, initial_value=False)
     print(f"[INIT] Amplifier SD pin configured on GPIO{AMPLIFIER_SD_PIN}")
+    
+    # Initialize volume control
+    print(f"\n[INIT] Setting up volume control...")
+    if set_system_volume(INITIAL_VOLUME):
+        current_volume = INITIAL_VOLUME
+        print(f"[INIT] ✓ Initial volume set to {current_volume}%")
+    else:
+        # Try to read current volume
+        vol = get_system_volume()
+        if vol is not None:
+            current_volume = vol
+            print(f"[INIT] ✓ Using current system volume: {current_volume}%")
+        else:
+            current_volume = INITIAL_VOLUME
+            print(f"[INIT] ⚠ Could not set or read volume, assuming {current_volume}%")
+    
+    # Setup rotary encoder callback for volume control
+    def on_rotate():
+        global current_volume
+        steps = rotary_encoder.steps
+        if steps != 0:
+            # Calculate new volume
+            volume_change = steps * VOLUME_STEP
+            new_volume = current_volume + volume_change
+            
+            # Clamp to valid range
+            new_volume = max(0, min(100, new_volume))
+            
+            # Only update if changed
+            if new_volume != current_volume:
+                if set_system_volume(new_volume):
+                    old_volume = current_volume
+                    current_volume = new_volume
+                    print(f"[VOLUME] {'↑' if volume_change > 0 else '↓'} {old_volume}% → {current_volume}%")
+                else:
+                    print(f"[VOLUME] Failed to set volume to {new_volume}%")
+            
+            # Reset steps counter
+            rotary_encoder.steps = 0
+    
+    # Attach rotation callback
+    rotary_encoder.when_rotated = on_rotate
+    print(f"[INIT] ✓ Volume control active: ±{VOLUME_STEP}% per step")
     
     # Check API key
     if CLIENT_API_KEY in ["YOUR_API_KEY_HERE", "YOUR_SECURE_API_KEY_HERE", ""]:
@@ -1201,6 +1325,8 @@ def main():
         # Close GPIO devices (gpiozero handles cleanup automatically)
         if button:
             button.close()
+        if rotary_encoder:
+            rotary_encoder.close()
         if amplifier_sd:
             amplifier_sd.close()
         print("[EXIT] GPIO cleanup complete")
