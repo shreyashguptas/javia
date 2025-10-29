@@ -787,6 +787,101 @@ def get_audio_device_index(audio):
     
     return device_index
 
+def record_audio_with_arecord():
+    """
+    Record audio using arecord command (more reliable for I2S devices).
+    
+    This method bypasses PyAudio which has compatibility issues with some
+    ALSA configurations, particularly the googlevoicehat driver.
+    """
+    print("[AUDIO] Recording with arecord... SPEAK NOW!")
+    print("[AUDIO] " + "="*40)
+    
+    process = None
+    
+    try:
+        # Start arecord in background
+        process = subprocess.Popen(
+            [
+                'arecord',
+                '-D', 'plughw:0,0',  # googlevoicehat device
+                '-f', 'S16_LE',       # 16-bit signed little-endian
+                '-r', str(SAMPLE_RATE),  # 48000 Hz
+                '-c', str(CHANNELS),     # 1 channel (mono)
+                str(RECORDING_FILE)      # Output file
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        
+        print(f"[AUDIO] arecord started (PID: {process.pid})")
+        
+        # Wait for button to be released first
+        while button.is_pressed:
+            time.sleep(0.005)
+        
+        # Record until button is pressed again
+        start_time = time.time()
+        while not button.is_pressed:
+            # Progress indicator every second
+            elapsed = time.time() - start_time
+            if int(elapsed) > 0 and int(elapsed) % 1 == 0:
+                if int(elapsed * 10) % 10 == 0:  # Only print once per second
+                    print(f"[AUDIO] {int(elapsed)}s recorded...")
+            time.sleep(0.1)
+        
+        print("[AUDIO] " + "="*40)
+        print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+        
+        # Stop arecord gracefully
+        process.terminate()
+        
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        
+        # Play stop beep asynchronously
+        play_beep_async(STOP_BEEP_FILE, "stop")
+        
+        # Wait for button release
+        while button.is_pressed:
+            time.sleep(0.005)
+        
+        # Check if file was created
+        if not RECORDING_FILE.exists():
+            print("[ERROR] Recording file was not created")
+            return False
+        
+        file_size = RECORDING_FILE.stat().st_size
+        if file_size < 1000:
+            print(f"[WARNING] Recording file is very small ({file_size} bytes)")
+        
+        duration = time.time() - start_time
+        print(f"[AUDIO] Recording complete ({duration:.1f}s, {file_size} bytes)")
+        print(f"[AUDIO] Saved: {RECORDING_FILE}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Recording failed: {e}")
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
+        return False
+        
+    finally:
+        # Clean up process
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=1)
+            except:
+                try:
+                    process.kill()
+                except:
+                    pass
+
 def record_audio():
     """
     Record RAW audio from I2S microphone - NO processing on Pi.
@@ -814,10 +909,11 @@ def record_audio():
         device_index = get_audio_device_index(audio)
         
         if device_index is None:
-            print("[ERROR] No input devices found!")
-            print("[DEBUG] Attempting direct device access...")
-            # Try to use device 0 directly (googlevoicehat is usually card 0)
-            device_index = 0
+            print("[ERROR] No input devices found via PyAudio!")
+            print("[INFO] Falling back to arecord method...")
+            if audio:
+                audio.terminate()
+            return record_audio_with_arecord()
         
         # Validate device
         try:
