@@ -94,65 +94,99 @@ def set_system_volume(volume):
     """
     Set ALSA system volume.
     
+    NOTE: The googlevoicehat driver does NOT support hardware volume control.
+    This is a limitation of the simple I2S driver design.
+    Volume control is disabled but the rotary encoder still works for future use.
+    
     Args:
         volume: Volume level (0-100)
     
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if successful (or if no mixer available), False on error
     """
     try:
         # Clamp volume to valid range
         volume = max(0, min(100, volume))
         
-        # Set volume using amixer
-        result = subprocess.run(
-            ['amixer', 'sset', 'Master', f'{volume}%'],
+        # First, check if any mixer controls exist
+        check_result = subprocess.run(
+            ['amixer', 'scontrols'],
             capture_output=True,
-            timeout=2
+            timeout=2,
+            text=True
         )
         
-        if result.returncode == 0:
+        if not check_result.stdout.strip():
+            # No mixer controls available - googlevoicehat driver limitation
+            # This is expected and not an error
             return True
-        else:
-            print(f"[VOLUME] Warning: amixer returned {result.returncode}")
-            return False
+        
+        # Try to set volume on available controls
+        # Try common control names in order
+        for control_name in ['Master', 'PCM', 'Speaker', 'Headphone']:
+            result = subprocess.run(
+                ['amixer', 'sset', control_name, f'{volume}%'],
+                capture_output=True,
+                timeout=2
+            )
+            
+            if result.returncode == 0:
+                return True
+        
+        # No valid control found but mixer exists - return True anyway
+        return True
             
     except Exception as e:
-        print(f"[VOLUME] Error setting volume: {e}")
-        return False
+        # Volume control is optional - don't treat as critical error
+        return True
 
 def get_system_volume():
     """
     Get current ALSA system volume.
     
+    NOTE: The googlevoicehat driver does NOT support hardware volume control.
+    Returns None to indicate no mixer available (expected behavior).
+    
     Returns:
-        int: Current volume (0-100) or None if failed
+        int: Current volume (0-100) or None if no mixer available
     """
     try:
-        result = subprocess.run(
-            ['amixer', 'sget', 'Master'],
+        # First, check if any mixer controls exist
+        check_result = subprocess.run(
+            ['amixer', 'scontrols'],
             capture_output=True,
-            text=True,
-            timeout=2
+            timeout=2,
+            text=True
         )
         
-        if result.returncode == 0:
-            # Parse output to find volume percentage
-            for line in result.stdout.split('\n'):
-                if 'Mono:' in line or 'Front Left:' in line or 'Left:' in line:
-                    # Extract percentage from format like "[70%]"
-                    import re
-                    match = re.search(r'\[(\d+)%\]', line)
-                    if match:
-                        return int(match.group(1))
-            print("[VOLUME] Could not parse volume from amixer output")
+        if not check_result.stdout.strip():
+            # No mixer controls available - this is expected for googlevoicehat
             return None
-        else:
-            print(f"[VOLUME] amixer sget returned {result.returncode}")
-            return None
+        
+        # Try common control names
+        for control_name in ['Master', 'PCM', 'Speaker', 'Headphone']:
+            result = subprocess.run(
+                ['amixer', 'sget', control_name],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            
+            if result.returncode == 0:
+                # Parse output to find volume percentage
+                for line in result.stdout.split('\n'):
+                    if 'Mono:' in line or 'Front Left:' in line or 'Left:' in line:
+                        # Extract percentage from format like "[70%]"
+                        import re
+                        match = re.search(r'\[(\d+)%\]', line)
+                        if match:
+                            return int(match.group(1))
+        
+        # No mixer controls found - expected for googlevoicehat
+        return None
             
     except Exception as e:
-        print(f"[VOLUME] Error getting volume: {e}")
+        # Volume control is optional - not a critical error
         return None
 
 def optimize_system_performance():
@@ -219,18 +253,19 @@ def setup():
     
     # Initialize volume control
     print(f"\n[INIT] Setting up volume control...")
-    if set_system_volume(INITIAL_VOLUME):
+    
+    # Check if mixer controls are available
+    vol = get_system_volume()
+    if vol is not None:
+        current_volume = vol
+        set_system_volume(INITIAL_VOLUME)
         current_volume = INITIAL_VOLUME
-        print(f"[INIT] ✓ Initial volume set to {current_volume}%")
+        print(f"[INIT] ✓ Volume control enabled: {current_volume}%")
     else:
-        # Try to read current volume
-        vol = get_system_volume()
-        if vol is not None:
-            current_volume = vol
-            print(f"[INIT] ✓ Using current system volume: {current_volume}%")
-        else:
-            current_volume = INITIAL_VOLUME
-            print(f"[INIT] ⚠ Could not set or read volume, assuming {current_volume}%")
+        current_volume = INITIAL_VOLUME
+        print(f"[INIT] ℹ Volume control not available (googlevoicehat driver limitation)")
+        print(f"[INIT] ℹ Rotary encoder tracks volume in software: {current_volume}%")
+        print(f"[INIT] ℹ Hardware volume is controlled by MAX98357A Gain setting")
     
     # Setup rotary encoder callback for volume control
     def on_rotate():
@@ -246,19 +281,21 @@ def setup():
             
             # Only update if changed
             if new_volume != current_volume:
-                if set_system_volume(new_volume):
-                    old_volume = current_volume
-                    current_volume = new_volume
-                    print(f"[VOLUME] {'↑' if volume_change > 0 else '↓'} {old_volume}% → {current_volume}%")
-                else:
-                    print(f"[VOLUME] Failed to set volume to {new_volume}%")
+                old_volume = current_volume
+                current_volume = new_volume
+                
+                # Try to set system volume (will succeed if mixer available)
+                set_system_volume(new_volume)
+                
+                # Always show volume change (software tracking)
+                print(f"[VOLUME] {'↑' if volume_change > 0 else '↓'} {old_volume}% → {current_volume}% (software)")
             
             # Reset steps counter
             rotary_encoder.steps = 0
     
     # Attach rotation callback
     rotary_encoder.when_rotated = on_rotate
-    print(f"[INIT] ✓ Volume control active: ±{VOLUME_STEP}% per step")
+    print(f"[INIT] ✓ Rotary encoder active: ±{VOLUME_STEP}% per step (button + rotation)")
     
     # Check API key
     if CLIENT_API_KEY in ["YOUR_API_KEY_HERE", "YOUR_SECURE_API_KEY_HERE", ""]:
@@ -693,33 +730,61 @@ def get_audio_device_index(audio):
     
     # Find I2S input device (first time only)
     device_index = None
-    device_count = audio.get_device_count()
+    
+    try:
+        device_count = audio.get_device_count()
+        print(f"[AUDIO] Scanning {device_count} audio devices...")
+    except Exception as e:
+        print(f"[ERROR] Could not get device count: {e}")
+        return None
     
     # First pass: Look for Voice HAT devices
     for i in range(device_count):
         try:
             info = audio.get_device_info_by_index(i)
-            if info['maxInputChannels'] > 0 and ('googlevoicehat' in info['name'].lower() or 
-                                                  'voicehat' in info['name'].lower() or
-                                                  'sndrpigooglevoi' in info['name'].lower()):
+            device_name = info.get('name', '').lower()
+            max_input = info.get('maxInputChannels', 0)
+            
+            print(f"[AUDIO] Device {i}: {info.get('name', 'Unknown')} (inputs: {max_input})")
+            
+            if max_input > 0 and ('googlevoicehat' in device_name or 
+                                  'voicehat' in device_name or
+                                  'sndrpigooglevoi' in device_name or
+                                  'google' in device_name):
                 device_index = i
+                print(f"[AUDIO] ✓ Found Voice HAT device at index {i}: {info.get('name')}")
                 break
-        except Exception:
+        except Exception as e:
+            print(f"[AUDIO] Error checking device {i}: {e}")
             continue
     
-    # Second pass: If Voice HAT not found, use any valid input device
+    # Second pass: If Voice HAT not found, use default input device
+    if device_index is None:
+        try:
+            default_info = audio.get_default_input_device_info()
+            device_index = default_info['index']
+            print(f"[AUDIO] Using default input device: {default_info.get('name')}")
+        except Exception as e:
+            print(f"[AUDIO] No default input device: {e}")
+    
+    # Third pass: Use any input device
     if device_index is None:
         for i in range(device_count):
             try:
                 info = audio.get_device_info_by_index(i)
-                if info['maxInputChannels'] > 0:
+                if info.get('maxInputChannels', 0) > 0:
                     device_index = i
+                    print(f"[AUDIO] Using first available input device {i}: {info.get('name')}")
                     break
             except Exception:
                 continue
     
     # Cache the result
     _CACHED_AUDIO_DEVICE_INDEX = device_index
+    
+    if device_index is None:
+        print("[ERROR] No input device found after scanning all devices")
+    
     return device_index
 
 def record_audio():

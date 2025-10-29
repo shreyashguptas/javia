@@ -6,6 +6,8 @@ This document describes the rotary encoder feature for volume control and push-t
 
 The Voice Assistant uses a **KY-040 Rotary Encoder** to provide intuitive physical volume control and push-to-talk functionality. This replaces the simple push button from the original design.
 
+**IMPORTANT NOTE:** The googlevoicehat soundcard driver does **not** support software volume control (no ALSA mixer controls). The rotary encoder tracks volume in software (0-100%) but cannot directly control hardware volume. Hardware volume is fixed and controlled by the MAX98357A amplifier's GAIN setting (hardware pin configuration). The rotary encoder is fully functional and ready for future enhancements or alternative audio drivers that support volume control.
+
 ## Hardware
 
 ### Component: KY-040 Rotary Encoder
@@ -57,20 +59,22 @@ This maintains the exact same functionality as the original push button design.
 
 ### Volume Control (Rotation)
 
-**Turn the rotary encoder knob** to adjust system volume:
+**Turn the rotary encoder knob** to track volume level:
 
-- **Clockwise rotation**: Increase volume by 5% per step
-- **Counter-clockwise rotation**: Decrease volume by 5% per step
+- **Clockwise rotation**: Increase volume by 5% per step (software tracking)
+- **Counter-clockwise rotation**: Decrease volume by 5% per step (software tracking)
 - **Volume range**: 0% to 100% (automatically clamped)
 - **Total steps**: 20 steps from 0% to 100% (matches encoder detents)
+
+**Current Limitation:** The googlevoicehat driver doesn't expose ALSA mixer controls, so volume changes are tracked in software only. The actual hardware volume is controlled by the MAX98357A GAIN pin setting. The rotary encoder is fully functional and will work with alternative audio drivers that support volume control.
 
 ### Real-Time Feedback
 
 Volume changes are displayed in the console:
 ```
-[VOLUME] ↑ 70% → 75%
-[VOLUME] ↑ 75% → 80%
-[VOLUME] ↓ 80% → 75%
+[VOLUME] ↑ 70% → 75% (software)
+[VOLUME] ↑ 75% → 80% (software)
+[VOLUME] ↓ 80% → 75% (software)
 ```
 
 ## Software Implementation
@@ -188,31 +192,34 @@ def get_system_volume():
 
 ### Volume Control Not Working
 
-**Symptoms**: Button works, but rotation doesn't change volume
+**Symptoms**: Button works, but rotation doesn't change hardware volume
 
-**Check**:
-1. Verify ALSA mixer is available:
-   ```bash
-   amixer sget Master
-   ```
-   Should show output like:
-   ```
-   Simple mixer control 'Master',0
-     Capabilities: pvolume pvolume-joined pswitch pswitch-joined
-     Playback channels: Mono
-     Limits: Playback 0 - 65536
-     Mono: Playback 45875 [70%] [on]
-   ```
+**Explanation**: The googlevoicehat soundcard driver **does not support software volume control**. This is a driver limitation, not a bug.
 
-2. Manually test volume control:
-   ```bash
-   amixer sset Master 50%
-   amixer sset Master 80%
-   ```
+**Check if mixer controls exist**:
+```bash
+amixer scontrols
+```
 
-3. Check CLK and DT connections:
-   - Swap CLK and DT if rotation direction is inverted
-   - Ensure wires are firmly connected
+If this returns empty (no output), then your audio driver doesn't support volume control. This is **expected** for the googlevoicehat driver.
+
+**Current behavior**:
+- Rotary encoder **does work** - it tracks volume in software (you'll see `[VOLUME]` messages)
+- Hardware volume is fixed and controlled by MAX98357A GAIN pin
+- The encoder is ready for use with alternative drivers that support volume control
+
+**Workaround for hardware volume**:
+The MAX98357A amplifier has a GAIN pin that can be configured for fixed gain levels:
+- GAIN pin to GND: 3dB gain
+- GAIN pin to VDD: 15dB gain  
+- GAIN pin floating: 9dB gain (default)
+
+Currently the GAIN pin is not connected (9dB default). You can wire it to GND or VDD for different volume levels.
+
+**Future solutions**:
+1. Use a different audio driver that supports mixer controls
+2. Implement software volume control in the playback code
+3. Add a hardware volume control circuit between the amplifier and speaker
 
 ### Rotation Direction Inverted
 
