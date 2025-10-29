@@ -804,34 +804,62 @@ def record_audio():
     stream = None
     
     try:
+        # Initialize PyAudio
         audio = pyaudio.PyAudio()
+        
+        # Small delay to allow ALSA to initialize
+        time.sleep(0.1)
         
         # Use cached device lookup (instant)
         device_index = get_audio_device_index(audio)
         
         if device_index is None:
             print("[ERROR] No input devices found!")
-            return False
+            print("[DEBUG] Attempting direct device access...")
+            # Try to use device 0 directly (googlevoicehat is usually card 0)
+            device_index = 0
         
         # Validate device
         try:
             device_info = audio.get_device_info_by_index(device_index)
-            if device_info['maxInputChannels'] < 1:
-                print("[ERROR] Selected device has no input channels")
-                return False
+            max_inputs = device_info.get('maxInputChannels', 0)
+            device_name = device_info.get('name', 'Unknown')
+            print(f"[AUDIO] Using device {device_index}: {device_name} ({max_inputs} input channels)")
+            
+            if max_inputs < 1:
+                print("[WARNING] Device reports 0 input channels, trying anyway...")
+                # Don't fail - googlevoicehat might report 0 but still work
         except Exception as e:
-            print(f"[ERROR] Could not validate device: {e}")
-            return False
+            print(f"[WARNING] Could not validate device {device_index}: {e}")
+            print("[AUDIO] Attempting to open stream anyway...")
         
         # Open stream with optimized buffer size
-        stream = audio.open(
-            format=AUDIO_FORMAT,
-            channels=CHANNELS,
-            rate=SAMPLE_RATE,
-            input=True,
-            input_device_index=device_index,
-            frames_per_buffer=CHUNK_SIZE  # 512 samples = 10.6ms latency at 48kHz
-        )
+        try:
+            stream = audio.open(
+                format=AUDIO_FORMAT,
+                channels=CHANNELS,
+                rate=SAMPLE_RATE,
+                input=True,
+                input_device_index=device_index,
+                frames_per_buffer=CHUNK_SIZE  # 512 samples = 10.6ms latency at 48kHz
+            )
+            print(f"[AUDIO] ✓ Stream opened successfully")
+        except Exception as e:
+            print(f"[ERROR] Failed to open audio stream: {e}")
+            print(f"[DEBUG] Trying without specifying device index...")
+            # Try without specifying device (use default)
+            try:
+                stream = audio.open(
+                    format=AUDIO_FORMAT,
+                    channels=CHANNELS,
+                    rate=SAMPLE_RATE,
+                    input=True,
+                    frames_per_buffer=CHUNK_SIZE
+                )
+                print(f"[AUDIO] ✓ Stream opened with default device")
+            except Exception as e2:
+                print(f"[ERROR] Failed to open stream with default device: {e2}")
+                return False
         
         # Initialize recorder - NO amplification (done on server)
         recorder = StreamingAudioRecorder()
