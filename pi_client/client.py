@@ -348,7 +348,7 @@ def setup():
 def generate_beep_sounds():
     """Generate pleasant beep sounds for start and stop feedback"""
     try:
-        sample_rate = 44100  # Standard sample rate for beeps
+        sample_rate = SAMPLE_RATE  # Match I2S device sample rate (48000 Hz)
         
         # Volume level to match voice response output (normalized)
         # Configurable via BEEP_VOLUME in .env (0.0-1.0)

@@ -83,7 +83,9 @@ When you make changes to the code on your Mac and push to GitHub:
 ```bash
 # SSH to your Raspberry Pi
 ssh user@raspberrypi.local
+```
 
+```bash
 # Pull latest changes
 cd /tmp/javia
 git pull
