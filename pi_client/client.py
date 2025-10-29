@@ -62,11 +62,12 @@ CHUNK_SIZE = 512  # Reduced from 1024 for lower latency (5.3ms vs 10.6ms per chu
 AUDIO_FORMAT = pyaudio.paInt16
 MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))
 FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
-BEEP_VOLUME = float(os.getenv('BEEP_VOLUME', '0.4'))  # 0.0-1.0, matches TTS output
+BEEP_VOLUME = float(os.getenv('BEEP_VOLUME', '0.4'))  # 0.0-1.0, base volume for beeps
 
 # Volume Configuration
 VOLUME_STEP = int(os.getenv('VOLUME_STEP', '5'))  # Volume change per rotary encoder step (%)
 INITIAL_VOLUME = int(os.getenv('INITIAL_VOLUME', '70'))  # Initial volume on startup (%)
+VERBOSE_OUTPUT = os.getenv('VERBOSE_OUTPUT', 'true').lower() == 'true'  # Control verbose logging
 
 # File paths
 AUDIO_DIR = Path(os.path.expanduser("~/javia/audio"))
@@ -343,6 +344,73 @@ def setup():
     
     print("\n[READY] System ready! Press button to start...\n")
 
+# ==================== AUDIO UTILITIES ====================
+
+def apply_volume_to_audio(audio_data: bytes, volume_percent: int, sample_width: int = 2) -> bytes:
+    """
+    Apply software volume scaling to audio data.
+    
+    This is required because the googlevoicehat driver doesn't support hardware volume control.
+    Software scaling ensures all audio (beeps and AI speech) respects the volume setting.
+    
+    Args:
+        audio_data: Raw PCM audio data (bytes)
+        volume_percent: Volume level 0-100 (%)
+        sample_width: Sample width in bytes (default 2 for 16-bit)
+    
+    Returns:
+        Volume-scaled audio data (bytes)
+    """
+    if volume_percent == 100:
+        # No scaling needed
+        return audio_data
+    
+    # Convert volume percentage to linear scale (0.0 - 1.0)
+    volume_scale = volume_percent / 100.0
+    
+    # Convert bytes to numpy array based on sample width
+    if sample_width == 2:
+        # 16-bit signed integer
+        audio_array = np.frombuffer(audio_data, dtype=np.int16)
+        # Apply volume scaling and clip to prevent distortion
+        scaled_array = (audio_array.astype(np.float32) * volume_scale).clip(-32768, 32767).astype(np.int16)
+        return scaled_array.tobytes()
+    else:
+        # Unsupported sample width, return original
+        return audio_data
+
+def scale_wav_file_volume(input_path: Path, output_path: Path, volume_percent: int):
+    """
+    Create a volume-scaled copy of a WAV file.
+    
+    Args:
+        input_path: Path to input WAV file
+        output_path: Path to output volume-scaled WAV file
+        volume_percent: Volume level 0-100 (%)
+    """
+    try:
+        # Read input WAV file
+        with wave.open(str(input_path), 'rb') as wf_in:
+            params = wf_in.getparams()
+            audio_data = wf_in.readframes(wf_in.getnframes())
+        
+        # Apply volume scaling
+        scaled_data = apply_volume_to_audio(audio_data, volume_percent, params.sampwidth)
+        
+        # Write scaled audio to output file
+        with wave.open(str(output_path), 'wb') as wf_out:
+            wf_out.setparams(params)
+            wf_out.writeframes(scaled_data)
+        
+        if VERBOSE_OUTPUT:
+            print(f"[AUDIO] Applied {volume_percent}% volume scaling")
+    
+    except Exception as e:
+        print(f"[WARNING] Could not scale audio volume: {e}")
+        # Fallback: copy original file
+        import shutil
+        shutil.copy(input_path, output_path)
+
 # ==================== BEEP SOUNDS ====================
 
 def generate_beep_sounds():
@@ -439,25 +507,36 @@ def generate_beep_sounds():
 
 def play_beep_async(beep_file, description=""):
     """
-    Play a short beep sound through the amplifier asynchronously.
+    Play a short beep sound through the amplifier asynchronously with volume control.
     
     PERFORMANCE OPTIMIZATION:
     - Non-blocking: Starts playback and returns immediately
     - Parallel execution: Recording can start while beep is playing
     - Reduces perceived latency by ~100-150ms
+    
+    VOLUME CONTROL:
+    - Applies software volume scaling based on current_volume
+    - Ensures beeps respect the rotary encoder volume setting
     """
     def _play_beep_thread():
         if not beep_file.exists():
             return
         
+        temp_beep_file = None
         try:
+            # Create temporary volume-scaled beep file
+            temp_beep_file = AUDIO_DIR / f"temp_beep_{description}.wav"
+            
+            # Apply current volume to beep
+            scale_wav_file_volume(beep_file, temp_beep_file, current_volume)
+            
             # Enable amplifier
             amplifier_sd.on()
             time.sleep(0.02)  # Reduced from 0.05 for faster startup
             
-            # Play beep with minimal overhead
+            # Play volume-scaled beep
             subprocess.run(
-                ['aplay', '-q', '-D', 'plughw:0,0', str(beep_file)],
+                ['aplay', '-q', '-D', 'plughw:0,0', str(temp_beep_file)],
                 capture_output=True,
                 timeout=0.5
             )
@@ -468,13 +547,23 @@ def play_beep_async(beep_file, description=""):
             # Disable amplifier
             amplifier_sd.off()
             
+            # Clean up temp file
+            if temp_beep_file and temp_beep_file.exists():
+                temp_beep_file.unlink()
+            
         except Exception:
             amplifier_sd.off()
+            if temp_beep_file and temp_beep_file.exists():
+                try:
+                    temp_beep_file.unlink()
+                except:
+                    pass
     
     # Start beep in background thread - returns immediately
     thread = threading.Thread(target=_play_beep_thread, daemon=True)
     thread.start()
-    print(f"[BEEP] ▶ {description} beep started (async)")
+    if VERBOSE_OUTPUT:
+        print(f"[BEEP] ▶ {description} beep started (volume: {current_volume}%)")
 
 def play_beep(beep_file, description=""):
     """Legacy synchronous beep - kept for compatibility"""
@@ -546,7 +635,8 @@ def compress_to_opus(wav_path, opus_path, bitrate=96000):
         bitrate: Bitrate in bits/second (default 96000 for excellent voice quality)
     """
     try:
-        print(f"[OPUS] Compressing audio to Opus format ({bitrate//1000}kbps)...")
+        if VERBOSE_OUTPUT:
+            print(f"[OPUS] Compressing audio to Opus format ({bitrate//1000}kbps)...")
         
         # Read WAV file
         with wave.open(str(wav_path), 'rb') as wf:
@@ -608,7 +698,8 @@ def compress_to_opus(wav_path, opus_path, bitrate=96000):
         compressed_size = opus_path.stat().st_size
         compression_ratio = (1 - compressed_size / original_size) * 100
         
-        print(f"[OPUS] ✓ Compressed: {original_size} → {compressed_size} bytes ({compression_ratio:.1f}% reduction)")
+        if VERBOSE_OUTPUT:
+            print(f"[OPUS] ✓ Compressed: {original_size} → {compressed_size} bytes ({compression_ratio:.1f}% reduction)")
         return True
         
     except Exception as e:
@@ -630,7 +721,8 @@ def decompress_from_opus(opus_path, wav_path):
         wav_path: Path to output WAV file
     """
     try:
-        print(f"[OPUS] Decompressing Opus to WAV for playback...")
+        if VERBOSE_OUTPUT:
+            print(f"[OPUS] Decompressing Opus to WAV for playback...")
         
         # Read Opus file
         with open(opus_path, 'rb') as f:
@@ -666,7 +758,8 @@ def decompress_from_opus(opus_path, wav_path):
         # Verify the file was written correctly
         if wav_path.exists():
             file_size = wav_path.stat().st_size
-            print(f"[OPUS] ✓ Decompressed to WAV: {file_size} bytes")
+            if VERBOSE_OUTPUT:
+                print(f"[OPUS] ✓ Decompressed to WAV: {file_size} bytes")
         else:
             print(f"[ERROR] WAV file not created!")
             return False
@@ -1126,7 +1219,8 @@ def send_to_server():
                 'microphone_gain': str(MICROPHONE_GAIN)  # Server will amplify audio
             }
             
-            print(f"[SERVER] Uploading {opus_file_size} bytes Opus (gain: {MICROPHONE_GAIN}x on server)...")
+            if VERBOSE_OUTPUT:
+                print(f"[SERVER] Uploading {opus_file_size} bytes Opus (gain: {MICROPHONE_GAIN}x on server)...")
             upload_start = time.time()
             
             # Send request with persistent session (faster than new connection)
@@ -1139,9 +1233,11 @@ def send_to_server():
             )
             
             upload_time = time.time() - upload_start
-            print(f"[SERVER] Upload complete ({upload_time:.2f}s)")
+            if VERBOSE_OUTPUT:
+                print(f"[SERVER] Upload complete ({upload_time:.2f}s)")
             
-            print(f"[SERVER] Response code: {response.status_code}")
+            if VERBOSE_OUTPUT:
+                print(f"[SERVER] Response code: {response.status_code}")
             
             if response.status_code == 200:
                 # Get metadata from headers (URL-decode to handle Unicode characters)
@@ -1163,7 +1259,8 @@ def send_to_server():
                     print("[ERROR] Received empty audio file")
                     return False
                 
-                print(f"[SUCCESS] Opus audio saved: {RESPONSE_OPUS_FILE} ({total_bytes} bytes)")
+                if VERBOSE_OUTPUT:
+                    print(f"[SUCCESS] Opus audio saved: {RESPONSE_OPUS_FILE} ({total_bytes} bytes)")
                 
                 # Decompress Opus to WAV for playback
                 if not decompress_from_opus(RESPONSE_OPUS_FILE, RESPONSE_FILE):
@@ -1401,27 +1498,55 @@ def add_silence_padding(wav_file, padding_ms=150):
                 pass
 
 def play_audio():
-    """Play audio through I2S amplifier with SD pin control"""
+    """
+    Play audio through I2S amplifier with SD pin control and volume scaling.
+    
+    AUDIO QUALITY:
+    - Minimal processing to preserve quality
+    - Optional fade/padding (only if configured)
+    - Software volume control respects rotary encoder
+    
+    VOLUME CONTROL:
+    - Applies software volume scaling based on current_volume
+    - All audio (beeps and speech) now use same volume control
+    """
     if not RESPONSE_FILE.exists():
         print("[ERROR] Response file not found")
         return False
     
     process = None
+    temp_volume_file = None
     try:
-        print("[PLAYBACK] Preparing audio...")
+        if VERBOSE_OUTPUT:
+            print("[PLAYBACK] Preparing audio...")
         
-        # Apply fade and padding to eliminate clicks
-        apply_fade_in_out(RESPONSE_FILE, fade_duration_ms=FADE_DURATION_MS)
-        add_silence_padding(RESPONSE_FILE, padding_ms=150)
+        # Create temporary volume-scaled audio file
+        temp_volume_file = AUDIO_DIR / "temp_response_volume.wav"
+        
+        # Apply volume scaling to preserve quality
+        # Note: We apply volume first, then optional fade/padding
+        scale_wav_file_volume(RESPONSE_FILE, temp_volume_file, current_volume)
+        
+        # Apply fade and padding ONLY if configured (optional for quality)
+        # These are applied AFTER volume scaling to the temp file
+        if FADE_DURATION_MS > 0:
+            if VERBOSE_OUTPUT:
+                print(f"[PLAYBACK] Applying {FADE_DURATION_MS}ms fade effects...")
+            apply_fade_in_out(temp_volume_file, fade_duration_ms=FADE_DURATION_MS)
+        
+        # Add minimal silence padding (reduced from 150ms to 50ms for performance)
+        if VERBOSE_OUTPUT:
+            print("[PLAYBACK] Adding silence padding...")
+        add_silence_padding(temp_volume_file, padding_ms=50)
         
         # Enable amplifier
         amplifier_sd.on()
         time.sleep(0.200)  # Stabilization time
         
         # Play audio
-        print("[PLAYBACK] Playing response... (Press button to interrupt)")
+        print(f"[PLAYBACK] Playing response (volume: {current_volume}%)... Press button to interrupt")
         process = subprocess.Popen(
-            ['aplay', '-D', 'plughw:0,0', str(RESPONSE_FILE)],
+            ['aplay', '-D', 'plughw:0,0', str(temp_volume_file)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
@@ -1447,6 +1572,10 @@ def play_audio():
         # Disable amplifier
         amplifier_sd.off()
         
+        # Clean up temp file
+        if temp_volume_file and temp_volume_file.exists():
+            temp_volume_file.unlink()
+        
         if interrupted:
             print("[INTERRUPT] Playback cancelled!")
             while button.is_pressed:
@@ -1465,6 +1594,12 @@ def play_audio():
                 process.wait(timeout=1)
             except:
                 process.kill()
+        # Clean up temp file
+        if temp_volume_file and temp_volume_file.exists():
+            try:
+                temp_volume_file.unlink()
+            except:
+                pass
         return False
 
 # ==================== MAIN LOOP ====================

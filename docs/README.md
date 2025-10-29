@@ -21,6 +21,7 @@ Welcome to the Voice Assistant documentation! This guide helps you navigate the 
 ### Configuration & Tuning
 - **[MICROPHONE_GAIN.md](MICROPHONE_GAIN.md)** - Microphone volume adjustment
 - **[AUDIO_CLICKS.md](AUDIO_CLICKS.md)** - Fixing audio clicks and pops
+- **[VOLUME_CONTROL.md](VOLUME_CONTROL.md)** - Speaker volume control and audio quality
 
 ### Troubleshooting
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
@@ -43,6 +44,7 @@ Welcome to the Voice Assistant documentation! This guide helps you navigate the 
 3. [PYTHON.md](PYTHON.md) → Python setup
 4. [MICROPHONE_GAIN.md](MICROPHONE_GAIN.md) → Audio tuning
 5. [AUDIO_CLICKS.md](AUDIO_CLICKS.md) → Audio quality
+6. [VOLUME_CONTROL.md](VOLUME_CONTROL.md) → Volume control and optimization
 
 **Understanding the System:**
 1. [ARCHITECTURE.md](ARCHITECTURE.md) → How it all works
@@ -59,7 +61,9 @@ Welcome to the Voice Assistant documentation! This guide helps you navigate the 
 | Wire hardware | [HARDWARE.md](HARDWARE.md) |
 | Fix microphone not working | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | Adjust microphone volume | [MICROPHONE_GAIN.md](MICROPHONE_GAIN.md) |
+| Control speaker volume | [VOLUME_CONTROL.md](VOLUME_CONTROL.md) |
 | Fix audio clicks | [AUDIO_CLICKS.md](AUDIO_CLICKS.md) |
+| Improve audio quality | [VOLUME_CONTROL.md](VOLUME_CONTROL.md) |
 | Understand architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Setup API keys | [DEPLOYMENT.md](DEPLOYMENT.md) |
 | Configure Nginx | [DEPLOYMENT.md](DEPLOYMENT.md) → Part 1, Step 6-8 |
@@ -128,6 +132,13 @@ Welcome to the Voice Assistant documentation! This guide helps you navigate the 
 - Hardware SD pin control
 - Software padding and fade effects
 - Troubleshooting persistent clicks
+
+#### VOLUME_CONTROL.md
+- Software volume control implementation
+- Rotary encoder configuration
+- Audio quality optimization
+- Performance tuning
+- Verbose output control
 
 ### Support
 
