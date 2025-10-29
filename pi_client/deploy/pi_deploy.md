@@ -29,6 +29,20 @@ ssh user@raspberrypi.local
 ```
 
 ```bash
+# Edit the config file
+sudo nano /boot/firmware/config.txt
+
+# Find this line (around the bottom):
+#dtparam=i2s=on
+
+# Remove the '#' to UNCOMMENT it, and add the overlay:
+dtparam=i2s=on
+dtoverlay=googlevoicehat-soundcard
+
+# Save: Ctrl+O, Enter, Ctrl+X
+```
+
+```bash
 # Clone the repository
 cd /tmp
 rm -rf javia
