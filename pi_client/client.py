@@ -801,10 +801,11 @@ def record_audio_with_arecord():
     
     try:
         # Start arecord in background
+        # Use full CARD name for better reliability across Pi models
         process = subprocess.Popen(
             [
                 'arecord',
-                '-D', 'plughw:0,0',  # googlevoicehat device
+                '-D', 'plughw:CARD=sndrpigooglevoi,DEV=0',  # googlevoicehat device (full name)
                 '-f', 'S16_LE',       # 16-bit signed little-endian
                 '-r', str(SAMPLE_RATE),  # 48000 Hz
                 '-c', str(CHANNELS),     # 1 channel (mono)

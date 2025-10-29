@@ -178,11 +178,14 @@ python3 client.py
 arecord -l
 aplay -l
 
-# Test recording (5 seconds)
-arecord -D plughw:0,0 -c1 -r 48000 -f S16_LE -d 5 test.wav
+# Test recording (3 seconds) - Use full CARD name for reliability
+arecord -D plughw:CARD=sndrpigooglevoi,DEV=0 -f S16_LE -r 48000 -c 1 -d 3 /tmp/test.wav
+
+# Verify file was created
+ls -lh /tmp/test.wav
 
 # Test playback
-aplay -D plughw:0,0 test.wav
+aplay /tmp/test.wav
 
 # Check audio group membership
 groups $USER
@@ -191,6 +194,21 @@ groups $USER
 # Check if beep files exist
 ls -lh ~/javia/audio/*.wav
 ```
+
+**If audio tests fail:**
+1. Verify I2S is enabled in `/boot/firmware/config.txt`:
+   ```bash
+   grep -E "dtparam=i2s|dtoverlay=googlevoicehat" /boot/firmware/config.txt
+   ```
+   Should show both lines uncommented.
+
+2. If I2S is enabled but audio still doesn't work, **reboot the Pi**:
+   ```bash
+   sudo reboot
+   ```
+   Then test again after logging back in.
+
+3. If still not working, check hardware connections (see docs/HARDWARE.md)
 
 ## 🔑 Configuration Management
 
