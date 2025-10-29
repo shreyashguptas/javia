@@ -119,9 +119,10 @@ The voice assistant has been architected as a client-server system to optimize p
 
 #### Groq Service Layer (`services/groq_service.py`)
 - Encapsulates all Groq API calls
+- **Dynamic token allocation** based on query complexity
 - Retry logic with exponential backoff
 - Rate limit handling
-- Error handling and logging
+- Error handling and comprehensive logging
 
 #### Authentication Middleware (`middleware/auth.py`)
 - API key validation from `X-API-Key` header
@@ -171,6 +172,7 @@ Process audio through the complete pipeline.
 - **Headers**:
   - `X-Transcription`: Transcribed text
   - `X-LLM-Response`: LLM response text
+  - `X-Response-Complexity`: Query complexity level (simple/moderate/complex)
   - `X-Session-ID`: Session ID (if provided)
 - **Body**: Audio file (WAV format)
 
@@ -208,8 +210,9 @@ Process audio through the complete pipeline.
    - Saves temporary file
 9. **Groq Service processes** audio:
    - **Step 1**: Transcribe audio (Whisper API)
-   - **Step 2**: Query LLM with transcription
-   - **Step 3**: Generate speech from LLM response (TTS API)
+   - **Step 2**: Analyze query complexity (simple/moderate/complex)
+   - **Step 3**: Query LLM with dynamic token allocation
+   - **Step 4**: Generate speech from LLM response (TTS API)
 10. **Server returns** audio response:
     - Streams audio file
     - Includes metadata in headers
@@ -444,4 +447,173 @@ Total: 3-11 seconds
 2. ✅ **Server-side amplification**: Offloaded from Pi Zero 2 W
 3. ✅ **Connection reuse**: HTTP keep-alive for persistent sessions
 4. ✅ **Efficient audio processing**: Streaming approach, minimal memory
+5. ✅ **Dynamic token allocation**: Query complexity analysis for optimal response length
+
+## Dynamic Response Length Architecture
+
+### Overview
+
+The system uses intelligent query complexity analysis to dynamically allocate LLM tokens, ensuring:
+- **Concise answers** for simple factual questions
+- **Detailed explanations** for complex queries
+- **Optimal user experience** without hard-coded token limits
+
+### Complexity Analysis Pipeline
+
+```
+User Query
+    │
+    ▼
+┌─────────────────────────────────┐
+│  Complexity Analyzer             │
+│  - Length metrics                │
+│  - Lexical diversity             │
+│  - Technical term detection      │
+│  - Question type indicators      │
+└─────────────┬───────────────────┘
+              │
+              ▼
+    ┌────────────────────┐
+    │ Complexity Score   │
+    │ (0-7 point scale)  │
+    └─────────┬──────────┘
+              │
+              ▼
+   ┌──────────────────────────┐
+   │ Classification:          │
+   │ • Simple (score ≤ 1)     │
+   │ • Moderate (score 2-3)   │
+   │ • Complex (score ≥ 4)    │
+   └──────────┬───────────────┘
+              │
+              ▼
+    ┌─────────────────────┐
+    │ Parameter Selection │
+    │ - max_tokens        │
+    │ - temperature       │
+    │ - timeout           │
+    └─────────┬───────────┘
+              │
+              ▼
+         LLM Query
+```
+
+### Complexity Factors
+
+**1. Length Analysis**
+- Character count
+- Word count
+- Sentence structure
+
+**2. Lexical Diversity**
+- Ratio of unique words to total words
+- Higher diversity = more complex query
+
+**3. Technical Term Detection**
+Curated terms across domains:
+- Medical: pathophysiology, myocardial, diagnosis, etc.
+- Legal: jurisdiction, litigation, statute, etc.
+- Financial: amortization, derivative, liquidity, etc.
+- Technical: algorithm, encryption, architecture, etc.
+
+**4. Question Indicators**
+- Complexity signals: "explain", "how does", "why does"
+- Depth questions: queries starting with "how" or "why"
+
+### Token Allocation Strategy
+
+| Complexity | Default Tokens | Temperature | Response Type | Example |
+|------------|----------------|-------------|---------------|---------|
+| **Simple** | 100 | 0.5 | 1-2 sentences | "Who was the first president?" |
+| **Moderate** | 300 | 0.7 | 2-4 sentences | "How does HTTPS encryption work?" |
+| **Complex** | 800 | 0.8 | Detailed multi-paragraph | "Explain myocardial infarction pathophysiology" |
+
+### System Prompt Strategy
+
+**Base Prompt** (applies to all queries):
+```
+You are a helpful voice assistant that adapts response length to question complexity.
+```
+
+**Dynamic Hint** (injected based on detected complexity):
+- Simple: "This appears to be a simple factual question. Provide a clear, one-sentence answer."
+- Moderate: "This question requires moderate detail. Provide 2-3 sentences with helpful context."
+- Complex: "This is a complex question requiring detailed explanation. Provide a thorough, well-structured answer."
+
+### Configuration
+
+All parameters are environment-configurable via `.env`:
+
+```env
+# Token limits per tier
+LLM_TOKENS_SIMPLE=100
+LLM_TOKENS_MODERATE=300
+LLM_TOKENS_COMPLEX=800
+
+# Temperature per tier
+LLM_TEMP_SIMPLE=0.5
+LLM_TEMP_MODERATE=0.7
+LLM_TEMP_COMPLEX=0.8
+
+# Timeout configuration
+LLM_TIMEOUT_S=45
+TTS_TIMEOUT_S=90
+
+# Complexity thresholds
+COMPLEXITY_LEN_SIMPLE_MAX=50
+COMPLEXITY_LEN_COMPLEX_MIN=150
+COMPLEXITY_LEXICAL_DIVERSITY_MIN=0.6
+```
+
+### Logging and Observability
+
+The system logs comprehensive metrics for each request:
+
+**Complexity Analysis Log**:
+```
+Complexity analysis: level=complex, score=5, chars=187, words=28, 
+lexical_diversity=0.82, technical_terms=3
+```
+
+**LLM Request Log**:
+```
+Sending query to LLM (attempt 1/3) - complexity=complex, 
+max_tokens=800, temp=0.8
+```
+
+**LLM Response Log**:
+```
+LLM response received - length=1247 chars, finish_reason=stop, 
+preview="Myocardial infarction, commonly known as a heart attack..."
+```
+
+**Truncation Warning** (if `finish_reason=length`):
+```
+Response truncated by max_tokens limit (800). Consider increasing 
+COMPLEX_TOKENS setting.
+```
+
+### TTS Integration
+
+**Character Limit**: Groq TTS has a 4096-character limit
+
+**Safeguards**:
+1. Token caps designed to stay within TTS limit
+2. Automatic truncation with warning logging if exceeded
+3. Configurable limits allow tuning per deployment
+
+**Token-to-Character Ratio**:
+- Rough estimate: 1 token ≈ 4 characters
+- Simple (100 tokens) ≈ 400 chars
+- Moderate (300 tokens) ≈ 1200 chars
+- Complex (800 tokens) ≈ 3200 chars
+- All safely under 4096 char TTS limit
+
+### Benefits
+
+1. **User Experience**: Answers match question complexity
+2. **Cost Efficiency**: No wasted tokens on simple queries
+3. **Flexibility**: Complex questions get adequate space
+4. **Configurability**: Easy tuning via environment variables
+5. **Observability**: Comprehensive logging for monitoring
 

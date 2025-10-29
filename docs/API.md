@@ -79,6 +79,7 @@ Process audio through complete pipeline: transcription → LLM → TTS.
 - **Headers**:
   - `X-Transcription`: Transcribed text from audio (URL-encoded to support Unicode)
   - `X-LLM-Response`: LLM response text (URL-encoded to support Unicode)
+  - `X-Response-Complexity`: Query complexity level (`simple`, `moderate`, or `complex`)
   - `X-Session-ID`: Session ID (if provided, URL-encoded)
 - **Body**: Audio file (Opus format) containing TTS response
 
@@ -134,6 +135,9 @@ if response.status_code == 200:
     # Get metadata (URL-decode to handle Unicode characters)
     transcription = unquote(response.headers.get('X-Transcription', ''))
     llm_response = unquote(response.headers.get('X-LLM-Response', ''))
+    complexity = response.headers.get('X-Response-Complexity', 'unknown')
+    
+    print(f"Complexity: {complexity}")
     
     # Save audio
     with open('response.wav', 'wb') as f:
@@ -273,25 +277,67 @@ def transcribe_audio():
 **Model:** `openai/gpt-oss-20b`
 - Fast inference
 - Good for conversational queries
-- Concise responses
+- Dynamic response length based on query complexity
+
+**Dynamic Token Allocation:**
+The system automatically analyzes query complexity and adjusts response length:
+
+| Complexity | Max Tokens | Temperature | Use Case |
+|------------|-----------|-------------|----------|
+| **Simple** | 100 (default) | 0.5 | Factual questions ("Who was the first president?") |
+| **Moderate** | 300 (default) | 0.7 | Questions needing context ("How does HTTPS work?") |
+| **Complex** | 800 (default) | 0.8 | Detailed explanations ("Explain myocardial infarction pathophysiology") |
+
+**Complexity Analysis Factors:**
+- Query length (characters and words)
+- Lexical diversity (unique words / total words)
+- Technical term detection (medical, legal, financial, programming)
+- Question type indicators ("explain", "how does", "why")
 
 **System Prompt:**
 ```
-"You are a helpful voice assistant that gives concise, factual answers. 
-Keep responses brief and conversational, under 3 sentences."
+"You are a helpful voice assistant that adapts response length to question complexity. 
+For simple, factual questions, answer in one clear, succinct sentence. 
+For moderately complex questions, provide 2-3 sentences with helpful context. 
+For complex questions requiring detailed explanation, provide a thorough, 
+structured answer with necessary context, examples, and caveats."
 ```
 
-**Configuration:**
-- Max Tokens: 150
-- Temperature: 0.7 (balanced creativity)
+**Environment Variables:**
+```env
+# LLM token limits by complexity tier
+LLM_TOKENS_SIMPLE=100        # Short factual answers
+LLM_TOKENS_MODERATE=300      # Medium explanations
+LLM_TOKENS_COMPLEX=800       # Detailed responses
+
+# Temperature settings by tier
+LLM_TEMP_SIMPLE=0.5          # More deterministic for facts
+LLM_TEMP_MODERATE=0.7        # Balanced creativity
+LLM_TEMP_COMPLEX=0.8         # More creative for explanations
+
+# Timeouts
+LLM_TIMEOUT_S=45             # Increased for complex queries
+TTS_TIMEOUT_S=90             # Handles longer TTS generation
+
+# Complexity thresholds (optional customization)
+COMPLEXITY_LEN_SIMPLE_MAX=50           # Max chars for simple
+COMPLEXITY_LEN_COMPLEX_MIN=150         # Min chars for complex
+COMPLEXITY_LEXICAL_DIVERSITY_MIN=0.6   # Unique word ratio
+```
 
 **Code Reference:**
 ```python
-# See javia.py lines 391-510
-def query_llm(user_text):
-    # Input validation
-    # Retry logic
-    # Response structure validation
+# services/groq_service.py
+def analyze_query_complexity(text) -> str:
+    # Returns: "simple", "moderate", or "complex"
+    
+def select_llm_params(complexity) -> (max_tokens, temperature):
+    # Maps complexity to token/temp settings
+    
+def query_llm(user_text) -> (response, complexity):
+    # Dynamic parameter selection
+    # Comprehensive logging
+    # finish_reason monitoring
 ```
 
 **Alternative Models:**
@@ -368,8 +414,8 @@ The code includes comprehensive error handling:
 
 **3. Timeouts**
 - Transcription: 60 seconds
-- LLM: 30 seconds
-- TTS: 60 seconds (streaming)
+- LLM: 45 seconds (configurable via `LLM_TIMEOUT_S`, increased for complex queries)
+- TTS: 90 seconds (configurable via `TTS_TIMEOUT_S`, handles longer responses)
 
 ### Common Errors
 
@@ -400,19 +446,41 @@ Solution: Code detects and reports, check API status
 ## Customization
 
 ### Change System Prompt
-Edit `javia.py` line 57:
-```python
-SYSTEM_PROMPT = "Your custom prompt here"
+Edit environment variable or `config.py`:
+```env
+SYSTEM_PROMPT="Your custom prompt here"
 ```
 
-### Change Response Length
-Edit `javia.py` line 411:
-```python
-'max_tokens': 150,  # Increase for longer responses
+### Adjust Dynamic Token Allocation
+Customize token limits per complexity tier in `.env`:
+```env
+# Increase for longer simple answers
+LLM_TOKENS_SIMPLE=150
+
+# Increase for more detailed moderate responses
+LLM_TOKENS_MODERATE=500
+
+# Increase for very detailed complex responses
+LLM_TOKENS_COMPLEX=1200
+
+# Note: Keep under ~3000 tokens total to stay within TTS 4096-char limit
+```
+
+### Tune Complexity Detection
+Fine-tune complexity thresholds in `.env`:
+```env
+# Classify queries ≤50 chars as simple
+COMPLEXITY_LEN_SIMPLE_MAX=50
+
+# Classify queries ≥150 chars as complex
+COMPLEXITY_LEN_COMPLEX_MIN=150
+
+# Require 60% unique words for complexity boost
+COMPLEXITY_LEXICAL_DIVERSITY_MIN=0.6
 ```
 
 ### Change Models
-Edit `javia.py` or use environment variables:
+Use environment variables in `.env`:
 ```env
 WHISPER_MODEL=whisper-large-v3
 LLM_MODEL=llama-3.1-70b-versatile
@@ -420,10 +488,19 @@ TTS_MODEL=playai-tts
 TTS_VOICE=Nova-PlayAI
 ```
 
-### Change Temperature
-Edit `javia.py` line 412:
-```python
-'temperature': 0.7,  # 0.0 = deterministic, 1.0 = creative
+### Adjust Temperature by Tier
+Customize creativity levels in `.env`:
+```env
+LLM_TEMP_SIMPLE=0.3    # More deterministic for facts
+LLM_TEMP_MODERATE=0.7  # Balanced
+LLM_TEMP_COMPLEX=0.9   # More creative for complex topics
+```
+
+### Increase Timeouts
+For slower networks or complex queries in `.env`:
+```env
+LLM_TIMEOUT_S=60   # Longer timeout for LLM
+TTS_TIMEOUT_S=120  # Longer timeout for TTS
 ```
 
 ## Monitoring

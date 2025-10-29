@@ -111,7 +111,29 @@ SERVER_API_KEY=generated_uuid7_key
 # Server Configuration
 HOST=0.0.0.0
 PORT=8000
+
+# Dynamic Token Allocation (Optional - defaults shown)
+# Adjust LLM response length based on query complexity
+LLM_TOKENS_SIMPLE=100        # Short factual answers
+LLM_TOKENS_MODERATE=300      # Medium explanations
+LLM_TOKENS_COMPLEX=800       # Detailed responses
+
+# Temperature Settings (Optional - defaults shown)
+LLM_TEMP_SIMPLE=0.5          # More deterministic for facts
+LLM_TEMP_MODERATE=0.7        # Balanced creativity
+LLM_TEMP_COMPLEX=0.8         # More creative for complex topics
+
+# Timeout Configuration (Optional - defaults shown)
+LLM_TIMEOUT_S=45             # LLM API timeout (increased for complex queries)
+TTS_TIMEOUT_S=90             # TTS API timeout (handles longer responses)
+
+# Complexity Detection Thresholds (Optional - defaults shown)
+COMPLEXITY_LEN_SIMPLE_MAX=50           # Max chars for simple classification
+COMPLEXITY_LEN_COMPLEX_MIN=150         # Min chars for complex classification
+COMPLEXITY_LEXICAL_DIVERSITY_MIN=0.6   # Unique word ratio threshold
 ```
+
+**Note:** All the dynamic token allocation settings are optional. The defaults are optimized for typical voice assistant use. Only customize if you need different behavior.
 
 ## Cloudflare Tunnel Setup
 

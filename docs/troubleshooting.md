@@ -178,6 +178,188 @@ vcgencmd measure_temp
 **Solution:**
 Code now uses streaming (no MemoryError). If you see this, update to latest code.
 
+### 11. LLM Response Truncation
+
+**Symptom:**
+- Answers feel cut off mid-sentence
+- Response ends abruptly
+- Server log shows: `finish_reason=length`
+
+**Cause:**
+Response hit the `max_tokens` limit for its complexity tier.
+
+**Check Server Logs:**
+```bash
+journalctl -u voice-assistant-server.service -n 50 | grep "finish_reason"
+```
+
+**Solutions:**
+
+**A. Increase Token Limits**
+Edit `.env` on server:
+```env
+# For simple questions (default: 100)
+LLM_TOKENS_SIMPLE=150
+
+# For moderate questions (default: 300)
+LLM_TOKENS_MODERATE=500
+
+# For complex questions (default: 800)
+LLM_TOKENS_COMPLEX=1200
+```
+
+**B. Check Complexity Detection**
+Server logs show detected complexity:
+```
+Complexity analysis: level=simple, score=1, chars=35, words=7
+```
+
+If misclassified, adjust thresholds in `.env`:
+```env
+# Classify queries ≤50 chars as simple (default: 50)
+COMPLEXITY_LEN_SIMPLE_MAX=40
+
+# Classify queries ≥150 chars as complex (default: 150)
+COMPLEXITY_LEN_COMPLEX_MIN=120
+```
+
+**C. Restart Server After Changes**
+```bash
+sudo systemctl restart voice-assistant-server.service
+```
+
+**Warning:** Keep token limits reasonable to avoid TTS truncation (see next issue).
+
+### 12. TTS Truncation (Long Responses)
+
+**Symptom:**
+- Server log shows: `Text exceeds TTS limit (5234 chars > 4096)`
+- Response audio cuts off before complete answer
+
+**Cause:**
+Groq TTS has a 4096-character limit. LLM response was too long.
+
+**Check Server Logs:**
+```bash
+journalctl -u voice-assistant-server.service -n 50 | grep "TTS"
+```
+
+**Solutions:**
+
+**A. Reduce Token Limits**
+Ensure token limits stay within TTS character limit:
+```env
+# Rule of thumb: 1 token ≈ 4 characters
+# 800 tokens ≈ 3200 chars (safe for 4096 limit)
+
+LLM_TOKENS_SIMPLE=100   # ~400 chars
+LLM_TOKENS_MODERATE=300 # ~1200 chars
+LLM_TOKENS_COMPLEX=800  # ~3200 chars (safe)
+```
+
+**B. Adjust System Prompt**
+Make the system prompt encourage more concise responses in `.env`:
+```env
+SYSTEM_PROMPT="You are a helpful voice assistant. Keep all responses under 600 words. For simple questions, answer in one sentence. For complex questions, provide thorough but concise answers."
+```
+
+**C. Monitor Truncation**
+Check logs for truncation warnings:
+```bash
+journalctl -u voice-assistant-server.service -f | grep "truncat"
+```
+
+### 13. Request Timeouts
+
+**Symptom:**
+- Pi client shows: `[ERROR] Request timeout`
+- Server log shows: `Request timeout after 45s`
+
+**Causes:**
+1. LLM timeout too short for complex queries
+2. TTS timeout too short for long responses
+3. Network latency
+
+**Check Which Timeout:**
+```bash
+journalctl -u voice-assistant-server.service -n 50 | grep "timeout"
+```
+
+**Solutions:**
+
+**A. Increase LLM Timeout**
+For complex queries that need more processing time:
+```env
+# Default: 45 seconds
+LLM_TIMEOUT_S=60
+```
+
+**B. Increase TTS Timeout**
+For longer text-to-speech generation:
+```env
+# Default: 90 seconds
+TTS_TIMEOUT_S=120
+```
+
+**C. Check Network**
+On Pi:
+```bash
+ping yourdomain.com
+curl -I https://yourdomain.com/health
+```
+
+**D. Restart Server After Changes**
+```bash
+sudo systemctl restart voice-assistant-server.service
+```
+
+### 14. Audio Playback Issues for Long Responses
+
+**Symptom:**
+- Short answers play fine
+- Long, detailed answers cut off or don't play
+- Pi client shows playback errors
+
+**Check:**
+1. Verify Opus file size in server logs:
+   ```bash
+   journalctl -u voice-assistant-server.service -n 50 | grep "Compressed"
+   ```
+
+2. Check Pi client can decompress:
+   ```bash
+   # Test Opus decompression
+   python3 -c "import opuslib; print('Opus OK')"
+   ```
+
+**Solutions:**
+
+**A. Verify Pi Has Enough Disk Space**
+```bash
+df -h ~/javia/audio
+# Should have at least 100MB free
+```
+
+**B. Check Audio File Integrity**
+On Pi:
+```bash
+ls -lh ~/javia/audio/response.wav
+# Should show reasonable size (not 0 bytes)
+```
+
+**C. Increase aplay Buffer** (if audio stutters)
+Client code automatically handles this, but if issues persist:
+```bash
+# Manually test with larger buffer
+aplay -D plughw:0,0 --buffer-size=8192 ~/javia/audio/response.wav
+```
+
+**D. Monitor Logs During Playback**
+```bash
+# On Pi
+journalctl -f | grep -i "playback\|audio"
+```
+
 ## Diagnostic Commands
 
 ```bash

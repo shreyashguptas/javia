@@ -263,6 +263,7 @@ async def health_check():
             "headers": {
                 "X-Transcription": {"description": "Transcribed text", "schema": {"type": "string"}},
                 "X-LLM-Response": {"description": "LLM response text", "schema": {"type": "string"}},
+                "X-Response-Complexity": {"description": "Query complexity level (simple/moderate/complex)", "schema": {"type": "string"}},
             }
         },
         400: {"model": ErrorResponse},
@@ -271,7 +272,7 @@ async def health_check():
         500: {"model": ErrorResponse},
     },
     summary="Process audio and return speech response",
-    description="Upload audio file, transcribe it, get LLM response, and return TTS audio"
+    description="Upload audio file, transcribe it, get LLM response with dynamic token allocation, and return TTS audio"
 )
 async def process_audio(
     audio: UploadFile = File(..., description="Audio file (WAV or Opus format)"),
@@ -373,9 +374,9 @@ async def process_audio(
         logger.info("Step 1: Transcribing audio...")
         transcription = transcribe_audio(audio_path_for_transcription)
         
-        # Step 2: Query LLM
+        # Step 2: Query LLM (now returns complexity level)
         logger.info("Step 2: Querying LLM...")
-        llm_response = query_llm(transcription, session_id)
+        llm_response, complexity = query_llm(transcription, session_id)
         
         # Step 3: Generate speech (WAV)
         logger.info("Step 3: Generating speech...")
@@ -395,7 +396,7 @@ async def process_audio(
         
         # Return Opus audio file with metadata in headers
         # URL-encode header values to handle Unicode characters (HTTP headers must be latin-1 compatible)
-        logger.info("Processing complete, returning Opus audio file")
+        logger.info(f"Processing complete, returning Opus audio file (complexity={complexity})")
         
         return FileResponse(
             path=str(temp_output_opus_path),
@@ -404,6 +405,7 @@ async def process_audio(
             headers={
                 "X-Transcription": quote(transcription, safe=''),
                 "X-LLM-Response": quote(llm_response, safe=''),
+                "X-Response-Complexity": complexity,
                 "X-Session-ID": quote(session_id or "", safe=''),
             },
             background=BackgroundTask(
