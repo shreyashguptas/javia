@@ -238,7 +238,7 @@ You can customize model settings and other parameters in `/opt/javia/.env`:
 WHISPER_MODEL=whisper-large-v3-turbo
 LLM_MODEL=openai/gpt-oss-20b
 TTS_MODEL=playai-tts
-TTS_VOICE=Chip-PlayAI
+TTS_VOICE=Cheyenne-PlayAI
 ```
 
 ### Step 5: Verify Service is Running

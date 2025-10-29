@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     whisper_model: str = "whisper-large-v3-turbo"
     llm_model: str = "openai/gpt-oss-20b"
     tts_model: str = "playai-tts"
-    tts_voice: str = "Chip-PlayAI"
+    tts_voice: str = "Cheyenne-PlayAI"
     
     # System Prompt
     system_prompt: str = "You are a helpful voice assistant that gives concise, factual answers. Keep responses brief and conversational, under 3 sentences."

@@ -303,7 +303,7 @@ def query_llm(user_text):
 
 **Model:** `playai-tts`
 
-**Voice:** `Chip-PlayAI`
+**Voice:** `Cheyenne-PlayAI`
 - Natural sounding
 - Clear pronunciation
 - Good for voice assistants
@@ -417,7 +417,7 @@ Edit `javia.py` or use environment variables:
 WHISPER_MODEL=whisper-large-v3
 LLM_MODEL=llama-3.1-70b-versatile
 TTS_MODEL=playai-tts
-TTS_VOICE=Nova-PlayAI
+TTS_VOICE=Cheyenne-PlayAI
 ```
 
 ### Change Temperature
@@ -497,7 +497,7 @@ curl -X POST \
   -d '{
     "model": "playai-tts",
     "input": "Hello, this is a test.",
-    "voice": "Chip-PlayAI"
+    "voice": "Cheyenne-PlayAI"
   }' \
   https://api.groq.com/openai/v1/audio/speech \
   --output test_response.wav
