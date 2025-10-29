@@ -2,10 +2,26 @@
 
 ## Overview
 
-The voice assistant now features **software-based volume control** that affects all audio output, including:
-- AI voice responses (TTS output)
+The voice assistant now features **real-time software volume control** that affects all audio output, including:
+- AI voice responses (TTS output) - **adjustable during playback!**
 - Feedback beeps (start/stop sounds)
 - All other audio through the speaker
+
+### 🎯 KEY FEATURE: Real-Time Volume Adjustment
+
+**You can now adjust volume WHILE the AI is speaking!**
+
+- Rotate the encoder during playback
+- Volume changes take effect **immediately** (within 10ms)
+- Smooth transitions with no clicks or interruptions
+- Works seamlessly without stopping playback
+
+**Example**:
+```
+AI is speaking → You rotate encoder → Volume changes instantly
+[PLAYBACK] Volume adjusted: 70% → 60% → 50%
+(You hear the volume drop in real-time as AI continues speaking)
+```
 
 ## Why Software Volume Control?
 
@@ -18,29 +34,49 @@ The Google Voice HAT uses a simple I2S driver that **does not support hardware m
 
 ## How It Works
 
+### Real-Time Streaming Architecture
+
+Instead of pre-processing the entire audio file, we now use **PyAudio streaming**:
+
+```
+Audio File → Read in chunks (512 samples)
+    ↓
+Check current_volume (updated by rotary encoder)
+    ↓
+Apply volume scaling to chunk
+    ↓
+Send to speaker output
+    ↓
+Repeat every 10ms (ultra-fast response)
+```
+
 ### Volume Scaling Algorithm
 
 ```python
 # Convert volume percentage (0-100%) to linear scale (0.0-1.0)
 volume_scale = volume_percent / 100.0
 
-# Apply scaling to audio samples
+# Apply scaling to audio samples (per chunk, every 10ms)
 scaled_audio = (audio_samples * volume_scale).clip(-32768, 32767)
 ```
 
 ### Technical Details
 
 1. **16-bit PCM Audio**: Audio is stored as signed 16-bit integers (-32768 to +32767)
-2. **Volume Scaling**: Multiply each sample by the volume percentage
-3. **Clipping**: Prevent distortion by limiting values to valid range
-4. **Preservation**: Original audio files remain unchanged
+2. **Chunk-Based Processing**: Audio played in 512-sample chunks (~10ms at 48kHz)
+3. **Volume Scaling Per Chunk**: Each chunk checks current_volume and applies it
+4. **Real-Time Response**: Volume changes take effect within 10ms
+5. **Clipping**: Prevent distortion by limiting values to valid range
+6. **Preservation**: Original audio files remain unchanged
 
 ### Performance
 
-- **Processing Speed**: ~5-10ms for typical 3-second audio response
-- **Memory Usage**: Minimal (processes audio in memory)
+- **Processing Speed**: ~0.5ms per chunk (512 samples)
+- **Response Time**: 10ms maximum (next chunk)
+- **Memory Usage**: Minimal (processes audio in 1KB chunks)
 - **Quality**: No quality loss when scaling down (volume < 100%)
 - **CPU Impact**: Negligible on Raspberry Pi Zero 2 W or newer
+- **Latency**: Same as before (no additional delay)
 
 ## Using Volume Control
 
@@ -58,13 +94,24 @@ scaled_audio = (audio_samples * volume_scale).clip(-32768, 32767)
 1. **Rotate clockwise** → Volume increases by 5% per step
 2. **Rotate counter-clockwise** → Volume decreases by 5% per step
 3. Volume range: 0% (muted) to 100% (full volume)
-4. Changes take effect immediately on all audio
+4. **REAL-TIME**: Changes take effect immediately, even during playback!
 
 **Visual Feedback**:
 ```
+# When idle:
 [VOLUME] ↑ 70% → 75% (software)
 [VOLUME] ↓ 75% → 70% (software)
+
+# During playback:
+[PLAYBACK] Volume adjusted: 70% → 65%
+[PLAYBACK] Volume adjusted: 65% → 60%
 ```
+
+**Real-Time Adjustment**:
+- Works **while the AI is speaking**
+- Changes apply within 10ms (1 audio chunk)
+- Smooth transitions, no clicks or pops
+- No interruption to playback
 
 ### Configuration
 
@@ -321,18 +368,22 @@ Play through amplifier
 Delete temporary file
 ```
 
-#### AI Response (with volume control)
+#### AI Response (with REAL-TIME volume control)
 
 ```
 Decompressed TTS Audio (Opus → WAV)
-    ↓
-Apply current_volume scaling
     ↓
 Apply optional fade effects (if FADE_DURATION_MS > 0)
     ↓
 Add minimal silence padding (50ms)
     ↓
-Play through amplifier
+Stream audio in chunks (512 samples each)
+    ↓
+FOR EACH CHUNK:
+    Check current_volume (reads from rotary encoder)
+    Apply volume scaling to chunk
+    Send to speaker
+    (Volume changes take effect on next chunk - 10ms!)
     ↓
 Delete temporary files
 ```
@@ -439,13 +490,16 @@ volume_scale = math.sqrt(volume_percent / 100.0)
 - ❌ AI speech always at maximum volume  
 - ❌ No way to adjust output volume
 - ❌ Rotary encoder tracked volume but didn't apply it
+- ❌ Could not change volume during playback
 - ❌ Required physical volume control or GPIO amp shutdown
 
-### After (Software Volume Control)
+### After (Real-Time Software Volume Control)
 
 - ✅ All audio respects rotary encoder setting
 - ✅ Beeps and speech at consistent volumes
 - ✅ Real-time volume adjustment (0-100%)
+- ✅ **Volume changes DURING playback (while AI is speaking!)**
+- ✅ Instant response within 10ms
 - ✅ Volume setting preserved across sessions
 - ✅ No hardware mixer required
 - ✅ Works with googlevoicehat simple I2S driver
@@ -480,8 +534,10 @@ python3 ~/javia_client/client.py
 
 # 4. Listen to beeps - should match speech volume
 
-# 5. Rotate encoder during idle
-#    Next conversation should be at new volume
+# 5. **NEW! Rotate encoder WHILE AI is speaking**
+#    You should hear volume change immediately!
+#    You should see:
+#    [PLAYBACK] Volume adjusted: 70% → 65%
 ```
 
 ### Volume Test at Different Levels

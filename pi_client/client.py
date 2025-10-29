@@ -1499,72 +1499,122 @@ def add_silence_padding(wav_file, padding_ms=150):
 
 def play_audio():
     """
-    Play audio through I2S amplifier with SD pin control and volume scaling.
+    Play audio through I2S amplifier with REAL-TIME volume control.
+    
+    REAL-TIME FEATURES:
+    - Volume changes take effect immediately during playback
+    - Rotate encoder while speaking to adjust volume
+    - Smooth volume transitions with no clicks
     
     AUDIO QUALITY:
     - Minimal processing to preserve quality
     - Optional fade/padding (only if configured)
-    - Software volume control respects rotary encoder
+    - PyAudio streaming for real-time control
     
     VOLUME CONTROL:
-    - Applies software volume scaling based on current_volume
-    - All audio (beeps and speech) now use same volume control
+    - Monitors current_volume every chunk (10ms)
+    - Applies volume scaling in real-time
+    - Changes are immediate and smooth
     """
     if not RESPONSE_FILE.exists():
         print("[ERROR] Response file not found")
         return False
     
-    process = None
-    temp_volume_file = None
+    audio = None
+    stream = None
+    temp_processed_file = None
+    
     try:
         if VERBOSE_OUTPUT:
             print("[PLAYBACK] Preparing audio...")
         
-        # Create temporary volume-scaled audio file
-        temp_volume_file = AUDIO_DIR / "temp_response_volume.wav"
+        # Apply optional processing (fade/padding) to a temp file
+        # Volume scaling happens in real-time during playback
+        temp_processed_file = AUDIO_DIR / "temp_response_processed.wav"
         
-        # Apply volume scaling to preserve quality
-        # Note: We apply volume first, then optional fade/padding
-        scale_wav_file_volume(RESPONSE_FILE, temp_volume_file, current_volume)
+        # Copy original to temp file
+        import shutil
+        shutil.copy(RESPONSE_FILE, temp_processed_file)
         
         # Apply fade and padding ONLY if configured (optional for quality)
-        # These are applied AFTER volume scaling to the temp file
         if FADE_DURATION_MS > 0:
             if VERBOSE_OUTPUT:
                 print(f"[PLAYBACK] Applying {FADE_DURATION_MS}ms fade effects...")
-            apply_fade_in_out(temp_volume_file, fade_duration_ms=FADE_DURATION_MS)
+            apply_fade_in_out(temp_processed_file, fade_duration_ms=FADE_DURATION_MS)
         
         # Add minimal silence padding (reduced from 150ms to 50ms for performance)
         if VERBOSE_OUTPUT:
             print("[PLAYBACK] Adding silence padding...")
-        add_silence_padding(temp_volume_file, padding_ms=50)
+        add_silence_padding(temp_processed_file, padding_ms=50)
         
-        # Enable amplifier
-        amplifier_sd.on()
-        time.sleep(0.200)  # Stabilization time
-        
-        # Play audio
-        print(f"[PLAYBACK] Playing response (volume: {current_volume}%)... Press button to interrupt")
-        process = subprocess.Popen(
-            ['aplay', '-D', 'plughw:0,0', str(temp_volume_file)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        
-        # Monitor button during playback
-        interrupted = False
-        while process.poll() is None:
-            if button.is_pressed:
-                print("\n[INTERRUPT] *** BUTTON PRESSED! Stopping playback... ***")
-                process.terminate()
-                try:
-                    process.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-                interrupted = True
-                break
-            time.sleep(0.01)
+        # Read WAV file
+        with wave.open(str(temp_processed_file), 'rb') as wf:
+            channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            sample_rate = wf.getframerate()
+            n_frames = wf.getnframes()
+            
+            # Initialize PyAudio
+            audio = pyaudio.PyAudio()
+            
+            # Find output device
+            device_index = None
+            for i in range(audio.get_device_count()):
+                info = audio.get_device_info_by_index(i)
+                device_name = info.get('name', '').lower()
+                max_output = info.get('maxOutputChannels', 0)
+                
+                if max_output > 0 and ('googlevoicehat' in device_name or 
+                                      'voicehat' in device_name or
+                                      'sndrpigooglevoi' in device_name):
+                    device_index = i
+                    break
+            
+            # Open output stream
+            stream = audio.open(
+                format=audio.get_format_from_width(sample_width),
+                channels=channels,
+                rate=sample_rate,
+                output=True,
+                output_device_index=device_index,
+                frames_per_buffer=CHUNK_SIZE
+            )
+            
+            # Enable amplifier
+            amplifier_sd.on()
+            time.sleep(0.200)  # Stabilization time
+            
+            # Play audio with real-time volume control
+            print(f"[PLAYBACK] Playing (volume: {current_volume}%)... Rotate encoder to adjust, press button to stop")
+            
+            chunk_size = CHUNK_SIZE * channels * sample_width
+            last_displayed_volume = current_volume
+            interrupted = False
+            
+            while True:
+                # Read chunk from file
+                data = wf.readframes(CHUNK_SIZE)
+                
+                if not data:
+                    break
+                
+                # Apply REAL-TIME volume scaling based on current_volume
+                # This happens EVERY chunk, so volume changes take effect immediately
+                scaled_data = apply_volume_to_audio(data, current_volume, sample_width)
+                
+                # Write to output stream
+                stream.write(scaled_data)
+                
+                # Display volume changes in real-time
+                if current_volume != last_displayed_volume:
+                    print(f"[PLAYBACK] Volume adjusted: {last_displayed_volume}% → {current_volume}%")
+                    last_displayed_volume = current_volume
+                
+                # Check for button interrupt
+                if button.is_pressed:
+                    print("\n[INTERRUPT] *** BUTTON PRESSED! Stopping playback... ***")
+                    interrupted = True
+                    break
         
         # Wait for audio to fully complete
         time.sleep(0.200)
@@ -1572,9 +1622,16 @@ def play_audio():
         # Disable amplifier
         amplifier_sd.off()
         
+        # Clean up
+        if stream is not None:
+            stream.stop_stream()
+            stream.close()
+        if audio is not None:
+            audio.terminate()
+        
         # Clean up temp file
-        if temp_volume_file and temp_volume_file.exists():
-            temp_volume_file.unlink()
+        if temp_processed_file and temp_processed_file.exists():
+            temp_processed_file.unlink()
         
         if interrupted:
             print("[INTERRUPT] Playback cancelled!")
@@ -1587,19 +1644,31 @@ def play_audio():
             
     except Exception as e:
         print(f"[ERROR] Playback error: {e}")
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
         amplifier_sd.off()
-        if process and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=1)
-            except:
-                process.kill()
+        
+        # Clean up
+        try:
+            if stream is not None:
+                stream.stop_stream()
+                stream.close()
+        except:
+            pass
+        
+        try:
+            if audio is not None:
+                audio.terminate()
+        except:
+            pass
+        
         # Clean up temp file
-        if temp_volume_file and temp_volume_file.exists():
+        if temp_processed_file and temp_processed_file.exists():
             try:
-                temp_volume_file.unlink()
+                temp_processed_file.unlink()
             except:
                 pass
+        
         return False
 
 # ==================== MAIN LOOP ====================

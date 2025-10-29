@@ -22,6 +22,7 @@ Welcome to the Voice Assistant documentation! This guide helps you navigate the 
 - **[MICROPHONE_GAIN.md](MICROPHONE_GAIN.md)** - Microphone volume adjustment
 - **[AUDIO_CLICKS.md](AUDIO_CLICKS.md)** - Fixing audio clicks and pops
 - **[VOLUME_CONTROL.md](VOLUME_CONTROL.md)** - Speaker volume control and audio quality
+- **[REALTIME_VOLUME.md](REALTIME_VOLUME.md)** - Real-time volume adjustment during playback ⭐ NEW!
 
 ### Troubleshooting
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
