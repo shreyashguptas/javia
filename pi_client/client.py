@@ -18,7 +18,7 @@ import subprocess
 from pathlib import Path
 from urllib.parse import unquote
 import threading
-import RPi.GPIO as GPIO
+from gpiozero import Button, OutputDevice
 import pyaudio
 import numpy as np
 from dotenv import load_dotenv
@@ -74,6 +74,10 @@ STOP_BEEP_FILE = AUDIO_DIR / "stop_beep.wav"
 # Performance optimizations: Caching
 _CACHED_AUDIO_DEVICE_INDEX = None
 
+# GPIO objects (initialized in setup())
+button = None
+amplifier_sd = None
+
 # ==================== INITIALIZATION ====================
 
 def optimize_system_performance():
@@ -123,15 +127,13 @@ def setup():
     except Exception as e:
         print(f"[INIT] Could not clean old files: {e}")
     
-    # Setup GPIO
-    GPIO.setwarnings(False)  # Suppress warnings about channels already in use
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    # Setup GPIO using gpiozero (Pi 5 compatible)
+    global button, amplifier_sd
+    button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.05)
     print(f"[INIT] Button configured on GPIO{BUTTON_PIN}")
     
-    # Setup amplifier shutdown pin
-    GPIO.setup(AMPLIFIER_SD_PIN, GPIO.OUT)
-    GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)  # Start with amp muted
+    # Setup amplifier shutdown pin (active high means on)
+    amplifier_sd = OutputDevice(AMPLIFIER_SD_PIN, active_high=True, initial_value=False)
     print(f"[INIT] Amplifier SD pin configured on GPIO{AMPLIFIER_SD_PIN}")
     
     # Check API key
@@ -289,7 +291,7 @@ def play_beep_async(beep_file, description=""):
         
         try:
             # Enable amplifier
-            GPIO.output(AMPLIFIER_SD_PIN, GPIO.HIGH)
+            amplifier_sd.on()
             time.sleep(0.02)  # Reduced from 0.05 for faster startup
             
             # Play beep with minimal overhead
@@ -303,10 +305,10 @@ def play_beep_async(beep_file, description=""):
             time.sleep(0.02)
             
             # Disable amplifier
-            GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
+            amplifier_sd.off()
             
         except Exception:
-            GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
+            amplifier_sd.off()
     
     # Start beep in background thread - returns immediately
     thread = threading.Thread(target=_play_beep_thread, daemon=True)
@@ -330,7 +332,7 @@ def wait_for_button_press():
     """
     print("[BUTTON] Waiting for button press to start recording...")
     
-    while GPIO.input(BUTTON_PIN) == GPIO.HIGH:
+    while not button.is_pressed:
         time.sleep(0.005)  # Reduced from 0.01 for faster detection
     
     print("[BUTTON] *** BUTTON PRESSED! Starting recording... ***")
@@ -345,11 +347,11 @@ def wait_for_button_release():
     print("[BUTTON] Press button again to stop recording...")
     
     # Wait for button to be released first
-    while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+    while button.is_pressed:
         time.sleep(0.01)
     
     # Now wait for button press again
-    while GPIO.input(BUTTON_PIN) == GPIO.HIGH:
+    while not button.is_pressed:
         time.sleep(0.01)
     
     print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
@@ -360,7 +362,7 @@ def wait_for_button_release():
     time.sleep(0.05)  # Debounce
     
     # Wait for release
-    while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+    while button.is_pressed:
         time.sleep(0.01)
     
     print("[BUTTON] Released. Processing audio...\n")
@@ -646,11 +648,11 @@ def record_audio():
         recorder = StreamingAudioRecorder()
         
         # Wait for button to be released first
-        while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+        while button.is_pressed:
             time.sleep(0.005)
         
         # Record until button is pressed again - RAW audio only
-        while GPIO.input(BUTTON_PIN) == GPIO.HIGH:
+        while not button.is_pressed:
             try:
                 data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 recorder.add_chunk(data)  # Just store, no processing!
@@ -690,7 +692,7 @@ def record_audio():
         play_beep_async(STOP_BEEP_FILE, "stop")
         
         # Wait for button release
-        while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+        while button.is_pressed:
             time.sleep(0.005)
         
         # Get RAW audio data - zero processing time!
@@ -1099,7 +1101,7 @@ def play_audio():
         add_silence_padding(RESPONSE_FILE, padding_ms=150)
         
         # Enable amplifier
-        GPIO.output(AMPLIFIER_SD_PIN, GPIO.HIGH)
+        amplifier_sd.on()
         time.sleep(0.200)  # Stabilization time
         
         # Play audio
@@ -1113,7 +1115,7 @@ def play_audio():
         # Monitor button during playback
         interrupted = False
         while process.poll() is None:
-            if GPIO.input(BUTTON_PIN) == GPIO.LOW:
+            if button.is_pressed:
                 print("\n[INTERRUPT] *** BUTTON PRESSED! Stopping playback... ***")
                 process.terminate()
                 try:
@@ -1129,11 +1131,11 @@ def play_audio():
         time.sleep(0.200)
         
         # Disable amplifier
-        GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
+        amplifier_sd.off()
         
         if interrupted:
             print("[INTERRUPT] Playback cancelled!")
-            while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+            while button.is_pressed:
                 time.sleep(0.01)
             return False
         else:
@@ -1142,7 +1144,7 @@ def play_audio():
             
     except Exception as e:
         print(f"[ERROR] Playback error: {e}")
-        GPIO.output(AMPLIFIER_SD_PIN, GPIO.LOW)
+        amplifier_sd.off()
         if process and process.poll() is None:
             process.terminate()
             try:
@@ -1196,7 +1198,11 @@ def main():
     except KeyboardInterrupt:
         print("\n\n[EXIT] Shutting down...")
     finally:
-        GPIO.cleanup()
+        # Close GPIO devices (gpiozero handles cleanup automatically)
+        if button:
+            button.close()
+        if amplifier_sd:
+            amplifier_sd.close()
         print("[EXIT] GPIO cleanup complete")
 
 if __name__ == "__main__":

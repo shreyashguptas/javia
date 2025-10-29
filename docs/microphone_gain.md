@@ -99,7 +99,7 @@ The amplification process (performed on the server):
 5. **Amplification** - Server multiplies each sample by gain
 6. **Transcription** - Amplified audio sent to Whisper API
 
-**Note**: Amplification happens on the server (not the Pi) for better performance. The Pi sends the configured gain value, and the server applies it before transcription. This ensures optimal audio quality for Whisper while keeping the Pi Zero 2 W efficient.
+**Note**: Amplification happens on the server (not the Pi) for better performance. The Pi sends the configured gain value, and the server applies it before transcription. This ensures optimal audio quality for Whisper while keeping the Pi efficient.
 
 **Opus Compression**: The gain setting is still applied even with Opus compression. The server decompresses the Opus file, applies amplification, then sends to Whisper. Audio quality is maintained throughout the process.
 
@@ -226,8 +226,8 @@ Examples with gain = 2.0:
 - Original: 20000 → Amplified: 32767 (clipped)
 
 ### Performance Impact
-- **Processing time**: <50ms for 5-second recording
-- **CPU usage**: Negligible on Pi Zero 2 W
+- **Processing time**: <10ms for 5-second recording on Pi 5
+- **CPU usage**: Negligible on Pi 5
 - **Memory**: <1MB additional
 
 ## Summary

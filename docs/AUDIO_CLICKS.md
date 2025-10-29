@@ -99,7 +99,7 @@ def apply_fade_in_out(wav_file, fade_duration_ms=50):
     # Memory-efficient streaming approach
     # Only loads beginning (fade-in) and ending (fade-out) portions
     # Middle portion copied in 4KB chunks
-    # Perfect for Raspberry Pi Zero 2 W with limited RAM
+    # Efficient on all Raspberry Pi models including Pi 5
 ```
 
 **Configuration:**
@@ -478,7 +478,7 @@ Derivative at t=0 and t=1 is 0 (smooth connection)
 - 50ms fade at 48kHz = 2,400 samples × 2 bytes = ~5KB per region
 - Total memory: ~10KB for both fade regions
 - Middle portion copied in 4KB chunks (never fully loaded)
-- **No MemoryError**, even on Pi Zero 2 W with limited RAM
+- **No MemoryError**, efficient on all Raspberry Pi models including Pi 5
 
 **Silence Padding:**
 - Streaming approach (memory-efficient)

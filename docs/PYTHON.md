@@ -5,7 +5,7 @@
 If you're running Raspberry Pi OS with Python 3.13 (latest versions), you may encounter issues installing PyAudio and other dependencies because:
 
 1. **No pre-built wheels** - PyAudio doesn't have pre-compiled binaries for Python 3.13 yet
-2. **Compilation requires memory** - Building from source needs more RAM than Pi Zero 2 W has
+2. **Compilation requires time** - Building from source takes extra time even on Pi 5
 3. **Build dependencies** - Requires many additional packages and build tools
 
 ## ✅ Recommended Solution: Use System Packages
@@ -18,7 +18,7 @@ The best approach is to use the pre-built packages that come with Raspberry Pi O
 sudo apt update
 sudo apt install -y \
     python3-pyaudio \
-    python3-rpi.gpio \
+    python3-gpiozero \
     python3-requests \
     python3-numpy \
     python3-pip
@@ -47,7 +47,7 @@ pip install python-dotenv pathlib2
 
 ```bash
 python3 -c "import pyaudio; print('PyAudio:', pyaudio.__version__)"
-python3 -c "import RPi.GPIO; print('RPi.GPIO: OK')"
+python3 -c "import gpiozero; print('gpiozero: OK')"
 python3 -c "import numpy; print('Numpy:', numpy.__version__)"
 python3 -c "import requests; print('Requests:', requests.__version__)"
 python3 -c "import dotenv; print('python-dotenv: OK')"
@@ -59,21 +59,21 @@ All should print without errors.
 
 ### Option 1: Downgrade Python (Not Recommended)
 
-You could try to install Python 3.11, but this is difficult on Pi Zero 2 W:
+You could try to install Python 3.11, but this is not recommended:
 
 **Why not recommended:**
-- Requires compiling Python from source (30+ minutes)
-- Uses significant memory during compilation
+- Requires compiling Python from source (time-consuming even on Pi 5)
 - May conflict with system Python
 - Complex to maintain
+- System packages approach is simpler
 
-### Option 2: Use Docker (Not Practical for Pi Zero 2 W)
+### Option 2: Use Docker (Not Necessary for Pi 5)
 
 Docker could provide a consistent environment, but:
-- Pi Zero 2 W has limited resources
+- Pi 5 has sufficient resources to run natively
 - Docker adds overhead
 - More complex setup
-- Slower performance
+- Native installation is faster and simpler
 
 ### Option 3: Build with Swap (Last Resort)
 
@@ -200,7 +200,7 @@ EOF
 
 ## 📝 Summary
 
-**Best Practice for Raspberry Pi Zero 2 W:**
+**Best Practice for Raspberry Pi 5:**
 
 1. ✅ Use system packages for PyAudio, RPi.GPIO, numpy, requests
 2. ✅ Create venv with `--system-site-packages` flag

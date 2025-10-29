@@ -5,7 +5,7 @@ This guide will help you deploy and run the voice assistant system.
 ## What You Need
 
 ### Hardware
-- ✅ Raspberry Pi Zero 2 W (with audio hardware configured)
+- ✅ Raspberry Pi 5 (with audio hardware configured)
 - ✅ Debian 13 server (or Ubuntu 22.04+) with static public IP
 - ✅ Custom domain configured in Cloudflare
 

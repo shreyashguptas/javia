@@ -3,59 +3,65 @@
 ## Components
 
 ### Required Hardware
-- **Raspberry Pi Zero 2 W** - Mainboard with 40-pin GPIO header
+- **Raspberry Pi 5** - High-performance quad-core ARM Cortex-A76 with 40-pin GPIO header
 - **INMP441 MEMS Microphone** - I2S digital microphone (24-bit, up to 64kHz)
 - **MAX98357A I2S Amplifier** - 3W Class D amplifier with built-in DAC
 - **3W 4Ω Speaker** - Connected to MAX98357A output terminals
 - **Push Button** - Momentary switch (normally open)
 - **Breadboard and jumper wires** - For connections
-- **5V 3A Power Supply** - USB power adapter with quality cable
+- **5V 5A Power Supply** - USB-C power adapter (27W recommended for Pi 5)
 
 ## Wiring Diagram
 
+**IMPORTANT GROUND NOTE**: 
+- The Pi has multiple ground pins (6, 9, 14, 20, 25, 30, 34, 39)
+- Connect **Pi Pin 6 (GND)** to your **breadboard negative rail** (ONE connection)
+- Then connect ALL component grounds to the **breadboard negative rail**
+- The breadboard distributes ground to all components
+
 ### INMP441 Microphone to Raspberry Pi
 ```
-INMP441 Pin  →  Raspberry Pi Pin
-─────────────────────────────────
-VDD          →  3.3V (Pin 1)
-GND          →  GND (Pin 6)
-SCK          →  GPIO18/PCM_CLK (Pin 12)
-WS           →  GPIO19/PCM_FS (Pin 35)
-SD           →  GPIO20/PCM_DIN (Pin 38)
-L/R          →  GND (Pin 6) [for left channel]
+INMP441 Pin  →  Connection
+─────────────────────────────────────────────────
+VDD          →  3.3V (Pi Pin 1 via breadboard+)
+GND          →  Ground (breadboard negative rail)
+SCK          →  GPIO18/PCM_CLK (Pi Pin 12) [DIRECT]
+WS           →  GPIO19/PCM_FS (Pi Pin 35) [DIRECT]
+SD           →  GPIO20/PCM_DIN (Pi Pin 38) [DIRECT]
+L/R          →  Ground (breadboard negative rail) [for left channel]
 ```
 
 ### MAX98357A Amplifier to Raspberry Pi
 ```
-MAX98357A Pin  →  Raspberry Pi Pin
-───────────────────────────────────
-VDD            →  3.3V (Pin 1)
-GND            →  GND (Pin 6)
-BCLK           →  GPIO18/PCM_CLK (Pin 12)
-LRC            →  GPIO19/PCM_FS (Pin 35)
-DIN            →  GPIO21/PCM_DOUT (Pin 40)
-SD (Shutdown)  →  GPIO27 (Pin 13) [prevents audio clicks]
+MAX98357A Pin  →  Connection
+─────────────────────────────────────────────────
+VDD            →  3.3V (Pi Pin 1 via breadboard+)
+GND            →  Ground (breadboard negative rail)
+BCLK           →  GPIO18/PCM_CLK (Pi Pin 12) [DIRECT]
+LRC            →  GPIO19/PCM_FS (Pi Pin 35) [DIRECT]
+DIN            →  GPIO21/PCM_DOUT (Pi Pin 40) [DIRECT]
+SD (Shutdown)  →  GPIO27 (Pi Pin 13) [DIRECT - prevents audio clicks]
 ```
 
 ### Speaker to MAX98357A
 ```
 Speaker Wire  →  MAX98357A Terminal
 ─────────────────────────────────
-Red           →  OUT+
-Black         →  OUT-
+Red           →  OUT+ (screw terminal)
+Black         →  OUT- (screw terminal)
 ```
 
 ### Button to Raspberry Pi
 ```
-Button Terminal  →  Raspberry Pi Pin
-────────────────────────────────────
-Terminal 1       →  GPIO17 (Pin 11)
-Terminal 2       →  GND (Pin 6)
+Button Terminal  →  Connection
+────────────────────────────────────────────────
+Terminal 1       →  GPIO17 (Pi Pin 11) [DIRECT]
+Terminal 2       →  Ground (breadboard negative rail)
 ```
 
 ## Pin Reference
 
-### Raspberry Pi Zero 2 W GPIO Header
+### Raspberry Pi 5 GPIO Header
 ```
 Pin  1  (3.3V)     ●○  Pin  2  (5V)
 Pin  3             ●○  Pin  4  (5V)
@@ -71,37 +77,59 @@ Pin 37             ●○  Pin 38 (GPIO20/PCM_DIN)
 Pin 39 (GND)       ●○  Pin 40 (GPIO21/PCM_DOUT)
 ```
 
-### I2S Signal Sharing
-Both microphone and amplifier share the same clock signals:
-- **GPIO18 (PCM_CLK)** - I2S bit clock (shared by both)
-- **GPIO19 (PCM_FS)** - I2S frame sync/word select (shared by both)
-- **GPIO20 (PCM_DIN)** - Data from microphone to Pi
-- **GPIO21 (PCM_DOUT)** - Data from Pi to amplifier
+### Connection Summary by Pi Pin
+
+**Power Connections** (via breadboard rails):
+- **Pin 1 (3.3V)** → Breadboard positive rail → Powers INMP441 VDD & MAX98357A VDD
+- **Pin 6 (GND)** → Breadboard negative rail → Common ground for all components
+
+**I2S Shared Signals** (direct wire connections):
+- **Pin 12 (GPIO18/PCM_CLK)** → Microphone SCK & Amplifier BCLK [Shared]
+- **Pin 35 (GPIO19/PCM_FS)** → Microphone WS & Amplifier LRC [Shared]
+
+**I2S Data Lines** (direct wire connections):
+- **Pin 38 (GPIO20/PCM_DIN)** → Microphone SD (data from mic to Pi)
+- **Pin 40 (GPIO21/PCM_DOUT)** → Amplifier DIN (data from Pi to amp)
+
+**Control Pins** (direct wire connections):
+- **Pin 11 (GPIO17)** → Push button (other button terminal to ground)
+- **Pin 13 (GPIO27)** → Amplifier SD/Shutdown pin (prevents audio clicks)
 
 ## Assembly Steps
 
-### 1. Power Rails
-1. Connect Pi **Pin 1 (3.3V)** to breadboard **positive rail**
-2. Connect Pi **Pin 6 (GND)** to breadboard **negative rail**
-3. Verify voltage with multimeter: should read ~3.3V
+### 1. Power Rails Setup
+**Critical First Step:**
+1. Connect Pi **Pin 1 (3.3V)** to breadboard **positive rail** (red line)
+2. Connect Pi **Pin 6 (GND)** to breadboard **negative rail** (blue line)
+3. Verify voltage with multimeter: should read ~3.3V between rails
+4. **Note**: These are the ONLY two wires connecting Pi power to breadboard
+
+**Why Pin 6 for ground?**
+- Pi 5 has 8 ground pins (6, 9, 14, 20, 25, 30, 34, 39) - any works
+- Pin 6 is chosen because it's adjacent to Pin 1 (3.3V), making breadboard wiring neat
+- You only need ONE ground connection - the breadboard distributes it
 
 ### 2. INMP441 Microphone
 1. Insert INMP441 into breadboard
-2. Connect **VDD** to positive rail (3.3V)
-3. Connect **GND** to negative rail
-4. Connect **SCK** to Pi GPIO18 (Pin 12)
-5. Connect **WS** to Pi GPIO19 (Pin 35)
-6. Connect **SD** to Pi GPIO20 (Pin 38)
-7. Connect **L/R** to negative rail (configures left channel)
+2. Connect **VDD** → breadboard **positive rail** (gets 3.3V)
+3. Connect **GND** → breadboard **negative rail** (common ground)
+4. Connect **L/R** → breadboard **negative rail** (configures left channel)
+5. Connect **SCK** → Pi **Pin 12 (GPIO18)** [DIRECT wire to Pi]
+6. Connect **WS** → Pi **Pin 35 (GPIO19)** [DIRECT wire to Pi]
+7. Connect **SD** → Pi **Pin 38 (GPIO20)** [DIRECT wire to Pi]
+
+**Wire types**: Steps 2-4 use breadboard, steps 5-7 are direct GPIO wires
 
 ### 3. MAX98357A Amplifier
 1. Insert MAX98357A into breadboard
-2. Connect **VDD** to positive rail (3.3V)
-3. Connect **GND** to negative rail
-4. Connect **BCLK** to Pi GPIO18 (Pin 12) - shares with microphone
-5. Connect **LRC** to Pi GPIO19 (Pin 35) - shares with microphone
-6. Connect **DIN** to Pi GPIO21 (Pin 40)
-7. Connect **SD** to Pi GPIO27 (Pin 13) - enables click suppression
+2. Connect **VDD** → breadboard **positive rail** (gets 3.3V)
+3. Connect **GND** → breadboard **negative rail** (common ground)
+4. Connect **BCLK** → Pi **Pin 12 (GPIO18)** [DIRECT - shared with mic SCK]
+5. Connect **LRC** → Pi **Pin 35 (GPIO19)** [DIRECT - shared with mic WS]
+6. Connect **DIN** → Pi **Pin 40 (GPIO21)** [DIRECT wire to Pi]
+7. Connect **SD** → Pi **Pin 13 (GPIO27)** [DIRECT - prevents audio clicks]
+
+**Note**: Pins 12 and 35 each have TWO wires (one from mic, one from amp)
 
 ### 4. Speaker
 1. Connect speaker **red wire** to MAX98357A **OUT+** terminal
@@ -109,29 +137,32 @@ Both microphone and amplifier share the same clock signals:
 3. Verify polarity is correct
 
 ### 5. Button
-1. Connect one button terminal to Pi GPIO17 (Pin 11)
-2. Connect other button terminal to Pi GND (Pin 6)
+1. Connect one button terminal → Pi **Pin 11 (GPIO17)** [DIRECT wire to Pi]
+2. Connect other button terminal → breadboard **negative rail** (common ground)
 3. No pull-up resistor needed (software enables internal pull-up)
+
+**Note**: Button ground goes to breadboard, NOT directly to Pi Pin 6
 
 ## Power Requirements
 
 ### Component Power Draw
-- **Raspberry Pi Zero 2 W**: ~1.5W typical, 2W peak
+- **Raspberry Pi 5**: ~4-8W typical, up to 12W peak (significantly higher than Pi Zero)
 - **INMP441 Microphone**: ~4.6mW (1.4mA @ 3.3V)
 - **MAX98357A Idle**: ~165mW (50mA @ 3.3V)
 - **MAX98357A Active**: Up to 3W when playing audio
-- **Total System**: 2-6W depending on audio playback
+- **Total System**: 8-18W depending on CPU load and audio playback
 
 ### Recommended Power Supply
-- **Minimum**: 5V 2.5A (12.5W)
-- **Recommended**: 5V 3A (15W) ← Best for most cases
-- **High Volume**: 5V 4A (20W) if using maximum speaker volume
+- **Official Pi 5 Power Supply**: 5V 5A (27W) USB-C ← **Strongly recommended**
+- **Minimum**: 5V 3A (15W) USB-C with good quality cable
+- **Do NOT use**: Old micro-USB chargers or low-quality USB-C adapters
 
 ### Power Supply Quality
-- Use a **high-quality USB power adapter** (not phone charger)
-- Use a **short, thick USB cable** (longer cables = more voltage drop)
+- Use the **official Raspberry Pi 5 27W USB-C Power Supply** for best results
+- Pi 5 requires USB-C Power Delivery (PD) or high-quality USB-C adapter
 - Verify no undervoltage warnings: `vcgencmd get_throttled`
 - Expected result: `0x0` (no throttling)
+- **Note**: Pi 5 has higher power requirements than previous models
 
 ## Hardware Notes
 
@@ -171,9 +202,11 @@ The software driver `googlevoicehat-soundcard` is used because:
 5. **Check polarity** - Verify power connections before powering on
 
 ### Common Mistakes to Avoid
-- ❌ Confusing GPIO numbers with physical pin numbers
+- ❌ Confusing GPIO numbers with physical pin numbers (use physical pin numbers!)
+- ❌ Connecting multiple wires directly to Pi Pin 6 (use breadboard ground rail instead)
+- ❌ Forgetting breadboard power rails (Pi Pin 1 and 6 must connect to breadboard first)
 - ❌ Connecting speaker reversed polarity (won't damage, but may sound worse)
-- ❌ Forgetting to connect L/R pin on INMP441 (mic won't work)
+- ❌ Forgetting to connect L/R pin on INMP441 to ground (mic won't work)
 - ❌ Using insufficient power supply (causes audio glitches)
 - ❌ Loose breadboard connections (intermittent failures)
 
@@ -223,6 +256,61 @@ After power-on:
 1. Button connected to GPIO17 and GND
 2. Button makes contact when pressed
 3. No wiring to wrong GPIO pin
+
+## Visual Wiring Summary
+
+### Quick Reference - All Connections
+
+```
+RASPBERRY PI 5                 BREADBOARD                    COMPONENTS
+═════════════                  ══════════                    ══════════
+
+Pin 1 (3.3V) ────────────────► Positive Rail ──┬──────────► INMP441 VDD
+                                                └──────────► MAX98357A VDD
+
+Pin 6 (GND) ─────────────────► Negative Rail ──┬──────────► INMP441 GND
+                                                ├──────────► INMP441 L/R
+                                                ├──────────► MAX98357A GND
+                                                └──────────► Button Terminal 2
+
+Pin 11 (GPIO17) ──────────────────────────────────────────► Button Terminal 1
+
+Pin 12 (GPIO18) ──┬────────────────────────────────────────► INMP441 SCK
+                  └────────────────────────────────────────► MAX98357A BCLK
+
+Pin 13 (GPIO27) ──────────────────────────────────────────► MAX98357A SD
+
+Pin 35 (GPIO19) ──┬────────────────────────────────────────► INMP441 WS
+                  └────────────────────────────────────────► MAX98357A LRC
+
+Pin 38 (GPIO20) ──────────────────────────────────────────► INMP441 SD
+
+Pin 40 (GPIO21) ──────────────────────────────────────────► MAX98357A DIN
+
+
+MAX98357A OUT+ ───────────────────────────────────────────► Speaker Red
+MAX98357A OUT- ───────────────────────────────────────────► Speaker Black
+```
+
+### Wire Count Summary
+- **2 wires**: Pi → Breadboard (3.3V and GND)
+- **5 wires**: Breadboard → Components (power and ground distribution)
+- **8 wires**: Pi GPIO → Components (direct signal wires)
+- **2 wires**: Amplifier → Speaker
+- **Total: 17 wires**
+
+### Ground Distribution Explained
+```
+Pi Pin 6 (GND)
+      ↓
+Breadboard Negative Rail (distributes to 4 connections)
+      ├─→ INMP441 GND
+      ├─→ INMP441 L/R
+      ├─→ MAX98357A GND
+      └─→ Button (one terminal)
+```
+
+**Key Point**: Only ONE wire goes from Pi to breadboard ground. The breadboard then distributes ground to all four components that need it.
 
 ## Next Steps
 

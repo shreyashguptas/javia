@@ -108,23 +108,23 @@ See `MICROPHONE_GAIN.md` for detailed configuration.
 
 **Wiring:**
 - Terminal 1 → GPIO17 (Pin 11)
-- Terminal 2 → GND (Pin 6)
+- Terminal 2 → GND (breadboard negative rail)
 
 **Test:**
 ```python
-import RPi.GPIO as GPIO
+from gpiozero import Button
 import time
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+button = Button(17, pull_up=True)
 
 print("Press button (Ctrl+C to exit)...")
 try:
     while True:
-        print(f"Button: {'PRESSED' if GPIO.input(17) == 0 else 'RELEASED'}")
+        print(f"Button: {'PRESSED' if button.is_pressed else 'RELEASED'}")
         time.sleep(0.1)
 except KeyboardInterrupt:
-    GPIO.cleanup()
+    button.close()
+    print("\nCleanup complete")
 ```
 
 ### 7. ALSA Warnings (Harmless)
@@ -137,7 +137,49 @@ jack server is not running
 
 They occur during PyAudio initialization. As long as recording and playback work, ignore them.
 
-### 8. API Errors
+### 8. GPIO Errors (Pi 5 Specific)
+
+**Error: RuntimeError: Cannot determine SOC peripheral base address**
+
+**Cause:** Using old `RPi.GPIO` library on Pi 5 (incompatible)
+
+**Solution:** This project uses `gpiozero` for Pi 5 compatibility. If you see this error:
+1. Verify you're running the latest code
+2. Check `requirements.txt` has `gpiozero>=2.0` (not `RPi.GPIO`)
+3. Reinstall dependencies:
+   ```bash
+   cd ~/javia_client
+   source ~/venvs/pi_client/bin/activate
+   pip install -r requirements.txt
+   ```
+
+**Error: PermissionError: [Errno 13] Permission denied: '/dev/gpiochip0'**
+
+**Cause:** User not in `gpio` group or systemd service missing permissions
+
+**Solution:**
+```bash
+# Add user to gpio group
+sudo usermod -a -G gpio $USER
+
+# Log out and back in (REQUIRED for group to activate)
+exit
+# SSH back in
+
+# Verify group membership
+groups  # Should show: audio gpio
+```
+
+If running as systemd service, verify service file has:
+```ini
+DeviceAllow=/dev/gpiochip0 rw
+DeviceAllow=/dev/gpiochip1 rw
+DeviceAllow=/dev/gpiochip2 rw
+DeviceAllow=/dev/gpiochip3 rw
+DeviceAllow=/dev/gpiochip4 rw
+```
+
+### 9. API Errors
 
 **401 Unauthorized:**
 - Check `.env` file has `GROQ_API_KEY=gsk_...`

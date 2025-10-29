@@ -25,7 +25,7 @@ Before running the script, ensure:
 
 ```bash
 # SSH to your Raspberry Pi
-ssh user@pi-zero-2-w.local
+ssh user@raspberrypi.local
 ```
 
 ```bash
@@ -40,12 +40,12 @@ bash pi_client/deploy/setup.sh
 ```
 
 The script will:
-- ✅ Install system dependencies (PyAudio, GPIO, etc.)
+- ✅ Install system dependencies (PyAudio, gpiozero, etc.)
 - ✅ Create Python virtual environment
 - ✅ Copy client files to `~/javia_client`
 - ✅ Prompt for SERVER_URL and CLIENT_API_KEY (first time only)
 - ✅ Validate configuration
-- ✅ Create systemd service
+- ✅ Create systemd service (Pi 5 compatible)
 - ✅ Add user to `audio` and `gpio` groups (required for hardware access)
 - ✅ Enable autostart on boot
 - ✅ Start the service and verify it's running
@@ -68,7 +68,7 @@ When you make changes to the code on your Mac and push to GitHub:
 
 ```bash
 # SSH to your Raspberry Pi
-ssh user@pi-zero-2-w.local
+ssh user@raspberrypi.local
 
 # Pull latest changes
 cd /tmp/javia

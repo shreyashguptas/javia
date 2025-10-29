@@ -44,7 +44,7 @@ echo "[1/8] Checking system dependencies..."
 
 # Check if packages are already installed to avoid unnecessary updates
 PACKAGES_TO_INSTALL=""
-for pkg in python3-pyaudio python3-rpi.gpio python3-requests python3-numpy python3-pip libopus0 libopus-dev; do
+for pkg in python3-pyaudio python3-gpiozero python3-requests python3-numpy python3-pip libopus0 libopus-dev; do
     if ! dpkg -l | grep -q "^ii  $pkg "; then
         PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL $pkg"
     fi
@@ -392,10 +392,14 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
-# Device access permissions - allow all audio and GPIO devices
+# Device access permissions - Pi 5 compatible GPIO and audio
 DeviceAllow=/dev/snd
+DeviceAllow=/dev/gpiochip0 rw
+DeviceAllow=/dev/gpiochip1 rw
+DeviceAllow=/dev/gpiochip2 rw
+DeviceAllow=/dev/gpiochip3 rw
+DeviceAllow=/dev/gpiochip4 rw
 DeviceAllow=/dev/gpiomem rw
-DeviceAllow=/dev/mem rw
 DeviceAllow=char-alsa rw
 DevicePolicy=auto
 
@@ -456,6 +460,7 @@ else
     echo "  - Invalid SERVER_URL or CLIENT_API_KEY in .env"
     echo "  - Missing gpio/audio group permissions (need to log out and back in)"
     echo "  - Hardware issues (GPIO pins, audio devices)"
+    echo "  - Pi 5 requires gpiozero library (not RPi.GPIO)"
     echo ""
     echo "To fix:"
     echo "  1. Check the error logs above"

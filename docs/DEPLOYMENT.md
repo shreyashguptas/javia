@@ -77,10 +77,10 @@ javia/                 # Git repository root
 
 ### Raspberry Pi Requirements
 
-- **Hardware**: Raspberry Pi Zero 2 W (or newer)
+- **Hardware**: Raspberry Pi 5 (with 40-pin GPIO header)
 - **Audio**: INMP441 microphone + MAX98357A amplifier (configured)
-- **Network**: WiFi connection
-- **OS**: Raspberry Pi OS
+- **Network**: WiFi or Ethernet connection
+- **OS**: Raspberry Pi OS (64-bit recommended for Pi 5)
 - **Git**: Installed
 
 ### Domain and DNS
