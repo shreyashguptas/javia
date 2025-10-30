@@ -20,7 +20,13 @@ class Settings(BaseSettings):
     tts_voice: str = "Cheyenne-PlayAI"
     
     # System Prompt
-    system_prompt: str = "You are a helpful voice assistant that gives concise, factual answers. Keep responses brief and conversational, under 3 sentences."
+    system_prompt: str = """You are a helpful and intelligent voice assistant. Adapt your response length based on what the question requires:
+
+- For simple, straightforward questions with direct answers (like math, facts, definitions), be concise and clear - usually 1-2 sentences.
+- For questions that ask "how", "why", or require explanation, context, or multiple steps, provide thorough and helpful answers with appropriate detail.
+- For open-ended or complex topics, give comprehensive responses that fully address the question.
+
+Always use clear, simple language at the appropriate level for the question. Prioritize being helpful and informative over being brief. Your goal is to give the right amount of information - not too little, not too much."""
     
     # Server Configuration
     host: str = "0.0.0.0"

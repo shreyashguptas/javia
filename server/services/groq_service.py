@@ -162,7 +162,7 @@ def query_llm(user_text: str, session_id: Optional[str] = None) -> str:
                     {'role': 'system', 'content': settings.system_prompt},
                     {'role': 'user', 'content': user_text.strip()}
                 ],
-                'max_tokens': 150,
+                'max_tokens': 1000,
                 'temperature': 0.7
             }
             
@@ -188,7 +188,15 @@ def query_llm(user_text: str, session_id: Optional[str] = None) -> str:
                 if not llm_response or llm_response.strip() == "":
                     raise LLMError("LLM returned empty response")
                 
+                # Log response metrics
+                response_length = len(llm_response)
+                response_words = len(llm_response.split())
+                usage = result.get('usage', {})
+                completion_tokens = usage.get('completion_tokens', 'N/A')
+                
                 logger.info(f"LLM response: {llm_response[:100]}...")
+                logger.info(f"Response metrics - Length: {response_length} chars, Words: {response_words}, Tokens: {completion_tokens}")
+                
                 return llm_response.strip()
                 
             elif response.status_code == 429:
@@ -234,11 +242,6 @@ def generate_speech(text: str, output_path: Path) -> None:
     
     if not text or not text.strip():
         raise TTSError("Cannot generate speech from empty text")
-    
-    # Validate text length
-    if len(text) > 4096:
-        logger.warning(f"Text too long ({len(text)} chars), truncating to 4096")
-        text = text[:4096]
     
     max_retries = 3
     for attempt in range(max_retries):
