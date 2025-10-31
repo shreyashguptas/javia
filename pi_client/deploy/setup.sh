@@ -245,6 +245,46 @@ with open('.env', 'w') as f:
 EOF
 fi
 
+# Clean inline comments from .env file (systemd EnvironmentFile doesn't support them)
+echo ""
+echo "Cleaning .env file (removing inline comments for systemd compatibility)..."
+python3 << 'EOF'
+import re
+
+with open('.env', 'r') as f:
+    lines = f.readlines()
+
+cleaned_lines = []
+for line in lines:
+    # Skip empty lines and comment-only lines
+    if not line.strip() or line.strip().startswith('#'):
+        cleaned_lines.append(line)
+        continue
+    
+    # Check if line has a variable assignment
+    if '=' in line:
+        # Split on first '=' to preserve '=' in values
+        key, value = line.split('=', 1)
+        
+        # Strip inline comments (anything after # that's not in quotes)
+        # Simple approach: remove everything after # (assumes no # in values)
+        if '#' in value:
+            value = value.split('#')[0]
+        
+        # Clean up whitespace but preserve newline
+        value = value.rstrip() + '\n'
+        
+        cleaned_lines.append(f"{key}={value}")
+    else:
+        # Keep line as-is
+        cleaned_lines.append(line)
+
+with open('.env', 'w') as f:
+    f.writelines(cleaned_lines)
+
+print("✓ Cleaned inline comments from .env file")
+EOF
+
 # Secure the .env file
 chmod 600 "$INSTALL_DIR/.env"
 

@@ -28,6 +28,8 @@ Before running the script, ensure:
 ssh user@raspberrypi.local
 ```
 
+**Step 1: Enable I2S Audio**
+
 ```bash
 # Edit the config file
 sudo nano /boot/firmware/config.txt
@@ -42,10 +44,25 @@ dtoverlay=googlevoicehat-soundcard
 # Save: Ctrl+O, Enter, Ctrl+X
 ```
 
+**Step 2: Reboot (CRITICAL)**
+
+```bash
+# MUST reboot for I2S changes to take effect
+sudo reboot
+```
+
+Wait for the Pi to restart, then SSH back in:
+
+```bash
+ssh user@raspberrypi.local
+```
+
+**Step 3: Clone and Run Setup**
+
 ```bash
 # Clone the repository
 cd /tmp
-rm -rf javia
+sudo apt update && sudo apt install -y git
 git clone https://github.com/shreyashguptas/javia.git
 cd javia
 
@@ -75,6 +92,11 @@ The script will:
 - If you're assigned to the groups but they're not active in your current session, the script will **EXIT**
 - **You MUST log out and log back in**, then run the script again
 - The script will NOT start the service until group permissions are active
+
+**⚠️ CRITICAL - I2S Must Be Enabled Before Running Setup**:
+- You **MUST** enable I2S in `/boot/firmware/config.txt` and **reboot** BEFORE running setup
+- If you skip the reboot, the audio device won't be available and the service will fail
+- See "Step 1: Enable I2S Audio" above for instructions
 
 ### Updating After Code Changes
 
@@ -231,6 +253,76 @@ The CLIENT_API_KEY on the Pi must match the SERVER_API_KEY on the server.
 - ✅ File permissions set to 600 (owner read/write only)
 - ✅ Service runs as your user (not root)
 - ✅ API keys never committed to git
+
+## 🔧 Troubleshooting Common Issues
+
+### Error: "ValueError: invalid literal for int() with base 10"
+
+**Symptom:**
+```
+ValueError: invalid literal for int() with base 10: '17          # Rotary encoder SW (push button) pin'
+```
+
+**Cause:** The `.env` file contains inline comments (e.g., `BUTTON_PIN=17 # comment`). Systemd's `EnvironmentFile` doesn't strip inline comments like Python's `dotenv` library does.
+
+**Fix:**
+
+```bash
+# SSH to your Raspberry Pi
+ssh user@raspberrypi.local
+
+# Pull latest code (includes the fix)
+cd /tmp/javia
+git pull
+
+# Re-run setup script (it will clean the .env file automatically)
+bash pi_client/deploy/setup.sh
+```
+
+The setup script will now automatically remove inline comments from your `.env` file.
+
+**Manual Fix (if needed):**
+
+If you prefer to fix it manually:
+
+```bash
+# Edit the .env file
+nano ~/javia_client/.env
+
+# Remove all inline comments. Change this:
+BUTTON_PIN=17          # Rotary encoder SW (push button) pin
+
+# To this:
+BUTTON_PIN=17
+
+# Save: Ctrl+O, Enter, Ctrl+X
+
+# Restart the service
+sudo systemctl restart voice-assistant-client.service
+```
+
+### Error: Audio device not found
+
+**Symptom:** Service fails with "No input devices found" or audio tests fail.
+
+**Cause:** I2S not enabled or Pi not rebooted after enabling I2S.
+
+**Fix:**
+1. Verify I2S is enabled:
+   ```bash
+   grep -E "dtparam=i2s|dtoverlay=googlevoicehat" /boot/firmware/config.txt
+   ```
+   Should show both lines uncommented.
+
+2. If I2S is enabled but audio doesn't work, **reboot**:
+   ```bash
+   sudo reboot
+   ```
+
+3. Test again after reboot:
+   ```bash
+   arecord -l  # Should show googlevoicehat device
+   ```
 
 ## 📚 Additional Documentation
 
