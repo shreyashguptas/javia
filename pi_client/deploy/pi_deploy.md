@@ -63,7 +63,13 @@ ssh user@raspberrypi.local
 # Clone the repository
 cd /tmp
 sudo apt update && sudo apt install -y git
-git clone https://github.com/shreyashguptas/javia.git
+# Clone only if /tmp/javia does not exist
+if [ -d "javia" ]; then
+  echo "Directory 'javia' already exists. Skipping clone."
+else
+  git clone https://github.com/shreyashguptas/javia.git javia
+fi
+
 cd javia
 
 # Run setup
