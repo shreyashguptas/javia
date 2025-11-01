@@ -31,7 +31,7 @@ This provides:
 cd /opt/javia/scripts/register_device
 
 # 4. Run the script (interactive mode)
-./register_device.sh
+sudo ./register_device.sh
 
 # Follow the prompts to enter:
 #   - Device UUID (from Pi)
@@ -334,6 +334,30 @@ Ensure you copied the complete UUID (36 characters with hyphens):
 ✗ Wrong:   018c8f5e-8c3a-7890
 ```
 
+### "ImportError: cannot import name 'create_client' from 'supabase'"
+
+This error occurs when the script tries to use system Python instead of the server's virtual environment.
+
+**Root cause:** The Supabase Python library is installed in the server's virtual environment at `/opt/javia/venv/`, but the script was using system Python.
+
+**Solution:** The script now automatically uses the correct Python interpreter from the server's virtual environment. If you see this error:
+
+1. Ensure the server was set up correctly:
+   ```bash
+   ls -la /opt/javia/venv/bin/python3
+   ```
+2. Verify Supabase is installed in the virtual environment:
+   ```bash
+   /opt/javia/venv/bin/pip list | grep supabase
+   ```
+3. If missing, reinstall server dependencies:
+   ```bash
+   cd /opt/javia/scripts/setup
+   sudo ./setup.sh
+   ```
+
+**Engineering principle:** Always use the correct Python environment for dependency isolation. This script now validates the virtual environment exists before attempting registration.
+
 ### "ERROR: Failed to connect to Supabase"
 
 1. Verify Supabase URL is correct
@@ -416,6 +440,41 @@ The interactive mode includes a comprehensive list of timezones to choose from:
 
 See [full timezone list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) for more options.
 
+## Technical Implementation
+
+### Virtual Environment Isolation
+
+The script uses the server's Python virtual environment (`/opt/javia/venv/`) to ensure:
+- **Dependency isolation** - Uses the exact same packages as the server
+- **Version consistency** - No conflicts between system and project dependencies
+- **Reliability** - Works even if system Python lacks required packages
+
+### Safe Environment File Parsing
+
+Instead of sourcing `.env` files with bash (which can execute arbitrary code), the script:
+1. Parses `.env` files with Python for safety
+2. Handles inline comments, quotes, and special characters correctly
+3. Validates each variable before exporting to bash
+4. Prevents command injection vulnerabilities
+
+### Validation Steps
+
+The script performs multiple validation checks:
+1. ✓ Server `.env` file exists
+2. ✓ Virtual environment is installed
+3. ✓ Configuration loaded successfully
+4. ✓ Supabase credentials are configured
+5. ✓ UUID format is valid (regex check)
+6. ✓ Device UUID is unique in database
+
+### Error Handling
+
+Comprehensive error messages guide users to:
+- Missing prerequisites (server setup not run)
+- Configuration issues (Supabase not configured)
+- Database connection problems (network, credentials)
+- Duplicate device registrations (UUID already exists)
+
 ## Security Notes
 
 - Device UUIDs are not secrets - they're identifiers
@@ -423,6 +482,7 @@ See [full timezone list](https://en.wikipedia.org/wiki/List_of_tz_database_time_
 - Use `SUPABASE_SERVICE_KEY` (not anon key) for admin operations
 - Regularly audit registered devices in database
 - Remove unused devices to maintain security
+- Environment file parsing is safe and injection-proof
 
 ## See Also
 

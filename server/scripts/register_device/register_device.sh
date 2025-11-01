@@ -35,6 +35,20 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
     exit 1
 fi
 
+# Check if virtual environment exists
+VENV_PYTHON="$INSTALL_DIR/venv/bin/python3"
+if [ ! -f "$VENV_PYTHON" ]; then
+    echo "❌ ERROR: Python virtual environment not found!"
+    echo "Expected location: $INSTALL_DIR/venv/"
+    echo ""
+    echo "The server must be set up before registering devices."
+    echo "Please run the server setup script first:"
+    echo "  cd $INSTALL_DIR/scripts/setup"
+    echo "  sudo ./setup.sh"
+    echo ""
+    exit 1
+fi
+
 cd "$INSTALL_DIR"
 
 # Interactive mode if no arguments provided
@@ -75,7 +89,7 @@ if [ -z "$1" ]; then
     echo ""
     
     # Show timezone selector
-    TIMEZONE=$(python3 << 'TZEOF'
+    TIMEZONE=$("$VENV_PYTHON" << 'TZEOF'
 import sys
 
 timezones = [
@@ -175,7 +189,7 @@ fi
 
 # Load environment variables from .env file using Python (safer than sourcing directly)
 echo "Loading configuration from $INSTALL_DIR/.env..."
-eval $(python3 << 'ENVEOF'
+eval $("$VENV_PYTHON" << 'ENVEOF'
 import os
 import sys
 
@@ -240,8 +254,9 @@ export DEVICE_NAME
 export TIMEZONE
 export INSTALL_DIR
 
-# Use Python to register the device
-python3 << 'PYTHON_EOF'
+# Use virtual environment Python to register the device
+echo "Registering device with Supabase..."
+"$VENV_PYTHON" << 'PYTHON_EOF'
 import os
 import sys
 import re
