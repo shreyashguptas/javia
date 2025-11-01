@@ -19,7 +19,7 @@ cd /tmp
 git clone https://github.com/shreyashguptas/javia.git
 
 # 2. Run the setup script as root
-cd javia/server/deploy
+cd javia/server/scripts/setup/
 sudo bash setup.sh
 ```
 
@@ -42,7 +42,7 @@ rm -rf javia  # Remove old clone if exists
 git clone https://github.com/shreyashguptas/javia.git
 
 # 2. Run the same setup script
-cd javia/server/deploy
+cd javia/server/scripts/setup/
 sudo bash setup.sh
 ```
 
