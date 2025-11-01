@@ -701,8 +701,8 @@ echo ""
 echo "[8/8] Starting service..."
 sudo systemctl start voice-assistant-client.service
 
-# Wait for service to initialize
-sleep 2
+# Wait for service to initialize (longer wait to ensure device manager initializes)
+sleep 5
 
 # Check if service is actually running
 echo ""
@@ -719,8 +719,18 @@ if systemctl is-active --quiet voice-assistant-client.service; then
     
     # Get the device UUID from the UUID file
     DEVICE_UUID_FILE="$HOME/.javia_device_uuid"
+    
+    # Wait up to 10 seconds for UUID file to be created
+    WAIT_COUNT=0
+    while [ ! -f "$DEVICE_UUID_FILE" ] && [ $WAIT_COUNT -lt 10 ]; do
+        echo "Waiting for device UUID to be generated... ($WAIT_COUNT/10)"
+        sleep 1
+        WAIT_COUNT=$((WAIT_COUNT + 1))
+    done
+    
     if [ -f "$DEVICE_UUID_FILE" ]; then
         DEVICE_UUID=$(cat "$DEVICE_UUID_FILE")
+        echo ""
         echo "Your Device UUID:"
         echo ""
         echo "  ┌────────────────────────────────────────────┐"
@@ -732,15 +742,20 @@ if systemctl is-active --quiet voice-assistant-client.service; then
         echo "On your server, SSH in and run:"
         echo ""
         echo "  cd /opt/javia/scripts/register_device"
-        echo "  sudo ./register_device.sh $DEVICE_UUID \"$(hostname)\" \"$DEVICE_TIMEZONE\""
+        echo "  sudo ./register_device.sh $DEVICE_UUID \"$(hostname)\" \"$TIMEZONE_INPUT\""
         echo ""
         echo "After registration, the device can make requests to the server."
         echo ""
     else
-        echo "⚠️  Device UUID file not found."
-        echo "The device will generate a UUID on first run."
-        echo "Check logs after starting to get the UUID:"
-        echo "  sudo journalctl -u voice-assistant-client.service -n 50"
+        echo "⚠️  Device UUID file not found after 10 seconds."
+        echo "The service may have failed to initialize properly."
+        echo ""
+        echo "Check logs to diagnose the issue:"
+        echo "  sudo journalctl -u voice-assistant-client.service -n 100"
+        echo ""
+        echo "If you see the UUID in the logs, copy it and register on the server:"
+        echo "  cd /opt/javia/scripts/register_device"
+        echo "  sudo ./register_device.sh <YOUR_UUID> \"$(hostname)\" \"$TIMEZONE_INPUT\""
         echo ""
     fi
     

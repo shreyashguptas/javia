@@ -147,20 +147,17 @@ def setup():
     print("\n[INIT] Initializing OTA update system...")
     
     try:
-        # Initialize device manager
+        # Initialize device manager (no API key needed - device auth is via UUID)
         device_manager = DeviceManager(
             server_url=SERVER_URL,
-            api_key=CLIENT_API_KEY,
+            api_key=None,  # Not needed - device authentication uses device UUID
             timezone=DEVICE_TIMEZONE
         )
         print(f"[INIT] ✓ Device UUID: {device_manager.get_device_uuid()}")
         print(f"[INIT] ✓ Current version: {device_manager.get_current_version()}")
         
-        # Register device with server
-        if device_manager.register():
-            print("[INIT] ✓ Device registered with server")
-        else:
-            print("[INIT] ⚠️  Device registration failed (will retry later)")
+        # Note: Device registration is now done manually on the server via register_device.sh
+        # The device must be registered before it can make requests to the server
         
         # Initialize activity tracker
         activity_tracker = ActivityTracker()
@@ -170,7 +167,7 @@ def setup():
         if SUPABASE_URL and SUPABASE_KEY:
             update_manager = UpdateManager(
                 server_url=SERVER_URL,
-                api_key=CLIENT_API_KEY,
+                api_key=None,  # Not needed - device authentication uses device UUID
                 device_uuid=device_manager.get_device_uuid(),
                 timezone_str=DEVICE_TIMEZONE,
                 activity_tracker=activity_tracker,

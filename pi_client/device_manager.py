@@ -20,17 +20,17 @@ VERSION_FILE = Path(__file__).parent / "VERSION"
 class DeviceManager:
     """Manages device identification and registration with server"""
     
-    def __init__(self, server_url: str, api_key: str, timezone: str = "UTC"):
+    def __init__(self, server_url: str, api_key: Optional[str] = None, timezone: str = "UTC"):
         """
         Initialize device manager.
         
         Args:
             server_url: Server URL
-            api_key: API key for authentication
+            api_key: Optional API key for admin operations (not used for device auth)
             timezone: Device timezone (e.g., 'America/Los_Angeles')
         """
         self.server_url = server_url.rstrip('/')
-        self.api_key = api_key
+        self.api_key = api_key  # Optional - only needed for admin operations
         self.timezone = timezone
         self.device_uuid: Optional[str] = None
         self.current_version: str = "v0.0.0"

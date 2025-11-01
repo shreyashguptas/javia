@@ -28,7 +28,7 @@ class UpdateManager:
     def __init__(
         self,
         server_url: str,
-        api_key: str,
+        api_key: Optional[str],
         device_uuid: str,
         timezone_str: str,
         activity_tracker,
@@ -40,7 +40,7 @@ class UpdateManager:
         
         Args:
             server_url: Server URL
-            api_key: API key for authentication
+            api_key: Optional API key for admin operations (not used for device auth)
             device_uuid: Device UUID
             timezone_str: Device timezone string
             activity_tracker: ActivityTracker instance
@@ -48,7 +48,7 @@ class UpdateManager:
             supabase_key: Supabase anon key
         """
         self.server_url = server_url.rstrip('/')
-        self.api_key = api_key
+        self.api_key = api_key  # Optional - only needed for admin operations
         self.device_uuid = device_uuid
         self.timezone_str = timezone_str
         self.activity_tracker = activity_tracker
