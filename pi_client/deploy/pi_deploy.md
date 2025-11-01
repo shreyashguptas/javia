@@ -115,8 +115,14 @@ ssh user@raspberrypi.local
 
 ```bash
 # Pull latest changes
-cd /tmp/javia
-git pull
+cd /tmp
+# Clone only if /tmp/javia does not exist
+if [ -d "javia" ]; then
+  echo "Directory 'javia' already exists. Skipping clone."
+else
+  git clone https://github.com/shreyashguptas/javia.git javia
+fi
+cd javia
 
 # Run the SAME script again
 bash pi_client/deploy/setup.sh
