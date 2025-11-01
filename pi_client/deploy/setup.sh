@@ -160,41 +160,41 @@ except:
     print("     ")
 EOF
 )
-        
-        echo "Enter your SERVER_URL (e.g., https://yourdomain.com):"
-        if [ -n "$CURRENT_SERVER_URL" ]; then
-            echo "Current value: $CURRENT_SERVER_URL"
-        else
-            echo "Current value: Not set"
-        fi
-        read -p "SERVER_URL (press Enter to keep current): " SERVER_URL_INPUT
-        if [ -z "$SERVER_URL_INPUT" ]; then
-            SERVER_URL_INPUT="$CURRENT_SERVER_URL"
-        fi
-        
-        echo ""
-        echo "Enter your CLIENT_API_KEY (must match server's SERVER_API_KEY):"
-        if [ -n "$CURRENT_CLIENT_API_KEY" ]; then
-            echo "Current value: $CURRENT_CLIENT_API_KEY"
-        else
-            echo "Current value: Not set"
-        fi
-        read -p "CLIENT_API_KEY (press Enter to keep current): " CLIENT_API_KEY_INPUT
-        if [ -z "$CLIENT_API_KEY_INPUT" ]; then
-            CLIENT_API_KEY_INPUT="$CURRENT_CLIENT_API_KEY"
-        fi
-        
-        echo ""
-        echo "Select your DEVICE_TIMEZONE:"
-        if [ -n "$CURRENT_DEVICE_TIMEZONE" ]; then
-            echo "Current value: $CURRENT_DEVICE_TIMEZONE"
-        else
-            echo "Current value: UTC"
-        fi
-        echo ""
-        
-        # Show timezone selector
-        TIMEZONE_INPUT=$(CURRENT_DEVICE_TIMEZONE="$CURRENT_DEVICE_TIMEZONE" python3 << 'TZEOF'
+
+echo "Enter your SERVER_URL (e.g., https://yourdomain.com):"
+if [ -n "$CURRENT_SERVER_URL" ]; then
+    echo "Current value: $CURRENT_SERVER_URL"
+else
+    echo "Current value: Not set"
+fi
+read -p "SERVER_URL (press Enter to keep current): " SERVER_URL_INPUT
+if [ -z "$SERVER_URL_INPUT" ]; then
+    SERVER_URL_INPUT="$CURRENT_SERVER_URL"
+fi
+
+echo ""
+echo "Enter your CLIENT_API_KEY (must match server's SERVER_API_KEY):"
+if [ -n "$CURRENT_CLIENT_API_KEY" ]; then
+    echo "Current value: $CURRENT_CLIENT_API_KEY"
+else
+    echo "Current value: Not set"
+fi
+read -p "CLIENT_API_KEY (press Enter to keep current): " CLIENT_API_KEY_INPUT
+if [ -z "$CLIENT_API_KEY_INPUT" ]; then
+    CLIENT_API_KEY_INPUT="$CURRENT_CLIENT_API_KEY"
+fi
+
+echo ""
+echo "Select your DEVICE_TIMEZONE:"
+if [ -n "$CURRENT_DEVICE_TIMEZONE" ]; then
+    echo "Current value: $CURRENT_DEVICE_TIMEZONE"
+else
+    echo "Current value: UTC"
+fi
+echo ""
+
+# Show timezone selector
+TIMEZONE_INPUT=$(CURRENT_DEVICE_TIMEZONE="$CURRENT_DEVICE_TIMEZONE" python3 << 'TZEOF' < /dev/tty
 import os
 import sys
 
@@ -227,12 +227,12 @@ except ValueError:
     current_index = timezones.index('UTC')
 
 # Simple selection without curses
-print("Available Timezones:")
+print("Available Timezones:", file=sys.stderr)
 for i, tz in enumerate(timezones):
     marker = " → " if i == current_index else "   "
-    print(f"{marker}{i+1}. {tz}")
+    print(f"{marker}{i+1}. {tz}", file=sys.stderr)
 
-print(f"\nCurrent: {current}")
+print(f"\nCurrent: {current}", file=sys.stderr)
 choice = input(f"\nEnter number (1-{len(timezones)}), or press Enter to keep current: ")
 
 if choice.strip():
@@ -248,33 +248,33 @@ else:
     print(current)
 TZEOF
 )
-        
-        echo ""
-        echo "Enter your SUPABASE_URL (for OTA updates):"
-        if [ -n "$CURRENT_SUPABASE_URL" ]; then
-            echo "Current value: $CURRENT_SUPABASE_URL"
-        else
-            echo "Current value: Not set"
-        fi
-        read -p "SUPABASE_URL (press Enter to keep current): " SUPABASE_URL_INPUT
-        if [ -z "$SUPABASE_URL_INPUT" ]; then
-            SUPABASE_URL_INPUT="$CURRENT_SUPABASE_URL"
-        fi
-        
-        echo ""
-        echo "Enter your SUPABASE_KEY (anon key for OTA updates):"
-        if [ -n "$CURRENT_SUPABASE_KEY" ]; then
-            echo "Current value: $CURRENT_SUPABASE_KEY"
-        else
-            echo "Current value: Not set"
-        fi
-        read -p "SUPABASE_KEY (press Enter to keep current): " SUPABASE_KEY_INPUT
-        if [ -z "$SUPABASE_KEY_INPUT" ]; then
-            SUPABASE_KEY_INPUT="$CURRENT_SUPABASE_KEY"
-        fi
-        
-        # Update .env file
-        SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" TIMEZONE_INPUT="$TIMEZONE_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" python3 << 'EOF'
+
+echo ""
+echo "Enter your SUPABASE_URL (for OTA updates):"
+if [ -n "$CURRENT_SUPABASE_URL" ]; then
+    echo "Current value: $CURRENT_SUPABASE_URL"
+else
+    echo "Current value: Not set"
+fi
+read -p "SUPABASE_URL (press Enter to keep current): " SUPABASE_URL_INPUT
+if [ -z "$SUPABASE_URL_INPUT" ]; then
+    SUPABASE_URL_INPUT="$CURRENT_SUPABASE_URL"
+fi
+
+echo ""
+echo "Enter your SUPABASE_KEY (anon key for OTA updates):"
+if [ -n "$CURRENT_SUPABASE_KEY" ]; then
+    echo "Current value: $CURRENT_SUPABASE_KEY"
+else
+    echo "Current value: Not set"
+fi
+read -p "SUPABASE_KEY (press Enter to keep current): " SUPABASE_KEY_INPUT
+if [ -z "$SUPABASE_KEY_INPUT" ]; then
+    SUPABASE_KEY_INPUT="$CURRENT_SUPABASE_KEY"
+fi
+
+# Update .env file
+SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" TIMEZONE_INPUT="$TIMEZONE_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" python3 << 'EOF'
 import os
 import re
 
