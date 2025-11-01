@@ -52,7 +52,7 @@ load_dotenv()
 
 # Server Configuration
 SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:8000')
-# CLIENT_API_KEY is deprecated - authentication is now via device UUID
+# Device authentication uses unique UUID (X-Device-UUID header), not API keys
 
 # OTA Update Configuration
 DEVICE_TIMEZONE = os.getenv('DEVICE_TIMEZONE', 'UTC')
@@ -243,9 +243,6 @@ def setup():
     # Attach rotation callback
     rotary_encoder.when_rotated = on_rotate
     print(f"[INIT] ✓ Rotary encoder active: ±{VOLUME_STEP}% per step (button + rotation)")
-    
-    # API key no longer needed - authentication is via device UUID
-    # The device UUID is managed by device_manager (initialized above)
     
     # Check server URL
     if SERVER_URL == "http://localhost:8000":
