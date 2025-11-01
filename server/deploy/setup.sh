@@ -180,12 +180,17 @@ if [ "$IS_FRESH_INSTALL" = true ]; then
     
     echo ""
     echo "==================================="
-    echo "GENERATED SERVER_API_KEY (SAVE THIS!):"
+    echo "GENERATED SERVER_API_KEY (ADMIN ONLY):"
     echo "$SERVER_KEY_INPUT"
     echo "==================================="
     echo ""
-    echo "IMPORTANT: Copy and save the SERVER_API_KEY above!"
-    echo "You will need it to configure the Raspberry Pi client."
+    echo "NOTE: This key is for server admin/management endpoints ONLY."
+    echo "Pi clients authenticate using device UUIDs (not this key)."
+    echo ""
+    echo "Save this key for:"
+    echo "  - Admin API access"
+    echo "  - Device management tools"
+    echo "  - Future web dashboard"
     echo ""
     read -p "Press Enter after you've saved the SERVER_API_KEY..."
     
@@ -442,10 +447,19 @@ echo ""
 echo "✓ Environment configured"
 echo ""
 
-# ==================== STEP 8: SET PERMISSIONS ====================
-echo "[8/10] Setting permissions..."
+# ==================== STEP 8: SET PERMISSIONS & REGISTRATION SCRIPT ====================
+echo "[8/10] Setting permissions and registration script..."
 chown -R $SERVICE_USER:$SERVICE_GROUP "$INSTALL_DIR"
 chmod 600 "$INSTALL_DIR/.env"
+
+# Make registration script accessible and executable
+if [ -f "$INSTALL_DIR/register_device.sh" ]; then
+    chmod 755 "$INSTALL_DIR/register_device.sh"
+    echo "✓ Device registration script ready: $INSTALL_DIR/register_device.sh"
+else
+    echo "⚠️  Device registration script not found (will need to copy manually)"
+fi
+
 echo "✓ Permissions set"
 echo ""
 
@@ -702,6 +716,20 @@ else
     fi
 fi
 
+echo ""
+echo "==========================================="
+echo "Device Registration"
+echo "==========================================="
+echo ""
+echo "To register a new Pi client device:"
+echo ""
+echo "  cd $INSTALL_DIR"
+echo "  ./register_device.sh <DEVICE_UUID> [device_name] [timezone]"
+echo ""
+echo "Example:"
+echo "  ./register_device.sh 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890 \"Kitchen Pi\" \"America/Los_Angeles\""
+echo ""
+echo "The device UUID will be displayed when you run setup on the Pi client."
 echo ""
 echo "==========================================="
 echo "Useful Commands"

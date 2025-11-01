@@ -16,11 +16,13 @@ from starlette.background import BackgroundTask
 
 from config import settings
 from middleware.auth import verify_api_key
+from middleware.device_auth import verify_device_uuid
 from models.requests import (
     ProcessAudioResponse,
     ErrorResponse,
     HealthResponse
 )
+from models.devices import DeviceResponse
 from services.groq_service import (
     transcribe_audio,
     query_llm,
@@ -282,7 +284,7 @@ async def process_audio(
     audio: UploadFile = File(..., description="Audio file (WAV or Opus format)"),
     session_id: Optional[str] = Form(None, description="Optional session ID for conversation history"),
     microphone_gain: Optional[str] = Form("1.0", description="Microphone gain to apply (offloaded from Pi)"),
-    api_key: str = Depends(verify_api_key)
+    device: DeviceResponse = Depends(verify_device_uuid)
 ):
     """
     Process audio file through the complete pipeline:
@@ -292,11 +294,15 @@ async def process_audio(
     3. Generate speech from LLM response
     4. Compress to Opus and return audio file with metadata headers
     
+    Authentication:
+        Requires device UUID in X-Device-UUID header
+        Device must be registered in database with active status
+    
     Args:
         audio: Uploaded audio file (Opus or WAV)
         session_id: Optional session ID for conversation history
         microphone_gain: Gain to apply to audio (default 1.0, Pi sends its configured gain)
-        api_key: API key for authentication (from header)
+        device: Device information from authentication middleware
         
     Returns:
         Opus audio file response with transcription and LLM response in headers
@@ -328,7 +334,7 @@ async def process_audio(
         content = await audio.read()
         file_size = len(content)
         
-        logger.info(f"Received {suffix} audio file: {file_size} bytes")
+        logger.info(f"Received {suffix} audio file: {file_size} bytes from device {device.device_uuid} ({device.device_name})")
         
         # Validate file size
         if file_size > settings.max_audio_size_bytes:

@@ -292,7 +292,7 @@ echo "==================================="
 echo ""
 
 # Read current values from .env file using Python
-read -r CURRENT_SERVER_URL CURRENT_CLIENT_API_KEY CURRENT_DEVICE_TIMEZONE CURRENT_SUPABASE_URL CURRENT_SUPABASE_KEY < <(python3 << 'EOF'
+read -r CURRENT_SERVER_URL CURRENT_DEVICE_TIMEZONE CURRENT_SUPABASE_URL CURRENT_SUPABASE_KEY < <(python3 << 'EOF'
 import re
 
 try:
@@ -304,14 +304,13 @@ try:
         return match.group(1).strip() if match else ''
     
     server_url = get_value('SERVER_URL')
-    client_api_key = get_value('CLIENT_API_KEY')
     device_timezone = get_value('DEVICE_TIMEZONE')
     supabase_url = get_value('SUPABASE_URL')
     supabase_key = get_value('SUPABASE_KEY')
     
-    print(f"{server_url} {client_api_key} {device_timezone} {supabase_url} {supabase_key}")
+    print(f"{server_url} {device_timezone} {supabase_url} {supabase_key}")
 except:
-    print("     ")
+    print("    ")
 EOF
 )
 
@@ -327,16 +326,11 @@ if [ -z "$SERVER_URL_INPUT" ]; then
 fi
 
 echo ""
-echo "Enter your CLIENT_API_KEY (must match server's SERVER_API_KEY):"
-if [ -n "$CURRENT_CLIENT_API_KEY" ]; then
-    echo "Current value: $CURRENT_CLIENT_API_KEY"
-else
-    echo "Current value: Not set"
-fi
-read -p "CLIENT_API_KEY (press Enter to keep current): " CLIENT_API_KEY_INPUT
-if [ -z "$CLIENT_API_KEY_INPUT" ]; then
-    CLIENT_API_KEY_INPUT="$CURRENT_CLIENT_API_KEY"
-fi
+echo "NOTE: CLIENT_API_KEY is no longer used. Authentication is now via device UUID."
+echo "You will register your device UUID on the server after this setup completes."
+echo ""
+# Skip CLIENT_API_KEY - not needed anymore
+CLIENT_API_KEY_INPUT=""
 
 echo ""
 echo "Select your DEVICE_TIMEZONE:"
@@ -438,12 +432,11 @@ if [ -z "$SUPABASE_KEY_INPUT" ]; then
 fi
 
 # Update .env file
-SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" TIMEZONE_INPUT="$TIMEZONE_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" python3 << 'EOF'
+SERVER_URL_INPUT="$SERVER_URL_INPUT" TIMEZONE_INPUT="$TIMEZONE_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" python3 << 'EOF'
 import os
 import re
 
 server_url = os.environ.get('SERVER_URL_INPUT', '').strip()
-client_api_key = os.environ.get('CLIENT_API_KEY_INPUT', '').strip()
 timezone = os.environ.get('TIMEZONE_INPUT', '').strip()
 supabase_url = os.environ.get('SUPABASE_URL_INPUT', '').strip()
 supabase_key = os.environ.get('SUPABASE_KEY_INPUT', '').strip()
@@ -458,12 +451,11 @@ if server_url:
 else:
     print("⊘ Kept existing SERVER_URL value")
 
-# Replace CLIENT_API_KEY if provided
-if client_api_key:
-    content = re.sub(r'CLIENT_API_KEY=.*', f'CLIENT_API_KEY={client_api_key}', content)
-    print("✓ Updated CLIENT_API_KEY")
-else:
-    print("⊘ Kept existing CLIENT_API_KEY value")
+# CLIENT_API_KEY is deprecated - remove it from .env if present
+if 'CLIENT_API_KEY=' in content:
+    # Comment out the old CLIENT_API_KEY line
+    content = re.sub(r'CLIENT_API_KEY=.*', '# CLIENT_API_KEY=DEPRECATED (authentication now uses device UUID)', content)
+    print("✓ Removed CLIENT_API_KEY (deprecated)")
 
 # Replace DEVICE_TIMEZONE if provided
 if timezone:
@@ -551,7 +543,6 @@ from dotenv import load_dotenv
 load_dotenv('.env')
 
 server_url = os.getenv('SERVER_URL', '')
-client_api_key = os.getenv('CLIENT_API_KEY', '')
 
 errors = []
 
@@ -559,9 +550,7 @@ errors = []
 if not server_url or server_url in ['https://yourdomain.com', 'http://localhost:8000']:
     errors.append("SERVER_URL is not configured or using default value")
 
-# Check CLIENT_API_KEY  
-if not client_api_key or client_api_key in ['YOUR_API_KEY_HERE', 'YOUR_SECURE_API_KEY_HERE']:
-    errors.append("CLIENT_API_KEY is not configured or using default value")
+# CLIENT_API_KEY is no longer required - authentication is via device UUID
 
 if errors:
     print("❌ Configuration errors found:")
@@ -721,6 +710,40 @@ echo "Checking service status..."
 if systemctl is-active --quiet voice-assistant-client.service; then
     echo "✅ Service is RUNNING successfully!"
     echo ""
+    
+    # Display device UUID for registration
+    echo "==========================================="
+    echo "⚠️  IMPORTANT: Device Registration Required"
+    echo "==========================================="
+    echo ""
+    
+    # Get the device UUID from the UUID file
+    DEVICE_UUID_FILE="$HOME/.javia_device_uuid"
+    if [ -f "$DEVICE_UUID_FILE" ]; then
+        DEVICE_UUID=$(cat "$DEVICE_UUID_FILE")
+        echo "Your Device UUID:"
+        echo ""
+        echo "  ┌────────────────────────────────────────────┐"
+        echo "  │  $DEVICE_UUID  │"
+        echo "  └────────────────────────────────────────────┘"
+        echo ""
+        echo "This device MUST be registered on the server before it can connect."
+        echo ""
+        echo "On your server, SSH in and run:"
+        echo ""
+        echo "  cd /opt/javia"
+        echo "  sudo ./register_device.sh $DEVICE_UUID \"$(hostname)\" \"$DEVICE_TIMEZONE\""
+        echo ""
+        echo "After registration, the device can make requests to the server."
+        echo ""
+    else
+        echo "⚠️  Device UUID file not found."
+        echo "The device will generate a UUID on first run."
+        echo "Check logs after starting to get the UUID:"
+        echo "  sudo journalctl -u voice-assistant-client.service -n 50"
+        echo ""
+    fi
+    
     echo "==========================================="
     echo "Setup Complete!"
     echo "==========================================="
@@ -729,10 +752,12 @@ if systemctl is-active --quiet voice-assistant-client.service; then
     if [ "$NEEDS_LOGOUT" = true ]; then
         echo "⚠️  IMPORTANT: You must log out and log back in for group permissions to take effect!"
         echo ""
-        echo "After logging back in, the client will work when you press the button."
+        echo "After logging back in, register the device UUID on the server."
         echo ""
     else
-        echo "✅ Client is ready! You can now press the button to use the voice assistant."
+        echo "✅ Next Steps:"
+        echo "  1. Register the device UUID on the server (see above)"
+        echo "  2. Press the button to test the voice assistant"
         echo ""
     fi
 else

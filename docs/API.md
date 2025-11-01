@@ -23,9 +23,25 @@ https://yourdomain.com
 ```
 
 ### Authentication
-All API requests (except `/health`) require API key authentication.
 
-**Header**: `X-API-Key: your_api_key`
+**Device UUID Authentication (Pi Clients)**
+
+All API requests from Pi clients (except `/health`) require device UUID authentication.
+
+**Header**: `X-Device-UUID: your_device_uuid`
+
+- Each Pi client has a unique UUID (generated automatically on first boot)
+- The device UUID must be registered on the server before making requests
+- To register: `./register_device.sh <DEVICE_UUID>` on the server
+
+**Admin API Key (Management Endpoints)**
+
+Device management endpoints require admin API key authentication.
+
+**Header**: `X-API-Key: your_admin_api_key`
+
+- Used only for `/api/v1/devices/*` and `/api/v1/updates/*` endpoints
+- Not shared with Pi clients
 
 ### Endpoints
 
@@ -54,13 +70,13 @@ curl https://yourdomain.com/health
 
 Process audio through complete pipeline: transcription → LLM → TTS.
 
-**Authentication**: Required (X-API-Key header)
+**Authentication**: Required (X-Device-UUID header)
 
 **Request**:
 - **Content-Type**: `multipart/form-data`
 - **Headers**: 
   ```
-  X-API-Key: your_api_key_here
+  X-Device-UUID: your_device_uuid_here
   ```
 - **Form Data**:
   - `audio` (file): Audio file (**Opus or WAV format**, max 25MB)
@@ -85,9 +101,8 @@ Process audio through complete pipeline: transcription → LLM → TTS.
 **Note**: All response headers are URL-encoded to support Unicode characters (e.g., smart quotes, accented characters). Clients should URL-decode these values using `urllib.parse.unquote()` in Python or equivalent in other languages.
 
 **Error Responses**:
-- `400 Bad Request`: Invalid file format, size, or corrupted audio
-- `401 Unauthorized`: Missing API key
-- `403 Forbidden`: Invalid API key
+- `400 Bad Request`: Invalid file format, size, corrupted audio, or missing/malformed device UUID
+- `403 Forbidden`: Device not registered or not authorized
 - `413 Request Entity Too Large`: File exceeds 25MB
 - `422 Unprocessable Entity`: Validation error
 - `500 Internal Server Error`: Server processing error
@@ -95,7 +110,7 @@ Process audio through complete pipeline: transcription → LLM → TTS.
 **Example (Opus format - recommended)**:
 ```bash
 curl -X POST \
-  -H "X-API-Key: your_api_key" \
+  -H "X-Device-UUID: 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890" \
   -F "audio=@recording.opus;type=audio/opus" \
   -F "session_id=user123_session456" \
   -F "microphone_gain=2.0" \
@@ -106,7 +121,7 @@ curl -X POST \
 **Example (WAV format - legacy)**:
 ```bash
 curl -X POST \
-  -H "X-API-Key: your_api_key" \
+  -H "X-Device-UUID: 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890" \
   -F "audio=@recording.wav" \
   -F "session_id=user123_session456" \
   https://yourdomain.com/api/v1/process \
@@ -118,7 +133,7 @@ curl -X POST \
 import requests
 from urllib.parse import unquote
 
-headers = {'X-API-Key': 'your_api_key'}
+headers = {'X-Device-UUID': '018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890'}
 files = {'audio': ('recording.wav', open('recording.wav', 'rb'), 'audio/wav')}
 data = {'session_id': 'user123_session456'}
 

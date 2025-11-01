@@ -52,7 +52,7 @@ load_dotenv()
 
 # Server Configuration
 SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:8000')
-CLIENT_API_KEY = os.getenv('CLIENT_API_KEY', 'YOUR_API_KEY_HERE')
+# CLIENT_API_KEY is deprecated - authentication is now via device UUID
 
 # OTA Update Configuration
 DEVICE_TIMEZONE = os.getenv('DEVICE_TIMEZONE', 'UTC')
@@ -247,12 +247,8 @@ def setup():
     rotary_encoder.when_rotated = on_rotate
     print(f"[INIT] ✓ Rotary encoder active: ±{VOLUME_STEP}% per step (button + rotation)")
     
-    # Check API key
-    if CLIENT_API_KEY in ["YOUR_API_KEY_HERE", "YOUR_SECURE_API_KEY_HERE", ""]:
-        print("\n[ERROR] CLIENT API KEY NOT SET!")
-        print("[ERROR] Please set your API key in the .env file.")
-        print("[ERROR] Run the setup script: bash ~/javia_client/deploy/setup.sh")
-        sys.exit(1)
+    # API key no longer needed - authentication is via device UUID
+    # The device UUID is managed by device_manager (initialized above)
     
     # Check server URL
     if SERVER_URL == "http://localhost:8000":
@@ -1117,15 +1113,28 @@ def get_http_session():
     - Connection reuse (TCP handshake only once)
     - Keep-alive connections
     - Reduced latency on subsequent requests
+    
+    AUTHENTICATION:
+    - Uses device UUID for authentication (X-Device-UUID header)
+    - No shared API keys - each device has unique identifier
     """
     global _HTTP_SESSION
     if _HTTP_SESSION is None:
         _HTTP_SESSION = requests.Session()
-        # Configure for optimal performance
+        
+        # Get device UUID from device_manager
+        if device_manager is None:
+            print("[ERROR] Device manager not initialized!")
+            raise RuntimeError("Device manager must be initialized before making requests")
+        
+        device_uuid = device_manager.get_device_uuid()
+        
+        # Configure for optimal performance with device authentication
         _HTTP_SESSION.headers.update({
             'Connection': 'keep-alive',
-            'X-API-Key': CLIENT_API_KEY
+            'X-Device-UUID': device_uuid
         })
+        
         # Retry on connection errors
         from requests.adapters import HTTPAdapter
         from requests.packages.urllib3.util.retry import Retry
@@ -1232,10 +1241,16 @@ def send_to_server():
                 return True
                 
             elif response.status_code == 401:
-                print("[ERROR] Unauthorized - Invalid API key")
+                print("[ERROR] Unauthorized")
                 return False
             elif response.status_code == 403:
-                print("[ERROR] Forbidden - Access denied")
+                print("[ERROR] Forbidden - Device not registered or not authorized")
+                print(f"[ERROR] Device UUID: {device_manager.get_device_uuid()}")
+                print("[ERROR] ")
+                print("[ERROR] This device must be registered on the server.")
+                print("[ERROR] On your server, SSH in and run:")
+                print(f"[ERROR]   cd /opt/javia")
+                print(f"[ERROR]   sudo ./register_device.sh {device_manager.get_device_uuid()}")
                 return False
             else:
                 print(f"[ERROR] Server error {response.status_code}: {response.text}")
