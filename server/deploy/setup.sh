@@ -189,6 +189,32 @@ if [ "$IS_FRESH_INSTALL" = true ]; then
     echo ""
     read -p "Press Enter after you've saved the SERVER_API_KEY..."
     
+    echo ""
+    echo "==================================="
+    echo "OTA Update Configuration (Optional)"
+    echo "==================================="
+    echo ""
+    echo "For over-the-air updates, you need Supabase credentials."
+    echo "If you don't have these yet, you can skip and add them later."
+    echo ""
+    
+    echo "Enter your SUPABASE_URL (or press Enter to skip):"
+    read -p "SUPABASE_URL: " SUPABASE_URL_INPUT
+    
+    if [ -n "$SUPABASE_URL_INPUT" ]; then
+        echo ""
+        echo "Enter your SUPABASE_KEY (anon key):"
+        read -p "SUPABASE_KEY: " SUPABASE_KEY_INPUT
+        
+        echo ""
+        echo "Enter your SUPABASE_SERVICE_KEY (service role key):"
+        read -p "SUPABASE_SERVICE_KEY: " SUPABASE_SERVICE_KEY_INPUT
+    else
+        SUPABASE_KEY_INPUT=""
+        SUPABASE_SERVICE_KEY_INPUT=""
+        echo "⊘ Skipped OTA update configuration (can be added later)"
+    fi
+    
 else
     # UPDATE - Show current values and allow keeping or changing
     echo ""
@@ -203,6 +229,9 @@ import re
 env_file = '.env'
 groq_key = 'NOT_SET'
 server_key = 'NOT_SET'
+supabase_url = 'NOT_SET'
+supabase_key = 'NOT_SET'
+supabase_service_key = 'NOT_SET'
 
 try:
     with open(env_file, 'r') as f:
@@ -213,60 +242,66 @@ try:
                     groq_key = line.split('=', 1)[1].strip()
                 elif line.startswith('SERVER_API_KEY='):
                     server_key = line.split('=', 1)[1].strip()
+                elif line.startswith('SUPABASE_URL='):
+                    supabase_url = line.split('=', 1)[1].strip()
+                elif line.startswith('SUPABASE_KEY='):
+                    supabase_key = line.split('=', 1)[1].strip()
+                elif line.startswith('SUPABASE_SERVICE_KEY='):
+                    supabase_service_key = line.split('=', 1)[1].strip()
     print(f"GROQ_KEY={groq_key}")
     print(f"SERVER_KEY={server_key}")
+    print(f"SUPABASE_URL={supabase_url}")
+    print(f"SUPABASE_KEY={supabase_key}")
+    print(f"SUPABASE_SERVICE_KEY={supabase_service_key}")
 except Exception as e:
     print(f"GROQ_KEY=NOT_SET")
     print(f"SERVER_KEY=NOT_SET")
+    print(f"SUPABASE_URL=NOT_SET")
+    print(f"SUPABASE_KEY=NOT_SET")
+    print(f"SUPABASE_SERVICE_KEY=NOT_SET")
 EOF
 )
     
     # Parse the output
     CURRENT_GROQ_KEY=$(echo "$CURRENT_VALUES" | grep "^GROQ_KEY=" | cut -d'=' -f2)
     CURRENT_SERVER_KEY=$(echo "$CURRENT_VALUES" | grep "^SERVER_KEY=" | cut -d'=' -f2)
+    CURRENT_SUPABASE_URL=$(echo "$CURRENT_VALUES" | grep "^SUPABASE_URL=" | cut -d'=' -f2)
+    CURRENT_SUPABASE_KEY=$(echo "$CURRENT_VALUES" | grep "^SUPABASE_KEY=" | cut -d'=' -f2)
+    CURRENT_SUPABASE_SERVICE_KEY=$(echo "$CURRENT_VALUES" | grep "^SUPABASE_SERVICE_KEY=" | cut -d'=' -f2)
     
     echo "==================================="
     echo "Current Configuration"
     echo "==================================="
     echo ""
-    echo "Current GROQ_API_KEY: ${CURRENT_GROQ_KEY:0:20}... (hidden)"
+    echo "GROQ_API_KEY"
+    echo "------------"
+    echo "Current value: ${CURRENT_GROQ_KEY:0:20}... (hidden)"
     echo ""
-    echo "Options:"
-    echo "  1) Keep existing GROQ_API_KEY (recommended for updates)"
-    echo "  2) Enter new GROQ_API_KEY"
-    echo ""
-    read -p "Choose option [1-2]: " GROQ_CHOICE
+    echo "Enter new GROQ_API_KEY (or press Enter to keep current):"
+    read -p "GROQ_API_KEY: " GROQ_KEY_INPUT
     
-    if [ "$GROQ_CHOICE" = "2" ]; then
-        while true; do
-            echo ""
-            echo "Enter new GROQ_API_KEY:"
-            read -p "GROQ_API_KEY: " GROQ_KEY_INPUT
-            if [ -n "$GROQ_KEY_INPUT" ]; then
-                break
-            else
-                echo "❌ GROQ_API_KEY cannot be empty."
-            fi
-        done
-    else
+    if [ -z "$GROQ_KEY_INPUT" ]; then
         GROQ_KEY_INPUT="$CURRENT_GROQ_KEY"
         echo "✓ Keeping existing GROQ_API_KEY"
+    else
+        echo "✓ Will update GROQ_API_KEY"
     fi
     
     echo ""
     echo "==================================="
-    echo "Current SERVER_API_KEY: $CURRENT_SERVER_KEY"
-    echo "==================================="
+    echo "SERVER_API_KEY"
+    echo "------------"
+    echo "Current value: $CURRENT_SERVER_KEY"
     echo ""
-    echo "⚠️  WARNING: Changing SERVER_API_KEY requires updating the Pi client!"
+    echo "⚠️  WARNING: Changing SERVER_API_KEY requires updating ALL Pi clients!"
     echo ""
     echo "Options:"
-    echo "  1) Keep existing SERVER_API_KEY (recommended for updates)"
-    echo "  2) Generate new SERVER_API_KEY"
+    echo "  1) Keep current SERVER_API_KEY (press Enter)"
+    echo "  2) Generate new SERVER_API_KEY (type 'new')"
     echo ""
-    read -p "Choose option [1-2]: " SERVER_KEY_CHOICE
+    read -p "Choice (Enter or 'new'): " SERVER_KEY_CHOICE
     
-    if [ "$SERVER_KEY_CHOICE" = "2" ]; then
+    if [ "$SERVER_KEY_CHOICE" = "new" ]; then
         echo ""
         echo "Generating new SERVER_API_KEY using UUID7..."
         pip install -q uuid6 > /dev/null 2>&1 || true
@@ -285,28 +320,116 @@ EOF
         SERVER_KEY_INPUT="$CURRENT_SERVER_KEY"
         echo "✓ Keeping existing SERVER_API_KEY"
     fi
+    
+    echo ""
+    echo "==================================="
+    echo "OTA Update Configuration (Supabase)"
+    echo "==================================="
+    echo ""
+    echo "SUPABASE_URL"
+    echo "------------"
+    if [ "$CURRENT_SUPABASE_URL" != "NOT_SET" ] && [ "$CURRENT_SUPABASE_URL" != "https://your-project.supabase.co" ]; then
+        echo "Current value: $CURRENT_SUPABASE_URL"
+    else
+        echo "Current value: Not configured"
+    fi
+    echo ""
+    read -p "SUPABASE_URL (press Enter to keep current): " SUPABASE_URL_INPUT
+    
+    if [ -z "$SUPABASE_URL_INPUT" ]; then
+        SUPABASE_URL_INPUT="$CURRENT_SUPABASE_URL"
+        echo "✓ Keeping existing SUPABASE_URL"
+    else
+        echo "✓ Will update SUPABASE_URL"
+    fi
+    
+    echo ""
+    echo "SUPABASE_KEY (anon key)"
+    echo "------------"
+    if [ "$CURRENT_SUPABASE_KEY" != "NOT_SET" ] && [ "$CURRENT_SUPABASE_KEY" != "your-anon-key" ]; then
+        echo "Current value: ${CURRENT_SUPABASE_KEY:0:20}... (hidden)"
+    else
+        echo "Current value: Not configured"
+    fi
+    echo ""
+    read -p "SUPABASE_KEY (press Enter to keep current): " SUPABASE_KEY_INPUT
+    
+    if [ -z "$SUPABASE_KEY_INPUT" ]; then
+        SUPABASE_KEY_INPUT="$CURRENT_SUPABASE_KEY"
+        echo "✓ Keeping existing SUPABASE_KEY"
+    else
+        echo "✓ Will update SUPABASE_KEY"
+    fi
+    
+    echo ""
+    echo "SUPABASE_SERVICE_KEY (service role key)"
+    echo "------------"
+    if [ "$CURRENT_SUPABASE_SERVICE_KEY" != "NOT_SET" ] && [ "$CURRENT_SUPABASE_SERVICE_KEY" != "your-service-role-key" ]; then
+        echo "Current value: ${CURRENT_SUPABASE_SERVICE_KEY:0:20}... (hidden)"
+    else
+        echo "Current value: Not configured"
+    fi
+    echo ""
+    read -p "SUPABASE_SERVICE_KEY (press Enter to keep current): " SUPABASE_SERVICE_KEY_INPUT
+    
+    if [ -z "$SUPABASE_SERVICE_KEY_INPUT" ]; then
+        SUPABASE_SERVICE_KEY_INPUT="$CURRENT_SUPABASE_SERVICE_KEY"
+        echo "✓ Keeping existing SUPABASE_SERVICE_KEY"
+    else
+        echo "✓ Will update SUPABASE_SERVICE_KEY"
+    fi
 fi
 
 # Update .env file with the values
-GROQ_KEY_INPUT="$GROQ_KEY_INPUT" SERVER_KEY_INPUT="$SERVER_KEY_INPUT" python3 << 'EOF'
+GROQ_KEY_INPUT="$GROQ_KEY_INPUT" SERVER_KEY_INPUT="$SERVER_KEY_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" SUPABASE_SERVICE_KEY_INPUT="$SUPABASE_SERVICE_KEY_INPUT" python3 << 'EOF'
 import os
 import re
 
 groq_key = os.environ.get('GROQ_KEY_INPUT', '').strip()
 server_key = os.environ.get('SERVER_KEY_INPUT', '').strip()
+supabase_url = os.environ.get('SUPABASE_URL_INPUT', '').strip()
+supabase_key = os.environ.get('SUPABASE_KEY_INPUT', '').strip()
+supabase_service_key = os.environ.get('SUPABASE_SERVICE_KEY_INPUT', '').strip()
 
 with open('.env', 'r') as f:
     content = f.read()
 
 # Replace GROQ_API_KEY
-if groq_key:
+if groq_key and groq_key != 'NOT_SET':
     content = re.sub(r'GROQ_API_KEY=.*', f'GROQ_API_KEY={groq_key}', content)
     print("✓ Updated GROQ_API_KEY")
 
 # Replace SERVER_API_KEY
-if server_key:
+if server_key and server_key != 'NOT_SET':
     content = re.sub(r'SERVER_API_KEY=.*', f'SERVER_API_KEY={server_key}', content)
     print("✓ Updated SERVER_API_KEY")
+
+# Replace SUPABASE_URL if provided
+if supabase_url and supabase_url != 'NOT_SET':
+    if 'SUPABASE_URL=' in content:
+        content = re.sub(r'SUPABASE_URL=.*', f'SUPABASE_URL={supabase_url}', content)
+    else:
+        # Add after SERVER_API_KEY line
+        content = re.sub(r'(SERVER_API_KEY=.*\n)', f'\\1SUPABASE_URL={supabase_url}\n', content)
+    print("✓ Updated SUPABASE_URL")
+
+# Replace SUPABASE_KEY if provided
+if supabase_key and supabase_key != 'NOT_SET':
+    if 'SUPABASE_KEY=' in content:
+        content = re.sub(r'SUPABASE_KEY=.*', f'SUPABASE_KEY={supabase_key}', content)
+    else:
+        # Add after SUPABASE_URL line
+        content = re.sub(r'(SUPABASE_URL=.*\n)', f'\\1SUPABASE_KEY={supabase_key}\n', content)
+    print("✓ Updated SUPABASE_KEY")
+
+# Replace SUPABASE_SERVICE_KEY if provided
+if supabase_service_key and supabase_service_key != 'NOT_SET':
+    if 'SUPABASE_SERVICE_KEY=' in content:
+        content = re.sub(r'SUPABASE_SERVICE_KEY=.*', f'SUPABASE_SERVICE_KEY={supabase_service_key}', content)
+    else:
+        # Add after SUPABASE_KEY line
+        content = re.sub(r'(SUPABASE_KEY=.*\n)', f'\\1SUPABASE_SERVICE_KEY={supabase_service_key}\n', content)
+    print("✓ Updated SUPABASE_SERVICE_KEY")
 
 with open('.env', 'w') as f:
     f.write(content)
