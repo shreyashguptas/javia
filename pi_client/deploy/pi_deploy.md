@@ -119,16 +119,28 @@ cd /tmp
 rm -rf javia  # Remove old clone if exists
 git clone https://github.com/shreyashguptas/javia.git
 cd javia
-# Run the SAME script again
+
+# 2. Run the SAME script again
 bash pi_client/deploy/setup.sh
 ```
 
 The script will:
 - ✅ Install any missing dependencies
+- ✅ Offer to rebuild virtual environment (choose option 2 for major updates)
 - ✅ Copy latest client files
 - ✅ Give you option to keep or update configuration
-- ✅ Update virtual environment
+- ✅ Update virtual environment packages
 - ✅ Restart the service
+
+**Update Strategy:**
+- **Minor updates** (bug fixes, small changes): Choose option 1 to keep existing venv
+- **Major updates** (new dependencies, package version changes): Choose option 2 to rebuild venv
+
+**Why rebuild the venv?**
+- Removes old/conflicting packages
+- Ensures clean dependency installation
+- Fixes import errors from stale packages
+- Only takes 1-2 minutes
 
 **It's that simple!** No need to remember which script to run - it's always the same one.
 

@@ -220,6 +220,46 @@ vcgencmd measure_temp
 **Solution:**
 Code now uses streaming (no MemoryError). If you see this, update to latest code.
 
+### 11. UUID7 Import Error / Dependency Verification Failed
+
+**Error:**
+```
+❌ Some dependencies failed verification.
+  ✗ uuid7 - FAILED
+```
+
+**Cause:** 
+- Incorrect `uuid7` package installed (should be `uuid6` package)
+- Stale packages in virtual environment
+- Package conflicts from previous installations
+
+**Solution:**
+
+1. **Update to latest code** (fix is included):
+   ```bash
+   cd /tmp
+   rm -rf javia
+   git clone https://github.com/shreyashguptas/javia.git
+   cd javia
+   ```
+
+2. **Run setup and rebuild venv** (option 2):
+   ```bash
+   bash pi_client/deploy/setup.sh
+   # When prompted: Choose option 2 to rebuild venv
+   ```
+
+3. **Verify the fix**:
+   ```bash
+   ~/venvs/pi_client/bin/pip list | grep uuid
+   # Should show: uuid6  2024.1.12 (NOT uuid7)
+   ```
+
+**Background:**
+- The correct package is `uuid6` which provides UUID7 functionality
+- Import should be: `from uuid6 import uuid7`
+- See `UUID7_PACKAGE_FIX.md` for detailed explanation
+
 ## Diagnostic Commands
 
 ```bash

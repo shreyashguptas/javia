@@ -67,6 +67,30 @@ sudo systemctl stop voice-assistant-client.service 2>/dev/null || true
 echo "✓ Service stopped"
 echo ""
 
+# Check if this is an update (venv exists) and offer to rebuild it
+if [ -d "$VENV_DIR" ]; then
+    echo "⚠️  Existing virtual environment detected at: $VENV_DIR"
+    echo ""
+    echo "For major updates, it's recommended to rebuild the virtual environment"
+    echo "to avoid package conflicts and ensure clean dependencies."
+    echo ""
+    echo "Options:"
+    echo "  1) Keep existing venv and update packages (faster)"
+    echo "  2) Delete and rebuild venv from scratch (recommended for updates)"
+    echo ""
+    read -p "Choose option [1-2] (default: 1): " VENV_CHOICE
+    
+    if [ "$VENV_CHOICE" = "2" ]; then
+        echo ""
+        echo "Removing existing virtual environment..."
+        rm -rf "$VENV_DIR"
+        echo "✓ Existing venv removed (will create fresh one)"
+    else
+        echo "✓ Keeping existing venv"
+    fi
+    echo ""
+fi
+
 # ==================== STEP 3: CREATE DIRECTORIES ====================
 echo "[3/8] Setting up directories..."
 mkdir -p "$INSTALL_DIR"
@@ -119,7 +143,7 @@ echo "Upgrading pip in virtual environment..."
 # Install OTA dependencies with --ignore-installed to force them into venv
 echo "Installing OTA dependencies into virtual environment..."
 echo "This ensures clean, isolated package installations..."
-"$VENV_DIR/bin/pip" install --no-cache-dir --ignore-installed --no-deps uuid7
+"$VENV_DIR/bin/pip" install --no-cache-dir --ignore-installed --no-deps uuid6
 "$VENV_DIR/bin/pip" install --no-cache-dir --ignore-installed pytz
 "$VENV_DIR/bin/pip" install --no-cache-dir realtime
 "$VENV_DIR/bin/pip" install --no-cache-dir supabase
@@ -146,7 +170,7 @@ declare -A DEPS_STATUS
 declare -A DEPS_LOCATION
 
 # All dependencies we need to check (both venv and system)
-DEPS_TO_CHECK="uuid7 supabase pytz realtime requests dotenv opuslib numpy pyaudio gpiozero"
+DEPS_TO_CHECK="uuid6 supabase pytz realtime requests dotenv opuslib numpy pyaudio gpiozero"
 
 for dep in $DEPS_TO_CHECK; do
     if "$VENV_DIR/bin/python3" -c "import $dep" 2>/dev/null; then
@@ -187,7 +211,7 @@ if [ "$ALL_OK" = false ]; then
     echo "Site packages: $("$VENV_DIR/bin/python3" -c "import site; print(site.getsitepackages())")"
     echo ""
     echo "Installed packages:"
-    "$VENV_DIR/bin/pip" list | grep -E "(uuid7|supabase|pytz|realtime|requests|dotenv|opuslib)"
+    "$VENV_DIR/bin/pip" list | grep -E "(uuid6|supabase|pytz|realtime|requests|dotenv|opuslib)"
     echo ""
     
     read -p "Attempt to reinstall failed packages? (Y/n): " RETRY_INSTALL

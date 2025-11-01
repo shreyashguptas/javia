@@ -5,7 +5,7 @@ import platform
 import socket
 from pathlib import Path
 from typing import Optional, Dict, Any
-import uuid7
+from uuid6 import uuid7
 import requests
 
 logger = logging.getLogger(__name__)
