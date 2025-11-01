@@ -123,31 +123,22 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
     fi
 fi
 
-# Restore backed up .env values if available
+# Restore backed up .env if available, then prompt for configuration
 if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
-    echo ""
-    echo "Found existing configuration!"
-    echo ""
-    echo "Options:"
-    echo "  1) Keep existing configuration (recommended for updates)"
-    echo "  2) Enter new configuration values"
-    echo ""
-    read -p "Choose option [1-2]: " CONFIG_CHOICE
-    
-    if [ "$CONFIG_CHOICE" = "1" ]; then
-        cp "$ENV_BACKUP" "$INSTALL_DIR/.env"
-        echo "✓ Restored existing configuration"
-        rm -f "$ENV_BACKUP"
-    else
-        rm -f "$ENV_BACKUP"
-        echo ""
-        echo "==================================="
-        echo "Client Configuration"
-        echo "==================================="
-        echo ""
-        
-        # Read current values from .env file using Python
-        read -r CURRENT_SERVER_URL CURRENT_CLIENT_API_KEY CURRENT_DEVICE_TIMEZONE CURRENT_SUPABASE_URL CURRENT_SUPABASE_KEY < <(python3 << 'EOF'
+    # Restore the backup first so we can read current values
+    cp "$ENV_BACKUP" "$INSTALL_DIR/.env"
+    rm -f "$ENV_BACKUP"
+fi
+
+# Always show configuration prompts with current values
+echo ""
+echo "==================================="
+echo "Client Configuration"
+echo "==================================="
+echo ""
+
+# Read current values from .env file using Python
+read -r CURRENT_SERVER_URL CURRENT_CLIENT_API_KEY CURRENT_DEVICE_TIMEZONE CURRENT_SUPABASE_URL CURRENT_SUPABASE_KEY < <(python3 << 'EOF'
 import re
 
 try:
@@ -289,140 +280,6 @@ import re
 
 server_url = os.environ.get('SERVER_URL_INPUT', '').strip()
 client_api_key = os.environ.get('CLIENT_API_KEY_INPUT', '').strip()
-
-with open('.env', 'r') as f:
-    content = f.read()
-
-# Replace SERVER_URL if provided
-if server_url:
-    content = re.sub(r'SERVER_URL=.*', f'SERVER_URL={server_url}', content)
-    print("✓ Updated SERVER_URL")
-else:
-    print("⊘ Kept existing SERVER_URL value")
-
-# Replace CLIENT_API_KEY if provided
-if client_api_key:
-    content = re.sub(r'CLIENT_API_KEY=.*', f'CLIENT_API_KEY={client_api_key}', content)
-    print("✓ Updated CLIENT_API_KEY")
-else:
-    print("⊘ Kept existing CLIENT_API_KEY value")
-
-with open('.env', 'w') as f:
-    f.write(content)
-EOF
-    fi
-else
-    # First time setup - require values
-    echo ""
-    echo "==================================="
-    echo "Client Configuration (REQUIRED)"
-    echo "==================================="
-    echo ""
-    
-    # Require SERVER_URL
-    while true; do
-        echo "Enter your SERVER_URL (e.g., https://yourdomain.com):"
-        read -p "SERVER_URL: " SERVER_URL_INPUT
-        if [ -n "$SERVER_URL_INPUT" ]; then
-            break
-        else
-            echo "❌ SERVER_URL cannot be empty. Please enter a valid URL."
-            echo ""
-        fi
-    done
-    
-    echo ""
-    
-    # Require CLIENT_API_KEY
-    while true; do
-        echo "Enter your CLIENT_API_KEY (must match server's SERVER_API_KEY):"
-        read -p "CLIENT_API_KEY: " CLIENT_API_KEY_INPUT
-        if [ -n "$CLIENT_API_KEY_INPUT" ]; then
-            break
-        else
-            echo "❌ CLIENT_API_KEY cannot be empty. Please enter a valid API key."
-            echo ""
-        fi
-    done
-    
-    echo ""
-    
-    # Select DEVICE_TIMEZONE
-    echo "Select your DEVICE_TIMEZONE:"
-    echo ""
-    TIMEZONE_INPUT=$(python3 << 'TZEOF'
-import os
-import sys
-
-timezones = [
-    "America/New_York",
-    "America/Chicago",
-    "America/Denver",
-    "America/Phoenix",
-    "America/Los_Angeles",
-    "America/Anchorage",
-    "America/Honolulu",
-    "America/Toronto",
-    "America/Vancouver",
-    "America/Edmonton",
-    "America/Winnipeg",
-    "America/Halifax",
-    "America/Mexico_City",
-    "America/Monterrey",
-    "America/Tijuana",
-    "UTC"
-]
-
-print("Available Timezones:")
-for i, tz in enumerate(timezones):
-    print(f"  {i+1}. {tz}")
-
-while True:
-    choice = input(f"\nEnter number (1-{len(timezones)}): ")
-    try:
-        idx = int(choice) - 1
-        if 0 <= idx < len(timezones):
-            print(timezones[idx])
-            break
-        else:
-            print(f"Please enter a number between 1 and {len(timezones)}")
-    except ValueError:
-        print("Please enter a valid number")
-TZEOF
-)
-    
-    echo ""
-    
-    # Optional: SUPABASE configuration for OTA updates
-    echo "==================================="
-    echo "OTA Update Configuration (Optional)"
-    echo "==================================="
-    echo ""
-    echo "For over-the-air updates, you need Supabase credentials."
-    echo "If you don't have these yet, you can skip and add them later."
-    echo ""
-    
-    echo "Enter your SUPABASE_URL (or press Enter to skip):"
-    read -p "SUPABASE_URL: " SUPABASE_URL_INPUT
-    
-    if [ -n "$SUPABASE_URL_INPUT" ]; then
-        echo ""
-        echo "Enter your SUPABASE_KEY (anon key):"
-        read -p "SUPABASE_KEY: " SUPABASE_KEY_INPUT
-    else
-        SUPABASE_KEY_INPUT=""
-        echo "⊘ Skipped OTA update configuration (can be added later)"
-    fi
-    
-    echo ""
-    
-    # Update .env file
-    SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" TIMEZONE_INPUT="$TIMEZONE_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" python3 << 'EOF'
-import os
-import re
-
-server_url = os.environ.get('SERVER_URL_INPUT', '').strip()
-client_api_key = os.environ.get('CLIENT_API_KEY_INPUT', '').strip()
 timezone = os.environ.get('TIMEZONE_INPUT', '').strip()
 supabase_url = os.environ.get('SUPABASE_URL_INPUT', '').strip()
 supabase_key = os.environ.get('SUPABASE_KEY_INPUT', '').strip()
@@ -474,7 +331,6 @@ if supabase_key:
 with open('.env', 'w') as f:
     f.write(content)
 EOF
-fi
 
 # Clean inline comments from .env file (systemd EnvironmentFile doesn't support them)
 echo ""
