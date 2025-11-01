@@ -102,10 +102,27 @@ else
     python3 -m venv --system-site-packages "$VENV_DIR"
 fi
 
-source "$VENV_DIR/bin/activate"
-pip install --upgrade pip > /dev/null 2>&1
+# Use explicit pip path to ensure we install to the venv
+echo "Upgrading pip in virtual environment..."
+"$VENV_DIR/bin/pip" install --upgrade pip > /dev/null 2>&1
+
 echo "Installing Python dependencies from requirements.txt..."
-pip install -r "$INSTALL_DIR/requirements.txt"
+"$VENV_DIR/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+
+# Verify critical OTA dependencies are installed
+echo "Verifying OTA dependencies installation..."
+if ! "$VENV_DIR/bin/python3" -c "import uuid7, supabase, pytz, realtime" 2>/dev/null; then
+    echo "⚠️  Some OTA dependencies failed to install. Retrying..."
+    "$VENV_DIR/bin/pip" install --force-reinstall uuid7 supabase pytz realtime
+    
+    # Verify again
+    if ! "$VENV_DIR/bin/python3" -c "import uuid7, supabase, pytz, realtime" 2>/dev/null; then
+        echo "❌ ERROR: Failed to install OTA dependencies!"
+        echo "Please check your internet connection and try again."
+        exit 1
+    fi
+fi
+
 echo "✓ Virtual environment ready with all dependencies"
 echo ""
 
