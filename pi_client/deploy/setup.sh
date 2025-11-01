@@ -145,15 +145,101 @@ if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
         echo "Client Configuration"
         echo "==================================="
         echo ""
+        
+        # Load current values from .env
+        source "$INSTALL_DIR/.env" 2>/dev/null || true
+        
         echo "Enter your SERVER_URL (e.g., https://yourdomain.com):"
-        read -p "SERVER_URL: " SERVER_URL_INPUT
+        echo "Current value: ${SERVER_URL:-Not set}"
+        read -p "SERVER_URL (press Enter to keep current): " SERVER_URL_INPUT
+        if [ -z "$SERVER_URL_INPUT" ]; then
+            SERVER_URL_INPUT="$SERVER_URL"
+        fi
         
         echo ""
         echo "Enter your CLIENT_API_KEY (must match server's SERVER_API_KEY):"
-        read -p "CLIENT_API_KEY: " CLIENT_API_KEY_INPUT
+        echo "Current value: ${CLIENT_API_KEY:-Not set}"
+        read -p "CLIENT_API_KEY (press Enter to keep current): " CLIENT_API_KEY_INPUT
+        if [ -z "$CLIENT_API_KEY_INPUT" ]; then
+            CLIENT_API_KEY_INPUT="$CLIENT_API_KEY"
+        fi
+        
+        echo ""
+        echo "Enter your DEVICE_TIMEZONE:"
+        echo "Current value: ${DEVICE_TIMEZONE:-UTC}"
+        echo ""
+        echo "Select timezone (use arrow keys, press Enter to select):"
+        
+        # Show timezone selector
+        TIMEZONE_INPUT=$(python3 << 'TZEOF'
+import sys
+
+timezones = [
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Phoenix",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "America/Honolulu",
+    "America/Toronto",
+    "America/Vancouver",
+    "America/Edmonton",
+    "America/Winnipeg",
+    "America/Halifax",
+    "America/Mexico_City",
+    "America/Monterrey",
+    "America/Tijuana",
+    "UTC"
+]
+
+current = os.environ.get('DEVICE_TIMEZONE', 'UTC')
+try:
+    current_index = timezones.index(current)
+except ValueError:
+    current_index = timezones.index('UTC')
+
+# Simple selection without curses
+print("\nAvailable Timezones:")
+for i, tz in enumerate(timezones):
+    marker = " → " if i == current_index else "   "
+    print(f"{marker}{i+1}. {tz}")
+
+print(f"\nCurrent: {current}")
+choice = input("\nEnter number (1-{}), or press Enter to keep current: ".format(len(timezones)))
+
+if choice.strip():
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(timezones):
+            print(timezones[idx])
+        else:
+            print(current)
+    except ValueError:
+        print(current)
+else:
+    print(current)
+TZEOF
+)
+        
+        echo ""
+        echo "Enter your SUPABASE_URL (for OTA updates):"
+        echo "Current value: ${SUPABASE_URL:-Not set}"
+        read -p "SUPABASE_URL (press Enter to keep current): " SUPABASE_URL_INPUT
+        if [ -z "$SUPABASE_URL_INPUT" ]; then
+            SUPABASE_URL_INPUT="$SUPABASE_URL"
+        fi
+        
+        echo ""
+        echo "Enter your SUPABASE_KEY (anon key for OTA updates):"
+        echo "Current value: ${SUPABASE_KEY:-Not set}"
+        read -p "SUPABASE_KEY (press Enter to keep current): " SUPABASE_KEY_INPUT
+        if [ -z "$SUPABASE_KEY_INPUT" ]; then
+            SUPABASE_KEY_INPUT="$SUPABASE_KEY"
+        fi
         
         # Update .env file
-        SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" python3 << 'EOF'
+        SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" TIMEZONE_INPUT="$TIMEZONE_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" python3 << 'EOF'
 import os
 import re
 
@@ -215,13 +301,86 @@ else
         fi
     done
     
+    echo ""
+    
+    # Select DEVICE_TIMEZONE
+    echo "Select your DEVICE_TIMEZONE:"
+    echo ""
+    TIMEZONE_INPUT=$(python3 << 'TZEOF'
+import sys
+
+timezones = [
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Phoenix",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "America/Honolulu",
+    "America/Toronto",
+    "America/Vancouver",
+    "America/Edmonton",
+    "America/Winnipeg",
+    "America/Halifax",
+    "America/Mexico_City",
+    "America/Monterrey",
+    "America/Tijuana",
+    "UTC"
+]
+
+print("Available Timezones:")
+for i, tz in enumerate(timezones):
+    print(f"  {i+1}. {tz}")
+
+while True:
+    choice = input(f"\nEnter number (1-{len(timezones)}): ")
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(timezones):
+            print(timezones[idx])
+            break
+        else:
+            print(f"Please enter a number between 1 and {len(timezones)}")
+    except ValueError:
+        print("Please enter a valid number")
+TZEOF
+)
+    
+    echo ""
+    
+    # Optional: SUPABASE configuration for OTA updates
+    echo "==================================="
+    echo "OTA Update Configuration (Optional)"
+    echo "==================================="
+    echo ""
+    echo "For over-the-air updates, you need Supabase credentials."
+    echo "If you don't have these yet, you can skip and add them later."
+    echo ""
+    
+    echo "Enter your SUPABASE_URL (or press Enter to skip):"
+    read -p "SUPABASE_URL: " SUPABASE_URL_INPUT
+    
+    if [ -n "$SUPABASE_URL_INPUT" ]; then
+        echo ""
+        echo "Enter your SUPABASE_KEY (anon key):"
+        read -p "SUPABASE_KEY: " SUPABASE_KEY_INPUT
+    else
+        SUPABASE_KEY_INPUT=""
+        echo "⊘ Skipped OTA update configuration (can be added later)"
+    fi
+    
+    echo ""
+    
     # Update .env file
-    SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" python3 << 'EOF'
+    SERVER_URL_INPUT="$SERVER_URL_INPUT" CLIENT_API_KEY_INPUT="$CLIENT_API_KEY_INPUT" TIMEZONE_INPUT="$TIMEZONE_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" python3 << 'EOF'
 import os
 import re
 
 server_url = os.environ.get('SERVER_URL_INPUT', '').strip()
 client_api_key = os.environ.get('CLIENT_API_KEY_INPUT', '').strip()
+timezone = os.environ.get('TIMEZONE_INPUT', '').strip()
+supabase_url = os.environ.get('SUPABASE_URL_INPUT', '').strip()
+supabase_key = os.environ.get('SUPABASE_KEY_INPUT', '').strip()
 
 with open('.env', 'r') as f:
     content = f.read()
@@ -239,6 +398,33 @@ if client_api_key:
     print("✓ Updated CLIENT_API_KEY")
 else:
     print("⊘ Kept existing CLIENT_API_KEY value")
+
+# Replace DEVICE_TIMEZONE if provided
+if timezone:
+    if 'DEVICE_TIMEZONE=' in content:
+        content = re.sub(r'DEVICE_TIMEZONE=.*', f'DEVICE_TIMEZONE={timezone}', content)
+    else:
+        # Add after CLIENT_API_KEY line
+        content = re.sub(r'(CLIENT_API_KEY=.*\n)', f'\\1DEVICE_TIMEZONE={timezone}\n', content)
+    print("✓ Updated DEVICE_TIMEZONE")
+
+# Replace SUPABASE_URL if provided
+if supabase_url:
+    if 'SUPABASE_URL=' in content:
+        content = re.sub(r'SUPABASE_URL=.*', f'SUPABASE_URL={supabase_url}', content)
+    else:
+        # Add after DEVICE_TIMEZONE line
+        content = re.sub(r'(DEVICE_TIMEZONE=.*\n)', f'\\1SUPABASE_URL={supabase_url}\n', content)
+    print("✓ Updated SUPABASE_URL")
+
+# Replace SUPABASE_KEY if provided
+if supabase_key:
+    if 'SUPABASE_KEY=' in content:
+        content = re.sub(r'SUPABASE_KEY=.*', f'SUPABASE_KEY={supabase_key}', content)
+    else:
+        # Add after SUPABASE_URL line
+        content = re.sub(r'(SUPABASE_URL=.*\n)', f'\\1SUPABASE_KEY={supabase_key}\n', content)
+    print("✓ Updated SUPABASE_KEY")
 
 with open('.env', 'w') as f:
     f.write(content)
