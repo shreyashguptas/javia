@@ -173,23 +173,72 @@ else
     echo ""
 fi
 
-# Load environment variables from .env file
-set -a
-source "$INSTALL_DIR/.env"
-set +a
+# Load environment variables from .env file using Python (safer than sourcing directly)
+echo "Loading configuration from $INSTALL_DIR/.env..."
+eval $(python3 << 'ENVEOF'
+import os
+import sys
+
+env_file = os.environ.get('INSTALL_DIR', '/opt/javia') + '/.env'
+
+try:
+    with open(env_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            # Skip empty lines and comments
+            if not line or line.startswith('#'):
+                continue
+            # Only process lines with = sign
+            if '=' not in line:
+                continue
+            # Split on first = only
+            key, value = line.split('=', 1)
+            key = key.strip()
+            value = value.strip()
+            # Remove inline comments (everything after # that's not quoted)
+            if '#' in value and not (value.startswith('"') or value.startswith("'")):
+                value = value.split('#')[0].strip()
+            # Remove quotes if present
+            if value.startswith('"') and value.endswith('"'):
+                value = value[1:-1]
+            elif value.startswith("'") and value.endswith("'"):
+                value = value[1:-1]
+            # Export as bash-safe variable
+            print(f"export {key}='{value}'")
+except FileNotFoundError:
+    print(f"echo '❌ ERROR: .env file not found at {env_file}'", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"echo '❌ ERROR: Failed to parse .env file: {e}'", file=sys.stderr)
+    sys.exit(1)
+ENVEOF
+)
+
+# Check if environment variables were loaded successfully
+if [ $? -ne 0 ]; then
+    exit 1
+fi
 
 # Check if Supabase is configured
 if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ]; then
     echo "❌ ERROR: Supabase not configured!"
     echo "Please ensure SUPABASE_URL and SUPABASE_SERVICE_KEY are set in .env file."
     echo "Location: $INSTALL_DIR/.env"
+    echo ""
+    echo "Current values:"
+    echo "  SUPABASE_URL: ${SUPABASE_URL:-<not set>}"
+    echo "  SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-<not set>}"
     exit 1
 fi
+
+echo "✓ Configuration loaded successfully"
+echo ""
 
 # Export the device registration variables for Python
 export DEVICE_UUID
 export DEVICE_NAME
 export TIMEZONE
+export INSTALL_DIR
 
 # Use Python to register the device
 python3 << 'PYTHON_EOF'

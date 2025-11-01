@@ -341,6 +341,36 @@ Ensure you copied the complete UUID (36 characters with hyphens):
 3. Ensure server has internet connectivity
 4. Check Supabase dashboard for service status
 
+### ".env: line X: are: command not found" or similar bash errors
+
+This error occurs when the `.env` file has formatting issues that bash tries to interpret as commands.
+
+**What happened:** The script now uses Python to safely parse the `.env` file, avoiding this issue entirely.
+
+**If you still see this error:**
+1. Make sure you're running the latest version of the script
+2. Check your `.env` file for unusual formatting:
+   ```bash
+   nano /opt/javia/.env
+   ```
+3. Look for lines with:
+   - Unquoted spaces in values
+   - Inline comments without proper formatting
+   - Missing `=` signs
+   - Special characters that bash might interpret
+
+**Example of problematic `.env` formatting:**
+```bash
+# BAD - spaces without quotes
+SOME_KEY=this value has spaces
+
+# GOOD - quoted or no spaces
+SOME_KEY="this value has spaces"
+SOME_KEY=this_value_has_underscores
+```
+
+**Quick fix:** The updated script automatically handles these issues by parsing the file with Python instead of sourcing it with bash.
+
 ## Available Timezones
 
 The interactive mode includes a comprehensive list of timezones to choose from:
