@@ -24,6 +24,11 @@ import numpy as np
 from dotenv import load_dotenv
 import opuslib
 
+# OTA Update system
+from device_manager import DeviceManager
+from activity_tracker import ActivityTracker
+from update_manager import UpdateManager
+
 # Suppress ALSA warnings
 from ctypes import *
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
@@ -48,6 +53,11 @@ load_dotenv()
 # Server Configuration
 SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:8000')
 CLIENT_API_KEY = os.getenv('CLIENT_API_KEY', 'YOUR_API_KEY_HERE')
+
+# OTA Update Configuration
+DEVICE_TIMEZONE = os.getenv('DEVICE_TIMEZONE', 'UTC')
+SUPABASE_URL = os.getenv('SUPABASE_URL', '')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY', '')
 
 # GPIO Configuration
 BUTTON_PIN = int(os.getenv('BUTTON_PIN', '17'))  # Rotary encoder SW pin
@@ -88,6 +98,11 @@ amplifier_sd = None
 # Volume state
 current_volume = INITIAL_VOLUME
 
+# OTA Update managers (initialized in setup())
+device_manager = None
+activity_tracker = None
+update_manager = None
+
 # ==================== INITIALIZATION ====================
 
 # REMOVED: All ALSA volume control code - doesn't work with googlevoicehat
@@ -125,6 +140,50 @@ def setup():
     
     # Optimize system performance first
     optimize_system_performance()
+    
+    # Initialize OTA update system
+    global device_manager, activity_tracker, update_manager
+    
+    print("\n[INIT] Initializing OTA update system...")
+    
+    try:
+        # Initialize device manager
+        device_manager = DeviceManager(
+            server_url=SERVER_URL,
+            api_key=CLIENT_API_KEY,
+            timezone=DEVICE_TIMEZONE
+        )
+        print(f"[INIT] ✓ Device UUID: {device_manager.get_device_uuid()}")
+        print(f"[INIT] ✓ Current version: {device_manager.get_current_version()}")
+        
+        # Register device with server
+        if device_manager.register():
+            print("[INIT] ✓ Device registered with server")
+        else:
+            print("[INIT] ⚠️  Device registration failed (will retry later)")
+        
+        # Initialize activity tracker
+        activity_tracker = ActivityTracker()
+        print("[INIT] ✓ Activity tracker initialized")
+        
+        # Initialize update manager if Supabase is configured
+        if SUPABASE_URL and SUPABASE_KEY:
+            update_manager = UpdateManager(
+                server_url=SERVER_URL,
+                api_key=CLIENT_API_KEY,
+                device_uuid=device_manager.get_device_uuid(),
+                timezone_str=DEVICE_TIMEZONE,
+                activity_tracker=activity_tracker,
+                supabase_url=SUPABASE_URL,
+                supabase_key=SUPABASE_KEY
+            )
+            update_manager.start()
+            print("[INIT] ✓ Update manager started (OTA updates enabled)")
+        else:
+            print("[INIT] ℹ Supabase not configured - OTA updates disabled")
+    except Exception as e:
+        print(f"[INIT] ⚠️  OTA system initialization failed: {e}")
+        print("[INIT] Continuing without OTA updates...")
     
     # Create audio directory
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -481,6 +540,10 @@ def wait_for_button_press():
         time.sleep(0.005)  # Reduced from 0.01 for faster detection
     
     print("[BUTTON] *** BUTTON PRESSED! Starting recording... ***")
+    
+    # Record activity for update manager
+    if activity_tracker:
+        activity_tracker.record_activity("button_press")
     
     # Play start beep asynchronously - doesn't block recording startup
     play_beep_async(START_BEEP_FILE, "start")
@@ -1086,6 +1149,10 @@ def send_to_server():
     - Streaming upload (memory efficient)
     - 10x faster upload times
     """
+    # Send heartbeat to server (includes activity tracking)
+    if device_manager:
+        device_manager.send_heartbeat()
+    
     print("[SERVER] Preparing audio for upload...")
     
     if not RECORDING_FILE.exists():
@@ -1573,6 +1640,9 @@ def main():
     try:
         setup()
         
+        print("\n[INFO] Voice assistant ready. OTA updates running in background.")
+        print("[INFO] Updates will be applied at 2 AM local time or after 1 hour inactivity (urgent updates).\n")
+        
         while True:
             # Wait for button press
             wait_for_button_press()
@@ -1611,6 +1681,11 @@ def main():
     except KeyboardInterrupt:
         print("\n\n[EXIT] Shutting down...")
     finally:
+        # Stop update manager
+        if update_manager:
+            update_manager.stop()
+            print("[EXIT] Update manager stopped")
+        
         # Close GPIO devices (gpiozero handles cleanup automatically)
         if button:
             button.close()

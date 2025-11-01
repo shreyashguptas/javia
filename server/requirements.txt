@@ -1,4 +1,4 @@
-fastapi>=0.115.0
+fastapi>=0.120.4
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 requests>=2.32.0
@@ -7,4 +7,7 @@ pydantic>=2.9.0
 pydantic-settings>=2.6.0
 numpy>=1.24.0
 opuslib>=3.0.1
+groq>=0.33.0
+supabase>=2.23.0
+uuid7>=0.1.0
 

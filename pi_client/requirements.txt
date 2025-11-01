@@ -4,4 +4,8 @@ requests>=2.32.0
 python-dotenv>=1.0.0
 numpy>=1.24.0
 opuslib>=3.0.1
+supabase>=2.0.0
+uuid7>=0.1.0
+pytz>=2024.1
+realtime>=1.0.0
 

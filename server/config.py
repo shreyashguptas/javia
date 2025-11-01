@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     # Server Security
     server_api_key: str
     
+    # Supabase Configuration
+    supabase_url: str
+    supabase_key: str
+    supabase_service_key: str
+    
     # Model Configurations
     whisper_model: str = "whisper-large-v3-turbo"
     llm_model: str = "openai/gpt-oss-20b"

@@ -27,6 +27,7 @@ from services.groq_service import (
     generate_speech,
     GroqServiceError
 )
+from routers import devices, updates
 
 # Configure logging
 logging.basicConfig(
@@ -52,6 +53,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(devices.router)
+app.include_router(updates.router)
 
 
 def amplify_audio_file(input_path: Path, output_path: Path, gain: float = 2.0):
