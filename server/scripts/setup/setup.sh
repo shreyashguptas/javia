@@ -24,7 +24,7 @@ SERVICE_GROUP="voiceassistant"
 
 # Determine source directory (must be run from git repo)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVER_DIR="$(dirname "$SCRIPT_DIR")"
+SERVER_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Validate we're in the right place
 if [ ! -f "$SERVER_DIR/main.py" ]; then
@@ -33,7 +33,7 @@ if [ ! -f "$SERVER_DIR/main.py" ]; then
     echo ""
     echo "Please ensure you:"
     echo "  1. Cloned the repository: git clone https://github.com/shreyashguptas/javia.git"
-    echo "  2. Are running this script from: /tmp/javia/server/deploy/setup.sh"
+    echo "  2. Are running this script from: /tmp/javia/server/scripts/setup/setup.sh"
     echo ""
     exit 1
 fi
@@ -115,7 +115,7 @@ fi
 
 # Copy all files from server directory
 echo "Copying files from: $SERVER_DIR"
-rsync -av --exclude='deploy' --exclude='__pycache__' --exclude='*.pyc' "$SERVER_DIR/" "$INSTALL_DIR/"
+rsync -av --exclude='__pycache__' --exclude='*.pyc' "$SERVER_DIR/" "$INSTALL_DIR/"
 echo "✓ Files copied successfully"
 echo ""
 
@@ -294,11 +294,13 @@ EOF
     
     echo ""
     echo "==================================="
-    echo "SERVER_API_KEY"
+    echo "SERVER_API_KEY (Admin Only)"
     echo "------------"
     echo "Current value: $CURRENT_SERVER_KEY"
     echo ""
-    echo "⚠️  WARNING: Changing SERVER_API_KEY requires updating ALL Pi clients!"
+    echo "NOTE: This key is for admin/management endpoints only."
+    echo "Pi clients authenticate using device UUIDs (not this key)."
+    echo "Changing this key only affects admin tools and scripts."
     echo ""
     echo "Options:"
     echo "  1) Keep current SERVER_API_KEY (press Enter)"
@@ -317,8 +319,8 @@ EOF
         echo "$SERVER_KEY_INPUT"
         echo "==================================="
         echo ""
-        echo "IMPORTANT: Copy and save the SERVER_API_KEY above!"
-        echo "You MUST update your Raspberry Pi client with this new key."
+        echo "IMPORTANT: Save this key for admin operations."
+        echo "Used for: Device management API, OTA update creation, admin tools"
         echo ""
         read -p "Press Enter after you've saved the SERVER_API_KEY..."
     else
@@ -453,9 +455,9 @@ chown -R $SERVICE_USER:$SERVICE_GROUP "$INSTALL_DIR"
 chmod 600 "$INSTALL_DIR/.env"
 
 # Make registration script accessible and executable
-if [ -f "$INSTALL_DIR/register_device.sh" ]; then
-    chmod 755 "$INSTALL_DIR/register_device.sh"
-    echo "✓ Device registration script ready: $INSTALL_DIR/register_device.sh"
+if [ -f "$INSTALL_DIR/scripts/register_device/register_device.sh" ]; then
+    chmod 755 "$INSTALL_DIR/scripts/register_device/register_device.sh"
+    echo "✓ Device registration script ready: $INSTALL_DIR/scripts/register_device/register_device.sh"
 else
     echo "⚠️  Device registration script not found (will need to copy manually)"
 fi
@@ -675,9 +677,10 @@ if [ "$IS_FRESH_INSTALL" = true ] || [ "$CLOUDFLARED_CONFIGURED" = false ]; then
         echo "  Public test: curl https://YOUR_DOMAIN.com/health"
         echo "  You should see: {\"status\":\"healthy\",\"version\":\"1.0.0\"}"
         echo ""
-        echo "Step 7: Configure Raspberry Pi client"
-        echo "  Set SERVER_URL to https://YOUR_DOMAIN.com"
-        echo "  Set CLIENT_API_KEY to the SERVER_API_KEY shown earlier"
+        echo "Step 7: Configure Raspberry Pi clients"
+        echo "  1. Run Pi client setup to get device UUID"
+        echo "  2. Register device UUID on server (see Device Registration section below)"
+        echo "  3. Pi clients will authenticate using their unique UUID"
         echo ""
     else
         echo "✓ Skipped Cloudflare Tunnel setup"
@@ -723,10 +726,11 @@ echo "==========================================="
 echo ""
 echo "To register a new Pi client device:"
 echo ""
-echo "  cd $INSTALL_DIR"
+echo "  cd $INSTALL_DIR/scripts/register_device"
 echo "  ./register_device.sh <DEVICE_UUID> [device_name] [timezone]"
 echo ""
 echo "Example:"
+echo "  cd $INSTALL_DIR/scripts/register_device"
 echo "  ./register_device.sh 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890 \"Kitchen Pi\" \"America/Los_Angeles\""
 echo ""
 echo "The device UUID will be displayed when you run setup on the Pi client."

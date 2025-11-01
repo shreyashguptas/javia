@@ -17,15 +17,17 @@ echo ""
 
 # Check if running in the correct directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+INSTALL_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Check if .env file exists
-if [ ! -f ".env" ]; then
+if [ ! -f "$INSTALL_DIR/.env" ]; then
     echo "❌ ERROR: .env file not found!"
     echo "Please ensure you're running this script from the server installation directory."
-    echo "Expected location: /opt/javia/"
+    echo "Expected .env location: $INSTALL_DIR/.env"
     exit 1
 fi
+
+cd "$INSTALL_DIR"
 
 # Validate arguments
 if [ -z "$1" ]; then

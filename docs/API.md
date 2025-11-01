@@ -32,7 +32,7 @@ All API requests from Pi clients (except `/health`) require device UUID authenti
 
 - Each Pi client has a unique UUID (generated automatically on first boot)
 - The device UUID must be registered on the server before making requests
-- To register: `./register_device.sh <DEVICE_UUID>` on the server
+- To register: `cd /opt/javia/scripts/register_device && ./register_device.sh <DEVICE_UUID>` on the server
 
 **Admin API Key (Management Endpoints)**
 

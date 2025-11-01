@@ -29,8 +29,8 @@ cd /tmp
 git clone https://github.com/shreyashguptas/javia.git
 
 # 3. Run deployment script
-cd /tmp/javia/server/deploy
-sudo bash deploy.sh
+cd /tmp/javia/server/scripts/setup
+sudo bash setup.sh
 
 # 4. Configure environment
 sudo nano /opt/javia/.env
@@ -120,12 +120,13 @@ The setup script will display a device UUID. Copy it and run on your server:
 
 ```bash
 # On server
-cd /opt/javia
+cd /opt/javia/scripts/register_device
 sudo ./register_device.sh <DEVICE_UUID> "Device Name" "America/Los_Angeles"
 ```
 
 **Example:**
 ```bash
+cd /opt/javia/scripts/register_device
 sudo ./register_device.sh 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890 "Kitchen Pi" "America/Los_Angeles"
 ```
 

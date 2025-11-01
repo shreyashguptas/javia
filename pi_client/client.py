@@ -1249,7 +1249,7 @@ def send_to_server():
                 print("[ERROR] ")
                 print("[ERROR] This device must be registered on the server.")
                 print("[ERROR] On your server, SSH in and run:")
-                print(f"[ERROR]   cd /opt/javia")
+                print(f"[ERROR]   cd /opt/javia/scripts/register_device")
                 print(f"[ERROR]   sudo ./register_device.sh {device_manager.get_device_uuid()}")
                 return False
             else:

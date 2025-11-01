@@ -34,7 +34,7 @@ The OTA update system allows you to remotely update all your Raspberry Pi voice 
    - `device_manager.py`: Device registration and identification (UUID7)
    - `activity_tracker.py`: Monitors user activity for safe update timing
    - `update_manager.py`: Downloads and applies updates
-4. **Update Packaging Script**: `server/deploy/create_update.sh`
+4. **Update Packaging Script**: `server/scripts/create_update/create_update.sh`
 
 ### Database Schema
 
@@ -128,7 +128,7 @@ Use the update creation script:
 
 ```bash
 # Scheduled update (applied at 2 AM local time)
-cd server/deploy
+cd /opt/javia/scripts/create_update
 ./create_update.sh v1.2.3 "Bug fixes and performance improvements" scheduled
 
 # Urgent update (applied after 1 hour inactivity)

@@ -38,9 +38,9 @@ if [ "$UPDATE_TYPE" != "scheduled" ] && [ "$UPDATE_TYPE" != "urgent" ]; then
     exit 1
 fi
 
-# Determine project root (2 levels up from this script)
+# Determine project root (3 levels up from this script: create_update -> scripts -> server -> project root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PI_CLIENT_DIR="$PROJECT_ROOT/pi_client"
 
 echo "[INFO] Project root: $PROJECT_ROOT"

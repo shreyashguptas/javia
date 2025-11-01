@@ -731,7 +731,7 @@ if systemctl is-active --quiet voice-assistant-client.service; then
         echo ""
         echo "On your server, SSH in and run:"
         echo ""
-        echo "  cd /opt/javia"
+        echo "  cd /opt/javia/scripts/register_device"
         echo "  sudo ./register_device.sh $DEVICE_UUID \"$(hostname)\" \"$DEVICE_TIMEZONE\""
         echo ""
         echo "After registration, the device can make requests to the server."
