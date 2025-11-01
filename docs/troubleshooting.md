@@ -220,7 +220,47 @@ vcgencmd measure_temp
 **Solution:**
 Code now uses streaming (no MemoryError). If you see this, update to latest code.
 
-### 11. UUID7 Import Error / Dependency Verification Failed
+### 11. UUID7 Function Call Error / Device UUID Not Generated
+
+**Error:**
+```
+Failed to load/generate device UUID: 'function' object has no attribute 'uuid7'
+[INIT] ⚠️  OTA system initialization failed: 'function' object has no attribute...
+⚠️  Device UUID file not found after 10 seconds.
+```
+
+**Cause:** 
+- Bug in `device_manager.py` where code called `uuid7.uuid7()` instead of `uuid7()`
+- Incorrect function call syntax
+
+**Solution:**
+
+1. **Update to latest code** (fix is included as of Nov 1, 2025):
+   ```bash
+   cd /tmp
+   rm -rf javia
+   git clone https://github.com/shreyashguptas/javia.git
+   cd javia
+   ```
+
+2. **Run setup script**:
+   ```bash
+   bash pi_client/deploy/setup.sh
+   ```
+
+3. **Verify the fix**:
+   ```bash
+   sudo journalctl -u voice-assistant-client.service -n 50 | grep UUID
+   # Should show: Generated new device UUID: 01932f8d-...
+   # Should NOT show: 'function' object has no attribute 'uuid7'
+   ```
+
+**Background:**
+- The import `from uuid6 import uuid7` imports the function directly
+- Must call as `uuid7()`, not `uuid7.uuid7()`
+- See `UUID7_FUNCTION_CALL_BUG.md` for detailed technical explanation
+
+### 12. UUID7 Import Error / Dependency Verification Failed
 
 **Error:**
 ```

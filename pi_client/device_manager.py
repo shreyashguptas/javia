@@ -49,9 +49,10 @@ class DeviceManager:
                 with open(DEVICE_UUID_FILE, 'r') as f:
                     self.device_uuid = f.read().strip()
                 logger.info(f"Loaded device UUID: {self.device_uuid}")
+                print(f"Loaded device UUID: {self.device_uuid}")
             else:
                 # Generate new UUID7
-                self.device_uuid = str(uuid7.uuid7())
+                self.device_uuid = str(uuid7())
                 
                 # Save to file
                 DEVICE_UUID_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -62,10 +63,12 @@ class DeviceManager:
                 os.chmod(DEVICE_UUID_FILE, 0o600)
                 
                 logger.info(f"Generated new device UUID: {self.device_uuid}")
+                print(f"Generated new device UUID: {self.device_uuid}")
         except Exception as e:
             logger.error(f"Failed to load/generate device UUID: {e}")
+            print(f"Failed to load/generate device UUID: {e}")
             # Fallback to in-memory UUID
-            self.device_uuid = str(uuid7.uuid7())
+            self.device_uuid = str(uuid7())
     
     def _load_version(self):
         """Load current software version from VERSION file"""
