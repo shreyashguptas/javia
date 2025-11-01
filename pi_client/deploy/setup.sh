@@ -111,16 +111,45 @@ echo "Installing Python dependencies from requirements.txt..."
 
 # Verify critical OTA dependencies are installed
 echo "Verifying OTA dependencies installation..."
-if ! "$VENV_DIR/bin/python3" -c "import uuid7, supabase, pytz, realtime" 2>/dev/null; then
-    echo "⚠️  Some OTA dependencies failed to install. Retrying..."
-    "$VENV_DIR/bin/pip" install --force-reinstall uuid7 supabase pytz realtime
+MISSING_DEPS=""
+
+for dep in uuid7 supabase pytz realtime; do
+    if ! "$VENV_DIR/bin/python3" -c "import $dep" 2>/dev/null; then
+        MISSING_DEPS="$MISSING_DEPS $dep"
+    fi
+done
+
+if [ -n "$MISSING_DEPS" ]; then
+    echo "⚠️  Some OTA dependencies are missing:$MISSING_DEPS"
+    echo "Retrying installation..."
+    "$VENV_DIR/bin/pip" install --force-reinstall $MISSING_DEPS
     
     # Verify again
-    if ! "$VENV_DIR/bin/python3" -c "import uuid7, supabase, pytz, realtime" 2>/dev/null; then
-        echo "❌ ERROR: Failed to install OTA dependencies!"
-        echo "Please check your internet connection and try again."
-        exit 1
+    STILL_MISSING=""
+    for dep in $MISSING_DEPS; do
+        if ! "$VENV_DIR/bin/python3" -c "import $dep" 2>/dev/null; then
+            STILL_MISSING="$STILL_MISSING $dep"
+        fi
+    done
+    
+    if [ -n "$STILL_MISSING" ]; then
+        echo "❌ ERROR: Failed to install OTA dependencies:$STILL_MISSING"
+        echo "Attempting to diagnose the issue..."
+        for dep in $STILL_MISSING; do
+            echo "Testing import of $dep:"
+            "$VENV_DIR/bin/python3" -c "import $dep" 2>&1
+        done
+        echo ""
+        echo "You can continue without OTA functionality or troubleshoot the issue."
+        read -p "Continue anyway? (y/N): " CONTINUE_ANYWAY
+        if [ "$CONTINUE_ANYWAY" != "y" ] && [ "$CONTINUE_ANYWAY" != "Y" ]; then
+            exit 1
+        fi
+    else
+        echo "✓ All OTA dependencies installed successfully on retry"
     fi
+else
+    echo "✓ All OTA dependencies verified"
 fi
 
 echo "✓ Virtual environment ready with all dependencies"
