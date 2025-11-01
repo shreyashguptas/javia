@@ -5,10 +5,11 @@ set -e
 # Registers a new Pi client device in the database for authentication
 #
 # Usage:
-#   ./register_device.sh <DEVICE_UUID> [device_name] [timezone]
+#   Interactive mode (recommended):
+#     ./register_device.sh
 #
-# Example:
-#   ./register_device.sh 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890 "Kitchen Pi" "America/Los_Angeles"
+#   Or with arguments (legacy):
+#     ./register_device.sh <DEVICE_UUID> [device_name] [timezone]
 
 echo "==========================================="
 echo "Device Registration"
@@ -21,45 +22,174 @@ INSTALL_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Check if .env file exists
 if [ ! -f "$INSTALL_DIR/.env" ]; then
-    echo "❌ ERROR: .env file not found!"
-    echo "Please ensure you're running this script from the server installation directory."
-    echo "Expected .env location: $INSTALL_DIR/.env"
+    echo "❌ ERROR: .env file not found at $INSTALL_DIR/.env"
+    echo ""
+    echo "Please ensure:"
+    echo "  1. You have set up the server (run server setup script first)"
+    echo "  2. The .env file exists in the server directory"
+    echo ""
+    echo "If you haven't set up the server yet, run:"
+    echo "  cd $INSTALL_DIR/scripts/setup"
+    echo "  sudo ./setup.sh"
+    echo ""
     exit 1
 fi
 
 cd "$INSTALL_DIR"
 
-# Validate arguments
+# Interactive mode if no arguments provided
 if [ -z "$1" ]; then
-    echo "❌ ERROR: Device UUID is required!"
+    echo "==================================="
+    echo "Interactive Device Registration"
+    echo "==================================="
     echo ""
-    echo "Usage:"
-    echo "  ./register_device.sh <DEVICE_UUID> [device_name] [timezone]"
+    
+    # Prompt for Device UUID
+    echo "Enter the Device UUID from your Pi client:"
+    echo "(This is displayed when you run the Pi client setup)"
     echo ""
-    echo "Example:"
-    echo "  ./register_device.sh 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890 \"Kitchen Pi\" \"America/Los_Angeles\""
+    read -p "Device UUID: " DEVICE_UUID
+    
+    # Validate UUID is not empty
+    if [ -z "$DEVICE_UUID" ]; then
+        echo ""
+        echo "❌ ERROR: Device UUID cannot be empty!"
+        exit 1
+    fi
+    
     echo ""
-    exit 1
+    
+    # Prompt for Device Name
+    echo "Enter a friendly name for this device:"
+    echo "(Examples: \"Kitchen Pi\", \"Living Room Assistant\", \"Bedroom Device\")"
+    echo ""
+    read -p "Device Name (default: New Device): " DEVICE_NAME
+    if [ -z "$DEVICE_NAME" ]; then
+        DEVICE_NAME="New Device"
+    fi
+    
+    echo ""
+    
+    # Prompt for Timezone
+    echo "Select the device timezone:"
+    echo ""
+    
+    # Show timezone selector
+    TIMEZONE=$(python3 << 'TZEOF'
+import sys
+
+timezones = [
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Phoenix",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "America/Honolulu",
+    "America/Toronto",
+    "America/Vancouver",
+    "America/Edmonton",
+    "America/Winnipeg",
+    "America/Halifax",
+    "America/Mexico_City",
+    "America/Monterrey",
+    "America/Tijuana",
+    "Europe/London",
+    "Europe/Paris",
+    "Europe/Berlin",
+    "Europe/Amsterdam",
+    "Europe/Madrid",
+    "Asia/Tokyo",
+    "Asia/Shanghai",
+    "Asia/Singapore",
+    "Asia/Dubai",
+    "Asia/Kolkata",
+    "Australia/Sydney",
+    "Australia/Melbourne",
+    "Pacific/Auckland",
+    "UTC"
+]
+
+# Default to UTC
+default_index = timezones.index('UTC')
+
+# Write prompts to stderr so they appear, but result goes to stdout
+print("Available Timezones:", file=sys.stderr)
+for i, tz in enumerate(timezones):
+    marker = " → " if i == default_index else "   "
+    print(f"{marker}{i+1}. {tz}", file=sys.stderr)
+
+print(f"\nDefault: UTC", file=sys.stderr)
+
+# Read from /dev/tty directly for user input
+try:
+    with open('/dev/tty', 'r') as tty:
+        sys.stderr.write(f"\nEnter number (1-{len(timezones)}), or press Enter for UTC: ")
+        sys.stderr.flush()
+        choice = tty.readline().strip()
+except:
+    # Fallback if /dev/tty is not available
+    choice = input(f"\nEnter number (1-{len(timezones)}), or press Enter for UTC: ")
+
+if choice.strip():
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(timezones):
+            print(timezones[idx])
+        else:
+            print("UTC")
+    except ValueError:
+        print("UTC")
+else:
+    print("UTC")
+TZEOF
+)
+    
+    echo ""
+    echo "==================================="
+    echo "Registration Summary"
+    echo "==================================="
+    echo ""
+    echo "Device UUID:  $DEVICE_UUID"
+    echo "Device Name:  $DEVICE_NAME"
+    echo "Timezone:     $TIMEZONE"
+    echo ""
+    read -p "Proceed with registration? (Y/n): " CONFIRM
+    
+    if [ "$CONFIRM" = "n" ] || [ "$CONFIRM" = "N" ]; then
+        echo "Registration cancelled."
+        exit 0
+    fi
+    echo ""
+else
+    # Legacy command-line arguments mode
+    DEVICE_UUID="$1"
+    DEVICE_NAME="${2:-New Device}"
+    TIMEZONE="${3:-UTC}"
+    
+    echo "Device UUID:  $DEVICE_UUID"
+    echo "Device Name:  $DEVICE_NAME"
+    echo "Timezone:     $TIMEZONE"
+    echo ""
 fi
 
-DEVICE_UUID="$1"
-DEVICE_NAME="${2:-New Device}"
-TIMEZONE="${3:-UTC}"
-
-echo "Device UUID:  $DEVICE_UUID"
-echo "Device Name:  $DEVICE_NAME"
-echo "Timezone:     $TIMEZONE"
-echo ""
-
-# Source environment variables
-source .env
+# Load environment variables from .env file
+set -a
+source "$INSTALL_DIR/.env"
+set +a
 
 # Check if Supabase is configured
 if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ]; then
     echo "❌ ERROR: Supabase not configured!"
     echo "Please ensure SUPABASE_URL and SUPABASE_SERVICE_KEY are set in .env file."
+    echo "Location: $INSTALL_DIR/.env"
     exit 1
 fi
+
+# Export the device registration variables for Python
+export DEVICE_UUID
+export DEVICE_NAME
+export TIMEZONE
 
 # Use Python to register the device
 python3 << 'PYTHON_EOF'

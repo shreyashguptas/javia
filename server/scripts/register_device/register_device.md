@@ -12,11 +12,40 @@ This provides:
 - ✅ **Easy revocation** - Remove device from database to revoke access
 - ✅ **Audit trail** - Track all device activity by UUID
 
+## Why Interactive Mode?
+
+**New in this version:** The script now features an interactive mode (similar to the Pi client setup) that makes registration easier:
+- 📝 **Guided prompts** - Step-by-step input for all required fields
+- 🌍 **Timezone picker** - Visual selection from 29+ common timezones
+- ✅ **Confirmation** - Review your inputs before registering
+- 🎯 **Error prevention** - Validates inputs as you type
+
+**TL;DR:** Just run `./register_device.sh` without arguments for the easiest experience!
+
+## Quick Start
+
+```bash
+# 1. Get the Device UUID from your Pi (shown during Pi setup)
+# 2. SSH into your server
+# 3. Navigate to the registration script
+cd /opt/javia/scripts/register_device
+
+# 4. Run the script (interactive mode)
+./register_device.sh
+
+# Follow the prompts to enter:
+#   - Device UUID (from Pi)
+#   - Device Name (e.g., "Kitchen Pi")
+#   - Timezone (select from list)
+```
+
+That's it! Your device is now registered and can connect to the server.
+
 ## Prerequisites
 
 - Server must be running with Supabase configured
-- `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` must be set in `/opt/javia/.env`
-- Device UUID from Pi client setup
+- `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` must be set in your server `.env` file
+- Device UUID from Pi client setup (shown during Pi client setup)
 
 ## Getting the Device UUID
 
@@ -46,12 +75,32 @@ Copy this UUID to register the device on the server.
 
 ## Usage
 
+### Interactive Mode (Recommended)
+
+Simply run the script without arguments for an interactive registration experience:
+
+```bash
+cd /opt/javia/scripts/register_device
+./register_device.sh
+```
+
+The script will prompt you for:
+1. **Device UUID** - The UUID from your Pi client
+2. **Device Name** - A friendly name (e.g., "Kitchen Pi")
+3. **Timezone** - Select from a list of common timezones
+
+This is the easiest and recommended method as it guides you through the registration process step-by-step, similar to the Pi client setup experience.
+
+### Command-Line Mode (Legacy)
+
+You can also provide arguments directly:
+
 ```bash
 cd /opt/javia/scripts/register_device
 ./register_device.sh <DEVICE_UUID> [device_name] [timezone]
 ```
 
-### Arguments
+#### Arguments
 
 | Argument | Required | Description | Default |
 |----------|----------|-------------|---------|
@@ -61,29 +110,73 @@ cd /opt/javia/scripts/register_device
 
 ## Examples
 
-### Basic Registration
+### Interactive Registration (Recommended)
 
+```bash
+./register_device.sh
+```
+
+Example session:
+
+```
+===========================================
+Device Registration
+===========================================
+
+===================================
+Interactive Device Registration
+===================================
+
+Enter the Device UUID from your Pi client:
+(This is displayed when you run the Pi client setup)
+
+Device UUID: 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890
+
+Enter a friendly name for this device:
+(Examples: "Kitchen Pi", "Living Room Assistant", "Bedroom Device")
+
+Device Name (default: New Device): Kitchen Pi
+
+Select the device timezone:
+
+Available Timezones:
+   1. America/New_York
+   2. America/Chicago
+   3. America/Denver
+   4. America/Phoenix
+ → 5. America/Los_Angeles
+   ...
+   29. UTC
+
+Enter number (1-29), or press Enter for UTC: 5
+
+===================================
+Registration Summary
+===================================
+
+Device UUID:  018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890
+Device Name:  Kitchen Pi
+Timezone:     America/Los_Angeles
+
+Proceed with registration? (Y/n): Y
+```
+
+### Command-Line Registration
+
+Basic registration with defaults:
 ```bash
 ./register_device.sh 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890
 ```
 
-Registers device with default name "New Device" and UTC timezone.
-
-### With Device Name
-
+With device name:
 ```bash
 ./register_device.sh 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890 "Kitchen Pi"
 ```
 
-Registers device with friendly name "Kitchen Pi".
-
-### Full Registration
-
+Full registration with all parameters:
 ```bash
 ./register_device.sh 018c8f5e-8c3a-7890-a1b2-3c4d5e6f7890 "Living Room Assistant" "America/New_York"
 ```
-
-Registers device with name and timezone.
 
 ## What Happens
 
@@ -200,24 +293,36 @@ The device will receive a 403 Forbidden error on its next request.
 
 ### "ERROR: .env file not found"
 
-Make sure you're running from the correct directory:
+This means the server hasn't been set up yet or the `.env` file is missing.
 
-```bash
-cd /opt/javia/scripts/register_device
-./register_device.sh <UUID>
-```
+**Solution:**
+1. Ensure you've run the server setup first:
+   ```bash
+   cd /opt/javia/scripts/setup
+   sudo ./setup.sh
+   ```
+2. Verify the `.env` file exists:
+   ```bash
+   ls -la /opt/javia/.env
+   ```
+3. If running from a different location, the script will automatically detect the correct path (it looks for the `.env` file two directories up from the script location)
 
 ### "ERROR: Supabase not configured"
 
-Check that Supabase credentials are set in `/opt/javia/.env`:
+The Supabase credentials are missing or incomplete in your `.env` file.
 
-```bash
-sudo nano /opt/javia/.env
-```
-
-Verify these variables are set:
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_KEY`
+**Solution:**
+1. Open your server `.env` file:
+   ```bash
+   sudo nano /opt/javia/.env
+   ```
+2. Verify these variables are set:
+   - `SUPABASE_URL` - Your Supabase project URL
+   - `SUPABASE_SERVICE_KEY` - Your Supabase service role key (not anon key!)
+3. Get these from your Supabase dashboard:
+   - Go to Project Settings > API
+   - Copy the URL
+   - Copy the `service_role` key (under "Project API keys")
 
 ### "ERROR: Invalid UUID format"
 
@@ -236,16 +341,48 @@ Ensure you copied the complete UUID (36 characters with hyphens):
 3. Ensure server has internet connectivity
 4. Check Supabase dashboard for service status
 
-## Common Timezones
+## Available Timezones
 
+The interactive mode includes a comprehensive list of timezones to choose from:
+
+### North America
 - **US Eastern**: `America/New_York`
 - **US Central**: `America/Chicago`
 - **US Mountain**: `America/Denver`
+- **US Mountain (no DST)**: `America/Phoenix`
 - **US Pacific**: `America/Los_Angeles`
-- **UTC**: `UTC`
+- **US Alaska**: `America/Anchorage`
+- **US Hawaii**: `America/Honolulu`
+- **Canada Toronto**: `America/Toronto`
+- **Canada Vancouver**: `America/Vancouver`
+- **Canada Edmonton**: `America/Edmonton`
+- **Canada Winnipeg**: `America/Winnipeg`
+- **Canada Halifax**: `America/Halifax`
+- **Mexico City**: `America/Mexico_City`
+- **Mexico Monterrey**: `America/Monterrey`
+- **Mexico Tijuana**: `America/Tijuana`
+
+### Europe
 - **UK**: `Europe/London`
-- **EU Central**: `Europe/Paris`
+- **France/Central Europe**: `Europe/Paris`
+- **Germany**: `Europe/Berlin`
+- **Netherlands**: `Europe/Amsterdam`
+- **Spain**: `Europe/Madrid`
+
+### Asia
+- **Japan**: `Asia/Tokyo`
+- **China**: `Asia/Shanghai`
+- **Singapore**: `Asia/Singapore`
+- **UAE**: `Asia/Dubai`
+- **India**: `Asia/Kolkata`
+
+### Pacific
 - **Australia Sydney**: `Australia/Sydney`
+- **Australia Melbourne**: `Australia/Melbourne`
+- **New Zealand**: `Pacific/Auckland`
+
+### Other
+- **UTC**: `UTC` (Coordinated Universal Time)
 
 See [full timezone list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) for more options.
 
