@@ -95,61 +95,145 @@ echo ""
 # ==================== STEP 5: VIRTUAL ENVIRONMENT ====================
 echo "[5/8] Setting up Python virtual environment..."
 
+# Strategy: Use --system-site-packages for hardware libs (pyaudio, gpiozero, numpy)
+# but force-install OTA dependencies to venv for isolation
 if [ -d "$VENV_DIR" ]; then
-    echo "✓ Virtual environment already exists, updating..."
+    echo "✓ Virtual environment exists, checking configuration..."
+    
+    # Ensure system-site-packages is enabled
+    if [ -f "$VENV_DIR/pyvenv.cfg" ]; then
+        if ! grep -q "include-system-site-packages = true" "$VENV_DIR/pyvenv.cfg"; then
+            echo "⚠️  Enabling system-site-packages for hardware library access..."
+            sed -i 's/include-system-site-packages = false/include-system-site-packages = true/' "$VENV_DIR/pyvenv.cfg"
+        fi
+    fi
 else
-    echo "Creating new virtual environment..."
+    echo "Creating new virtual environment with system-site-packages..."
     python3 -m venv --system-site-packages "$VENV_DIR"
 fi
 
-# Use explicit pip path to ensure we install to the venv
+# Upgrade pip first
 echo "Upgrading pip in virtual environment..."
-"$VENV_DIR/bin/pip" install --upgrade pip > /dev/null 2>&1
+"$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel > /dev/null 2>&1
 
-echo "Installing Python dependencies from requirements.txt..."
-"$VENV_DIR/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+# Install OTA dependencies with --ignore-installed to force them into venv
+echo "Installing OTA dependencies into virtual environment..."
+echo "This ensures clean, isolated package installations..."
+"$VENV_DIR/bin/pip" install --no-cache-dir --ignore-installed --no-deps uuid7
+"$VENV_DIR/bin/pip" install --no-cache-dir --ignore-installed pytz
+"$VENV_DIR/bin/pip" install --no-cache-dir realtime
+"$VENV_DIR/bin/pip" install --no-cache-dir supabase
 
-# Verify critical OTA dependencies are installed
-echo "Verifying OTA dependencies installation..."
-MISSING_DEPS=""
+# Install other dependencies normally (can use system packages where available)
+echo "Installing remaining dependencies..."
+"$VENV_DIR/bin/pip" install --no-cache-dir requests python-dotenv opuslib numpy
 
-for dep in uuid7 supabase pytz realtime; do
-    if ! "$VENV_DIR/bin/python3" -c "import $dep" 2>/dev/null; then
-        MISSING_DEPS="$MISSING_DEPS $dep"
+# Clear any Python bytecode cache to ensure clean imports
+echo "Clearing Python cache..."
+find "$VENV_DIR" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+find "$INSTALL_DIR" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+find "$INSTALL_DIR" -type f -name "*.pyc" -delete 2>/dev/null || true
+
+# Force Python to clear import cache
+"$VENV_DIR/bin/python3" -c "import sys; sys.dont_write_bytecode = True" 2>/dev/null || true
+
+# Verify all dependencies are accessible
+echo ""
+echo "Verifying dependencies..."
+
+# Test each dependency individually for better diagnostics
+declare -A DEPS_STATUS
+declare -A DEPS_LOCATION
+
+# All dependencies we need to check (both venv and system)
+DEPS_TO_CHECK="uuid7 supabase pytz realtime requests dotenv opuslib numpy pyaudio gpiozero"
+
+for dep in $DEPS_TO_CHECK; do
+    if "$VENV_DIR/bin/python3" -c "import $dep" 2>/dev/null; then
+        DEPS_STATUS[$dep]="✓"
+        # Check if it's from system or venv
+        location=$("$VENV_DIR/bin/python3" -c "import $dep; import os; print('venv' if '$VENV_DIR' in os.path.dirname($dep.__file__) else 'system')" 2>/dev/null)
+        DEPS_LOCATION[$dep]=$location
+    else
+        DEPS_STATUS[$dep]="✗"
+        DEPS_LOCATION[$dep]="missing"
     fi
 done
 
-if [ -n "$MISSING_DEPS" ]; then
-    echo "⚠️  Some OTA dependencies are missing:$MISSING_DEPS"
-    echo "Retrying installation..."
-    "$VENV_DIR/bin/pip" install --force-reinstall $MISSING_DEPS
+# Display status with source information
+ALL_OK=true
+echo ""
+echo "Dependency Status:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+for dep in $DEPS_TO_CHECK; do
+    if [ "${DEPS_STATUS[$dep]}" = "✗" ]; then
+        echo "  ${DEPS_STATUS[$dep]} $dep - FAILED"
+        ALL_OK=false
+    else
+        location_label="${DEPS_LOCATION[$dep]}"
+        echo "  ${DEPS_STATUS[$dep]} $dep ($location_label)"
+    fi
+done
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+if [ "$ALL_OK" = false ]; then
+    echo ""
+    echo "❌ Some dependencies failed verification."
+    echo ""
+    echo "Diagnostic information:"
+    echo "Python version: $("$VENV_DIR/bin/python3" --version)"
+    echo "Pip version: $("$VENV_DIR/bin/pip" --version)"
+    echo "Site packages: $("$VENV_DIR/bin/python3" -c "import site; print(site.getsitepackages())")"
+    echo ""
+    echo "Installed packages:"
+    "$VENV_DIR/bin/pip" list | grep -E "(uuid7|supabase|pytz|realtime|requests|dotenv|opuslib)"
+    echo ""
     
-    # Verify again
-    STILL_MISSING=""
-    for dep in $MISSING_DEPS; do
-        if ! "$VENV_DIR/bin/python3" -c "import $dep" 2>/dev/null; then
-            STILL_MISSING="$STILL_MISSING $dep"
-        fi
-    done
-    
-    if [ -n "$STILL_MISSING" ]; then
-        echo "❌ ERROR: Failed to install OTA dependencies:$STILL_MISSING"
-        echo "Attempting to diagnose the issue..."
-        for dep in $STILL_MISSING; do
-            echo "Testing import of $dep:"
-            "$VENV_DIR/bin/python3" -c "import $dep" 2>&1
+    read -p "Attempt to reinstall failed packages? (Y/n): " RETRY_INSTALL
+    if [ "$RETRY_INSTALL" != "n" ] && [ "$RETRY_INSTALL" != "N" ]; then
+        echo "Reinstalling all requirements..."
+        "$VENV_DIR/bin/pip" install --no-cache-dir --force-reinstall -r "$INSTALL_DIR/requirements.txt"
+        
+        # Clear cache again
+        find "$VENV_DIR" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+        
+        # Test again
+        echo "Re-verifying..."
+        STILL_FAILING=false
+        for dep in $DEPS_TO_CHECK; do
+            import_name="$dep"
+            case "$dep" in
+                "python-dotenv") import_name="dotenv" ;;
+            esac
+            
+            if ! "$VENV_DIR/bin/python3" -c "import $import_name" 2>/dev/null; then
+                echo "  ✗ $dep - STILL FAILING"
+                STILL_FAILING=true
+            fi
         done
-        echo ""
-        echo "You can continue without OTA functionality or troubleshoot the issue."
-        read -p "Continue anyway? (y/N): " CONTINUE_ANYWAY
-        if [ "$CONTINUE_ANYWAY" != "y" ] && [ "$CONTINUE_ANYWAY" != "Y" ]; then
-            exit 1
+        
+        if [ "$STILL_FAILING" = true ]; then
+            echo ""
+            echo "❌ Some packages still cannot be imported."
+            echo "The service may not work correctly."
+            echo ""
+            read -p "Continue anyway? (y/N): " FORCE_CONTINUE
+            if [ "$FORCE_CONTINUE" != "y" ] && [ "$FORCE_CONTINUE" != "Y" ]; then
+                exit 1
+            fi
+        else
+            echo "✓ All dependencies verified after reinstall"
         fi
     else
-        echo "✓ All OTA dependencies installed successfully on retry"
+        echo ""
+        read -p "Continue without fixing? Service may not work. (y/N): " FORCE_CONTINUE
+        if [ "$FORCE_CONTINUE" != "y" ] && [ "$FORCE_CONTINUE" != "Y" ]; then
+            exit 1
+        fi
     fi
 else
-    echo "✓ All OTA dependencies verified"
+    echo "✓ All dependencies verified successfully"
 fi
 
 echo "✓ Virtual environment ready with all dependencies"

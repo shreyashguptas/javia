@@ -1,11 +1,15 @@
-pyaudio>=0.2.11
-gpiozero>=2.0
+# Core dependencies (will use system packages if available via --system-site-packages)
 requests>=2.32.0
 python-dotenv>=1.0.0
 numpy>=1.24.0
 opuslib>=3.0.1
-supabase>=2.0.0
+
+# OTA Update dependencies (must be installed in venv)
+supabase>=2.23.0
 uuid7>=0.1.0
-pytz>=2024.1
-realtime>=1.0.0
+pytz>=2025.1
+realtime>=2.23.0
+
+# Note: pyaudio and gpiozero are installed via system apt packages (python3-pyaudio, python3-gpiozero)
+# and accessed via --system-site-packages flag in venv
 
