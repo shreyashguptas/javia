@@ -543,7 +543,7 @@ chmod 600 "$INSTALL_DIR/.env"
 echo ""
 echo "Validating configuration..."
 cd "$INSTALL_DIR"
-python3 << 'EOF'
+"$VENV_DIR/bin/python3" << 'EOF'
 import os
 from dotenv import load_dotenv
 
