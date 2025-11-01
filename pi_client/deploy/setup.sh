@@ -194,7 +194,7 @@ fi
 echo ""
 
 # Show timezone selector
-TIMEZONE_INPUT=$(CURRENT_DEVICE_TIMEZONE="$CURRENT_DEVICE_TIMEZONE" python3 << 'TZEOF' < /dev/tty
+TIMEZONE_INPUT=$(CURRENT_DEVICE_TIMEZONE="$CURRENT_DEVICE_TIMEZONE" python3 << 'TZEOF'
 import os
 import sys
 
@@ -227,13 +227,23 @@ except ValueError:
     current_index = timezones.index('UTC')
 
 # Simple selection without curses
+# Write prompts to stderr so they appear, but result goes to stdout
 print("Available Timezones:", file=sys.stderr)
 for i, tz in enumerate(timezones):
     marker = " → " if i == current_index else "   "
     print(f"{marker}{i+1}. {tz}", file=sys.stderr)
 
 print(f"\nCurrent: {current}", file=sys.stderr)
-choice = input(f"\nEnter number (1-{len(timezones)}), or press Enter to keep current: ")
+
+# Read from /dev/tty directly for user input
+try:
+    with open('/dev/tty', 'r') as tty:
+        sys.stderr.write(f"\nEnter number (1-{len(timezones)}), or press Enter to keep current: ")
+        sys.stderr.flush()
+        choice = tty.readline().strip()
+except:
+    # Fallback if /dev/tty is not available
+    choice = input(f"\nEnter number (1-{len(timezones)}), or press Enter to keep current: ")
 
 if choice.strip():
     try:
