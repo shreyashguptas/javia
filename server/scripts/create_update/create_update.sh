@@ -10,10 +10,7 @@ echo "Voice Assistant - Create OTA Update"
 echo "==========================================="
 echo ""
 
-# Determine project root
-# Handle both development and production directory structures:
-# - Development: voice_assistant/server/scripts/create_update/ (3 levels up)
-# - Production: /opt/javia/scripts/create_update/ (2 levels up)
+# Determine project root and locate pi_client
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Check if we're in development structure (has 'server' directory)
@@ -28,23 +25,18 @@ else
 fi
 
 PI_CLIENT_DIR="$PROJECT_ROOT/pi_client"
+USE_TEMP_CLONE=false
 
 echo "[INFO] Project root: $PROJECT_ROOT"
-echo "[INFO] Pi client directory: $PI_CLIENT_DIR"
-echo ""
 
-# Validate Pi client directory exists
-if [ ! -d "$PI_CLIENT_DIR" ]; then
-    echo "❌ Error: Pi client directory not found at $PI_CLIENT_DIR"
-    echo ""
-    echo "Expected directory structure:"
-    echo "  $PROJECT_ROOT/"
-    echo "  ├── pi_client/     ← Required"
-    echo "  └── scripts/"
-    echo "      └── create_update/"
-    echo ""
-    exit 1
+# Check if pi_client exists locally
+if [ -d "$PI_CLIENT_DIR" ]; then
+    echo "[INFO] Using local pi_client directory: $PI_CLIENT_DIR"
+else
+    echo "[INFO] Pi client not found locally, will fetch from git repository"
+    USE_TEMP_CLONE=true
 fi
+echo ""
 
 # Check if virtual environment exists
 VENV_PYTHON="$SERVER_DIR/venv/bin/python3"
@@ -66,10 +58,62 @@ if [ -z "$1" ]; then
     echo ""
     
     # =================================
+    # 0. GIT REPOSITORY (if needed)
+    # =================================
+    if [ "$USE_TEMP_CLONE" = true ]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Step 1: Git Repository Configuration"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "Pi client code not found locally. Will fetch from Git repository."
+        echo ""
+        
+        # Git repository URL
+        echo "Enter the Git repository URL:"
+        echo "Examples:"
+        echo "  • https://github.com/username/voice_assistant.git"
+        echo "  • git@github.com:username/voice_assistant.git"
+        echo ""
+        read -p "Repository URL: " GIT_REPO_URL
+        
+        if [ -z "$GIT_REPO_URL" ]; then
+            echo "❌ Error: Repository URL is required"
+            exit 1
+        fi
+        
+        echo ""
+        
+        # Git branch/tag
+        echo "Enter the branch, tag, or commit to package:"
+        echo "Examples:"
+        echo "  • main (default branch)"
+        echo "  • v1.2.3 (specific tag)"
+        echo "  • develop (development branch)"
+        echo ""
+        read -p "Branch/Tag/Commit (default: main): " GIT_REF
+        
+        if [ -z "$GIT_REF" ]; then
+            GIT_REF="main"
+        fi
+        
+        echo ""
+        echo "✓ Will clone: $GIT_REPO_URL"
+        echo "✓ Will use ref: $GIT_REF"
+        echo ""
+    fi
+    
+    # =================================
     # 1. VERSION INPUT
     # =================================
+    STEP_NUM=2
+    if [ "$USE_TEMP_CLONE" = true ]; then
+        STEP_NUM=2
+    else
+        STEP_NUM=1
+    fi
+    
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Step 1: Version Number"
+    echo "Step $STEP_NUM: Version Number"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "Enter the version number for this update."
@@ -105,8 +149,9 @@ if [ -z "$1" ]; then
     # =================================
     # 2. DESCRIPTION INPUT
     # =================================
+    ((STEP_NUM++))
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Step 2: Update Description"
+    echo "Step $STEP_NUM: Update Description"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "Enter a clear description of what this update includes."
@@ -134,8 +179,9 @@ if [ -z "$1" ]; then
     # =================================
     # 3. UPDATE TYPE SELECTION
     # =================================
+    ((STEP_NUM++))
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Step 3: Update Type"
+    echo "Step $STEP_NUM: Update Type"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "Choose when devices should install this update:"
@@ -197,8 +243,9 @@ UPDATE_TYPE_EOF
     # =================================
     # 4. SYSTEM PACKAGES
     # =================================
+    ((STEP_NUM++))
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Step 4: System Packages (Optional)"
+    echo "Step $STEP_NUM: System Packages (Optional)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "Does this update require any system packages (apt packages)?"
@@ -290,24 +337,82 @@ echo ""
 
 # Create temporary working directory
 TEMP_DIR=$(mktemp -d)
-echo "[1/6] Created temporary directory: $TEMP_DIR"
+echo "[1/7] Created temporary directory: $TEMP_DIR"
+
+# =================================
+# FETCH PI CLIENT CODE (if needed)
+# =================================
+if [ "$USE_TEMP_CLONE" = true ]; then
+    echo "[2/7] Fetching pi_client code from git..."
+    
+    # Clone the repository
+    GIT_CLONE_DIR="$TEMP_DIR/repo_clone"
+    echo "    • Cloning repository: $GIT_REPO_URL"
+    echo "    • Branch/Tag/Commit: $GIT_REF"
+    
+    if git clone --depth 1 --branch "$GIT_REF" "$GIT_REPO_URL" "$GIT_CLONE_DIR" > /dev/null 2>&1; then
+        echo "    ✓ Repository cloned successfully"
+        PI_CLIENT_DIR="$GIT_CLONE_DIR/pi_client"
+        
+        # Verify pi_client directory exists in cloned repo
+        if [ ! -d "$PI_CLIENT_DIR" ]; then
+            echo "    ❌ Error: pi_client directory not found in repository"
+            echo "    Expected: $PI_CLIENT_DIR"
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
+    else
+        echo "    ❌ Error: Failed to clone repository"
+        echo ""
+        echo "Possible causes:"
+        echo "  • Invalid repository URL"
+        echo "  • Branch/tag '$GIT_REF' doesn't exist"
+        echo "  • Network connection issues"
+        echo "  • Git authentication required (use SSH key or token)"
+        echo ""
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+    echo ""
+fi
 
 # Create package structure
 PACKAGE_DIR="$TEMP_DIR/pi_client"
 mkdir -p "$PACKAGE_DIR"
 
 # Copy Pi client files
-echo "[2/6] Copying Pi client files..."
+if [ "$USE_TEMP_CLONE" = true ]; then
+    echo "[3/7] Packaging pi_client files..."
+else
+    echo "[2/7] Packaging pi_client files..."
+fi
+
+# Copy all Python files
 cp "$PI_CLIENT_DIR"/*.py "$PACKAGE_DIR/" 2>/dev/null || true
+
+# Copy configuration files
 cp "$PI_CLIENT_DIR/requirements.txt" "$PACKAGE_DIR/" 2>/dev/null || true
 cp "$PI_CLIENT_DIR/env.example" "$PACKAGE_DIR/" 2>/dev/null || true
+
+# Copy subdirectories (audio, hardware, network, utils, etc.)
+for subdir in audio hardware network utils; do
+    if [ -d "$PI_CLIENT_DIR/$subdir" ]; then
+        cp -r "$PI_CLIENT_DIR/$subdir" "$PACKAGE_DIR/"
+    fi
+done
+
+echo "    ✓ Copied pi_client files"
 
 # Update VERSION file
 echo "$VERSION" > "$PACKAGE_DIR/VERSION"
 echo "    ✓ Set version to: $VERSION"
 
 # Create update metadata
-echo "[3/6] Creating update metadata..."
+if [ "$USE_TEMP_CLONE" = true ]; then
+    echo "[4/7] Creating update metadata..."
+else
+    echo "[3/7] Creating update metadata..."
+fi
 METADATA_FILE="$TEMP_DIR/update_metadata.json"
 
 # Build system packages JSON array
@@ -337,7 +442,11 @@ echo "    ✓ Metadata file created"
 cp "$METADATA_FILE" "$TEMP_DIR/update_metadata.json"
 
 # Create ZIP package
-echo "[4/6] Creating ZIP package..."
+if [ "$USE_TEMP_CLONE" = true ]; then
+    echo "[5/7] Creating ZIP package..."
+else
+    echo "[4/7] Creating ZIP package..."
+fi
 PACKAGE_FILE="$TEMP_DIR/update_${VERSION}.zip"
 
 cd "$TEMP_DIR"
@@ -350,7 +459,11 @@ echo "    ✓ Package created: $PACKAGE_FILE ($PACKAGE_SIZE)"
 # =================================
 # SERVER CONFIGURATION
 # =================================
-echo "[5/6] Loading server configuration..."
+if [ "$USE_TEMP_CLONE" = true ]; then
+    echo "[6/7] Loading server configuration..."
+else
+    echo "[5/7] Loading server configuration..."
+fi
 
 # Try multiple locations for .env file
 SERVER_ENV_FILE=""
@@ -445,7 +558,11 @@ echo ""
 # =================================
 # UPLOAD TO SERVER
 # =================================
-echo "[6/6] Uploading to server and creating update..."
+if [ "$USE_TEMP_CLONE" = true ]; then
+    echo "[7/7] Uploading to server and creating update..."
+else
+    echo "[6/7] Uploading to server and creating update..."
+fi
 echo ""
 
 # Call server API

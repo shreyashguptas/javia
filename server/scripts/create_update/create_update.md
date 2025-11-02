@@ -16,10 +16,11 @@ All registered devices will automatically check for and install the update accor
 
 - Server must be running with Supabase configured
 - `SERVER_API_KEY` must be set in server `.env` file (either `/opt/javia/.env` or `server/.env`)
-- Pi client code must be present in the `pi_client` directory
-- For production: Ensure `/opt/javia/pi_client` exists (not `/opt/pi_client`)
+- **One of the following:**
+  - **Option A**: Pi client code present locally in the `pi_client` directory (development)
+  - **Option B**: Access to the Git repository containing the pi_client code (production)
 
-The script automatically detects whether you're in a development environment or production installation at `/opt/javia` and adjusts paths accordingly.
+The script automatically detects whether pi_client code is available locally. If not, it will prompt you to provide a Git repository URL and fetch the code temporarily.
 
 ## Usage
 
@@ -28,22 +29,28 @@ The script automatically detects whether you're in a development environment or 
 Simply run the script without arguments for an interactive guided experience:
 
 ```bash
-cd /path/to/voice_assistant/server/scripts/create_update
+cd /opt/javia/scripts/create_update
 ./create_update.sh
 ```
 
 The interactive mode will guide you through:
 
-**Step 1: Version Number**
+**Step 1: Git Repository** (only if pi_client not found locally)
+- Provide the Git repository URL
+- Specify branch, tag, or commit to package
+- Defaults to `main` branch
+- Temporary clone is created and cleaned up after packaging
+
+**Step 2 (or 1 if local): Version Number**
 - Input format: `vX.Y.Z` (e.g., `v1.2.3`)
 - Semantic versioning guidelines provided
 - Shows current version if available
 
-**Step 2: Update Description**
+**Step 3 (or 2): Update Description**
 - Clear, descriptive text about what's included
 - Examples provided for guidance
 
-**Step 3: Update Type**
+**Step 4 (or 3): Update Type**
 - **Option 1: Scheduled Update** (default)
   - Devices update at 2 AM local time
   - Best for feature updates and improvements
@@ -51,12 +58,12 @@ The interactive mode will guide you through:
   - Devices update after 1 hour of inactivity
   - Best for critical security patches and urgent fixes
 
-**Step 4: System Packages** (optional)
+**Step 5 (or 4): System Packages** (optional)
 - Comma-separated list of apt packages
 - Common package suggestions provided
 - Can be skipped if no system packages needed
 
-**Step 5: Confirmation**
+**Step 6 (or 5): Confirmation**
 - Review all details before creating the update
 - Cancel or proceed
 
@@ -146,14 +153,82 @@ This installs additional system packages before applying the update.
 ./create_update.sh v2.0.0 "Major update with new features and dependencies" urgent "python3-numpy,python3-scipy,libatlas-base-dev"
 ```
 
+## Git-Based Packaging (Production Mode)
+
+When running the script on a production server (e.g., `/opt/javia`), the pi_client code typically isn't present locally since only the server code is deployed. The script automatically handles this by fetching the code from Git.
+
+### How It Works
+
+1. **Detection**: Script checks if `pi_client` directory exists locally
+2. **Prompting**: If not found, prompts for Git repository URL and branch/tag
+3. **Cloning**: Creates a temporary shallow clone of the repository
+4. **Packaging**: Extracts and packages the pi_client code
+5. **Cleanup**: Removes temporary files after packaging
+
+### Benefits
+
+- ✅ **No local copy needed**: Server doesn't need pi_client code deployed
+- ✅ **Version control**: Always package from source-controlled code
+- ✅ **Specific versions**: Package any branch, tag, or commit
+- ✅ **Clean separation**: Server and client code stay separate
+
+### Git Authentication
+
+**For public repositories:**
+```bash
+# HTTPS (no authentication needed)
+https://github.com/username/voice_assistant.git
+```
+
+**For private repositories:**
+
+Option 1: SSH (recommended)
+```bash
+# Setup SSH key first
+ssh-keygen -t ed25519 -C "server@example.com"
+# Add public key to GitHub/GitLab
+
+# Use SSH URL
+git@github.com:username/voice_assistant.git
+```
+
+Option 2: Personal Access Token
+```bash
+# HTTPS with token in URL (not recommended for security)
+https://username:TOKEN@github.com/username/voice_assistant.git
+
+# Better: Configure git credential helper
+git config --global credential.helper store
+```
+
+### Example: Production Deployment
+
+```bash
+# On production server
+cd /opt/javia/scripts/create_update
+./create_update.sh
+
+# You'll be prompted:
+Repository URL: git@github.com:yourname/voice_assistant.git
+Branch/Tag/Commit (default: main): v1.2.3
+
+# Script will:
+# 1. Clone the v1.2.3 tag
+# 2. Extract pi_client code
+# 3. Package it
+# 4. Clean up clone
+# 5. Upload to server
+```
+
 ## What Gets Packaged
 
 The script packages the following from the `pi_client` directory:
-- All Python files (`*.py`)
+- All Python files (`*.py`) at root level
 - `requirements.txt` (Python dependencies)
 - `env.example` (environment configuration template)
 - `VERSION` file (automatically set to specified version)
 - `update_metadata.json` (update information)
+- **Subdirectories**: `audio/`, `hardware/`, `network/`, `utils/` (if present)
 
 ## Update Distribution Flow
 
@@ -333,6 +408,64 @@ This means the script is incorrectly detecting the project root. The fix has bee
    ```
 
 3. If the directory doesn't exist, you may need to copy it from your repository or reinstall the server.
+
+### Git Clone Failed
+
+If you see an error during git cloning:
+
+```
+❌ Error: Failed to clone repository
+
+Possible causes:
+  • Invalid repository URL
+  • Branch/tag 'xyz' doesn't exist
+  • Network connection issues
+  • Git authentication required (use SSH key or token)
+```
+
+**Solutions:**
+
+1. **Verify repository URL:**
+   ```bash
+   # Test if you can clone manually
+   git clone https://github.com/username/voice_assistant.git /tmp/test
+   ```
+
+2. **Check branch/tag exists:**
+   ```bash
+   # List all branches
+   git ls-remote --heads https://github.com/username/voice_assistant.git
+   
+   # List all tags
+   git ls-remote --tags https://github.com/username/voice_assistant.git
+   ```
+
+3. **Setup SSH authentication:**
+   ```bash
+   # Generate SSH key if you don't have one
+   ssh-keygen -t ed25519 -C "your_email@example.com"
+   
+   # Add to GitHub/GitLab
+   cat ~/.ssh/id_ed25519.pub
+   # Copy and add to GitHub Settings > SSH Keys
+   
+   # Test connection
+   ssh -T git@github.com
+   ```
+
+4. **Use HTTPS with token:**
+   ```bash
+   # Configure credential helper
+   git config --global credential.helper store
+   
+   # First time will prompt for credentials
+   ```
+
+5. **Check network connectivity:**
+   ```bash
+   ping github.com
+   curl https://github.com
+   ```
 
 ### Package Upload Fails
 
@@ -518,10 +651,19 @@ You can integrate this script into your CI/CD pipeline:
 ## Quick Reference
 
 ```bash
+# ===================================
 # Interactive mode (recommended)
+# ===================================
+cd /opt/javia/scripts/create_update
 ./create_update.sh
 
-# Command-line mode
+# If pi_client not found locally, you'll be prompted:
+# - Repository URL: https://github.com/username/voice_assistant.git
+# - Branch/Tag: main (or v1.2.3, develop, etc.)
+
+# ===================================
+# Command-line mode (legacy)
+# ===================================
 ./create_update.sh <version> <description> [update_type] [system_packages]
 
 # Examples
@@ -529,6 +671,19 @@ You can integrate this script into your CI/CD pipeline:
 ./create_update.sh v1.2.4 "Security patch" urgent
 ./create_update.sh v1.3.0 "New features" scheduled "libopus0"
 
+# ===================================
+# Git Setup (for production)
+# ===================================
+# Setup SSH key (recommended)
+ssh-keygen -t ed25519 -C "server@example.com"
+cat ~/.ssh/id_ed25519.pub  # Add to GitHub/GitLab
+
+# Test SSH connection
+ssh -T git@github.com
+
+# ===================================
+# Monitoring
+# ===================================
 # Check update status
 curl -H "X-API-Key: KEY" https://domain.com/api/v1/updates/
 
