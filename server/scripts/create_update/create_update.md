@@ -28,6 +28,11 @@ The script automatically detects whether pi_client code is available locally. If
 
 Simply run the script without arguments for an interactive guided experience:
 
+Make sure you have this package below installed before the next steps
+```bash
+sudo apt update && sudo apt install -y zip
+```
+
 ```bash
 cd /opt/javia/scripts/create_update
 ./create_update.sh
