@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""
+Audio Recorder for Pi Voice Assistant Client
+Records audio from I2S microphone using PyAudio or arecord fallback
+"""
+
+import time
+import wave
+import subprocess
+import pyaudio
+import config
+
+
+class StreamingAudioRecorder:
+    """
+    Records audio WITHOUT amplification - raw capture only.
+    
+    PERFORMANCE OPTIMIZATION:
+    - Zero processing on Pi Zero 2 W (just capture raw audio)
+    - Amplification moved to server (more powerful CPU)
+    - Minimal CPU usage during recording
+    - Fastest possible capture
+    """
+    def __init__(self):
+        self.frames = []
+        self.chunk_count = 0
+        
+    def add_chunk(self, audio_data):
+        """Add raw audio chunk - NO processing"""
+        self.frames.append(audio_data)
+        self.chunk_count += 1
+    
+    def get_audio_data(self):
+        """Get raw audio data"""
+        return b''.join(self.frames)
+    
+    def get_duration(self):
+        """Get recording duration in seconds"""
+        return self.chunk_count * config.CHUNK_SIZE / config.SAMPLE_RATE
+
+
+def get_audio_device_index(audio):
+    """
+    Find and cache the I2S audio input device index.
+    
+    PERFORMANCE OPTIMIZATION:
+    - Caches device index globally to avoid repeated enumeration
+    - Only scans devices once per program execution
+    
+    Args:
+        audio: PyAudio instance
+    
+    Returns:
+        int: Device index or None if not found
+    """
+    # Return cached value if available
+    if config._CACHED_AUDIO_DEVICE_INDEX is not None:
+        return config._CACHED_AUDIO_DEVICE_INDEX
+    
+    # Find I2S input device (first time only)
+    device_index = None
+    
+    try:
+        device_count = audio.get_device_count()
+        print(f"[AUDIO] Scanning {device_count} audio devices...")
+    except Exception as e:
+        print(f"[ERROR] Could not get device count: {e}")
+        return None
+    
+    # First pass: Look for Voice HAT devices
+    for i in range(device_count):
+        try:
+            info = audio.get_device_info_by_index(i)
+            device_name = info.get('name', '').lower()
+            max_input = info.get('maxInputChannels', 0)
+            
+            print(f"[AUDIO] Device {i}: {info.get('name', 'Unknown')} (inputs: {max_input})")
+            
+            if max_input > 0 and ('googlevoicehat' in device_name or 
+                                  'voicehat' in device_name or
+                                  'sndrpigooglevoi' in device_name or
+                                  'google' in device_name):
+                device_index = i
+                print(f"[AUDIO] ✓ Found Voice HAT device at index {i}: {info.get('name')}")
+                break
+        except Exception as e:
+            print(f"[AUDIO] Error checking device {i}: {e}")
+            continue
+    
+    # Second pass: If Voice HAT not found, use default input device
+    if device_index is None:
+        try:
+            default_info = audio.get_default_input_device_info()
+            device_index = default_info['index']
+            print(f"[AUDIO] Using default input device: {default_info.get('name')}")
+        except Exception as e:
+            print(f"[AUDIO] No default input device: {e}")
+    
+    # Third pass: Use any input device
+    if device_index is None:
+        for i in range(device_count):
+            try:
+                info = audio.get_device_info_by_index(i)
+                if info.get('maxInputChannels', 0) > 0:
+                    device_index = i
+                    print(f"[AUDIO] Using first available input device {i}: {info.get('name')}")
+                    break
+            except Exception:
+                continue
+    
+    # Cache the result
+    config._CACHED_AUDIO_DEVICE_INDEX = device_index
+    
+    if device_index is None:
+        print("[ERROR] No input device found after scanning all devices")
+    
+    return device_index
+
+
+def record_audio_with_arecord(gpio_manager):
+    """
+    Record audio using arecord command (more reliable for I2S devices).
+    
+    This method bypasses PyAudio which has compatibility issues with some
+    ALSA configurations, particularly the googlevoicehat driver.
+    
+    Args:
+        gpio_manager: GPIOManager instance for button control
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("[AUDIO] Recording with arecord... SPEAK NOW!")
+    print("[AUDIO] " + "="*40)
+    
+    process = None
+    
+    try:
+        # Start arecord in background
+        # Use full CARD name for better reliability across Pi models
+        process = subprocess.Popen(
+            [
+                'arecord',
+                '-D', 'plughw:CARD=sndrpigooglevoi,DEV=0',  # googlevoicehat device (full name)
+                '-f', 'S16_LE',       # 16-bit signed little-endian
+                '-r', str(config.SAMPLE_RATE),  # 48000 Hz
+                '-c', str(config.CHANNELS),     # 1 channel (mono)
+                str(config.RECORDING_FILE)      # Output file
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        
+        print(f"[AUDIO] arecord started (PID: {process.pid})")
+        
+        # Wait for button to be released first
+        while gpio_manager.button.is_pressed:
+            time.sleep(0.005)
+        
+        # Record until button is pressed again
+        start_time = time.time()
+        while not gpio_manager.button.is_pressed:
+            # Progress indicator every second
+            elapsed = time.time() - start_time
+            if int(elapsed) > 0 and int(elapsed) % 1 == 0:
+                if int(elapsed * 10) % 10 == 0:  # Only print once per second
+                    print(f"[AUDIO] {int(elapsed)}s recorded...")
+            time.sleep(0.1)
+        
+        print("[AUDIO] " + "="*40)
+        print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+        
+        # Stop arecord gracefully
+        process.terminate()
+        
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        
+        # Wait for button release
+        while gpio_manager.button.is_pressed:
+            time.sleep(0.005)
+        
+        # Check if file was created
+        if not config.RECORDING_FILE.exists():
+            print("[ERROR] Recording file was not created")
+            return False
+        
+        file_size = config.RECORDING_FILE.stat().st_size
+        if file_size < 1000:
+            print(f"[WARNING] Recording file is very small ({file_size} bytes)")
+        
+        duration = time.time() - start_time
+        print(f"[AUDIO] Recording complete ({duration:.1f}s, {file_size} bytes)")
+        print(f"[AUDIO] Saved: {config.RECORDING_FILE}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Recording failed: {e}")
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
+        return False
+        
+    finally:
+        # Clean up process
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=1)
+            except:
+                try:
+                    process.kill()
+                except:
+                    pass
+
+
+def record_audio(gpio_manager):
+    """
+    Record RAW audio from I2S microphone - NO processing on Pi.
+    
+    CRITICAL PERFORMANCE OPTIMIZATION:
+    - Zero audio processing on Pi Zero 2 W (just raw capture)
+    - Amplification handled by server (has powerful CPU)
+    - Fastest possible recording - minimal CPU usage
+    - Instant availability after recording stops
+    
+    Args:
+        gpio_manager: GPIOManager instance for button control
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("[AUDIO] Recording... SPEAK NOW!")
+    print("[AUDIO] " + "="*40)
+    
+    audio = None
+    stream = None
+    
+    try:
+        # Initialize PyAudio
+        audio = pyaudio.PyAudio()
+        
+        # Small delay to allow ALSA to initialize
+        time.sleep(0.1)
+        
+        # Use cached device lookup (instant)
+        device_index = get_audio_device_index(audio)
+        
+        if device_index is None:
+            print("[ERROR] No input devices found via PyAudio!")
+            print("[INFO] Falling back to arecord method...")
+            if audio:
+                audio.terminate()
+            return record_audio_with_arecord(gpio_manager)
+        
+        # Validate device
+        try:
+            device_info = audio.get_device_info_by_index(device_index)
+            max_inputs = device_info.get('maxInputChannels', 0)
+            device_name = device_info.get('name', 'Unknown')
+            print(f"[AUDIO] Using device {device_index}: {device_name} ({max_inputs} input channels)")
+            
+            if max_inputs < 1:
+                print("[WARNING] Device reports 0 input channels, trying anyway...")
+                # Don't fail - googlevoicehat might report 0 but still work
+        except Exception as e:
+            print(f"[WARNING] Could not validate device {device_index}: {e}")
+            print("[AUDIO] Attempting to open stream anyway...")
+        
+        # Open stream with optimized buffer size
+        try:
+            stream = audio.open(
+                format=pyaudio.paInt16,
+                channels=config.CHANNELS,
+                rate=config.SAMPLE_RATE,
+                input=True,
+                input_device_index=device_index,
+                frames_per_buffer=config.CHUNK_SIZE  # 512 samples = 10.6ms latency at 48kHz
+            )
+            print(f"[AUDIO] ✓ Stream opened successfully")
+        except Exception as e:
+            print(f"[ERROR] Failed to open audio stream: {e}")
+            print(f"[DEBUG] Trying without specifying device index...")
+            # Try without specifying device (use default)
+            try:
+                stream = audio.open(
+                    format=pyaudio.paInt16,
+                    channels=config.CHANNELS,
+                    rate=config.SAMPLE_RATE,
+                    input=True,
+                    frames_per_buffer=config.CHUNK_SIZE
+                )
+                print(f"[AUDIO] ✓ Stream opened with default device")
+            except Exception as e2:
+                print(f"[ERROR] Failed to open stream with default device: {e2}")
+                return False
+        
+        # Initialize recorder - NO amplification (done on server)
+        recorder = StreamingAudioRecorder()
+        
+        # Wait for button to be released first
+        while gpio_manager.button.is_pressed:
+            time.sleep(0.005)
+        
+        # Record until button is pressed again - RAW audio only
+        while not gpio_manager.button.is_pressed:
+            try:
+                data = stream.read(config.CHUNK_SIZE, exception_on_overflow=False)
+                recorder.add_chunk(data)  # Just store, no processing!
+                
+                # Progress indicator every second
+                if recorder.chunk_count % (config.SAMPLE_RATE // config.CHUNK_SIZE) == 0:
+                    seconds = recorder.chunk_count // (config.SAMPLE_RATE // config.CHUNK_SIZE)
+                    print(f"[AUDIO] {seconds}s recorded...")
+            except Exception as e:
+                print(f"[WARNING] Audio buffer issue: {e}")
+                continue
+        
+        print("[AUDIO] " + "="*40)
+        print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+        
+        # Validate recording
+        if recorder.chunk_count == 0:
+            print("[ERROR] No audio data recorded")
+            return False
+        
+        total_seconds = recorder.get_duration()
+        print(f"[AUDIO] Recording complete ({total_seconds:.1f}s)")
+        
+        # Get sample width BEFORE closing audio
+        sample_width = audio.get_sample_size(pyaudio.paInt16)
+        
+        # Close audio resources
+        if stream is not None:
+            stream.stop_stream()
+            stream.close()
+            stream = None
+        if audio is not None:
+            audio.terminate()
+            audio = None
+        
+        # Wait for button release
+        while gpio_manager.button.is_pressed:
+            time.sleep(0.005)
+        
+        # Get RAW audio data - zero processing time!
+        print(f"[AUDIO] Raw audio ready (server will amplify)")
+        audio_data = recorder.get_audio_data()
+        
+        # Save to WAV file
+        with wave.open(str(config.RECORDING_FILE), 'wb') as wf:
+            wf.setnchannels(config.CHANNELS)
+            wf.setsampwidth(sample_width)
+            wf.setframerate(config.SAMPLE_RATE)
+            wf.writeframes(audio_data)
+        
+        # Validate saved file
+        if not config.RECORDING_FILE.exists():
+            print("[ERROR] Recording file was not saved")
+            return False
+        
+        file_size = config.RECORDING_FILE.stat().st_size
+        if file_size < 1000:
+            print(f"[WARNING] Recording file is very small ({file_size} bytes)")
+        
+        print(f"[AUDIO] Saved: {config.RECORDING_FILE} ({file_size} bytes)")
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Recording failed: {e}")
+        import traceback
+        print(f"[DEBUG] {traceback.format_exc()}")
+        return False
+        
+    finally:
+        # Clean up resources
+        try:
+            if stream is not None:
+                stream.stop_stream()
+                stream.close()
+        except:
+            pass
+        
+        try:
+            if audio is not None:
+                audio.terminate()
+        except:
+            pass
+
