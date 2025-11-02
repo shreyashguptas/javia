@@ -10,10 +10,23 @@ echo "Voice Assistant - Create OTA Update"
 echo "==========================================="
 echo ""
 
-# Determine project root (3 levels up from this script: create_update -> scripts -> server -> project root)
+# Determine project root
+# Handle both development and production directory structures:
+# - Development: voice_assistant/server/scripts/create_update/ (3 levels up)
+# - Production: /opt/javia/scripts/create_update/ (2 levels up)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-SERVER_DIR="$PROJECT_ROOT/server"
+
+# Check if we're in development structure (has 'server' directory)
+if [ -d "$SCRIPT_DIR/../../server" ]; then
+    # Development structure: create_update -> scripts -> server -> project_root
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+    SERVER_DIR="$PROJECT_ROOT/server"
+else
+    # Production structure: create_update -> scripts -> javia
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    SERVER_DIR="$PROJECT_ROOT"
+fi
+
 PI_CLIENT_DIR="$PROJECT_ROOT/pi_client"
 
 echo "[INFO] Project root: $PROJECT_ROOT"
@@ -23,6 +36,13 @@ echo ""
 # Validate Pi client directory exists
 if [ ! -d "$PI_CLIENT_DIR" ]; then
     echo "❌ Error: Pi client directory not found at $PI_CLIENT_DIR"
+    echo ""
+    echo "Expected directory structure:"
+    echo "  $PROJECT_ROOT/"
+    echo "  ├── pi_client/     ← Required"
+    echo "  └── scripts/"
+    echo "      └── create_update/"
+    echo ""
     exit 1
 fi
 

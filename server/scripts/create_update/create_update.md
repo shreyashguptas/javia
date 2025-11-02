@@ -16,7 +16,10 @@ All registered devices will automatically check for and install the update accor
 
 - Server must be running with Supabase configured
 - `SERVER_API_KEY` must be set in server `.env` file (either `/opt/javia/.env` or `server/.env`)
-- You must be in the project repository directory
+- Pi client code must be present in the `pi_client` directory
+- For production: Ensure `/opt/javia/pi_client` exists (not `/opt/pi_client`)
+
+The script automatically detects whether you're in a development environment or production installation at `/opt/javia` and adjusts paths accordingly.
 
 ## Usage
 
@@ -266,7 +269,9 @@ Common causes:
 
 ### "Pi client directory not found"
 
-The script expects this directory structure:
+The script automatically detects the directory structure. There are two supported layouts:
+
+**Development Structure:**
 ```
 voice_assistant/
 ├── pi_client/          # Must exist
@@ -279,12 +284,55 @@ voice_assistant/
             └── create_update.sh  # Run from here
 ```
 
+**Production Structure (at /opt/javia):**
+```
+/opt/javia/
+├── pi_client/          # Must exist at /opt/javia/pi_client
+│   ├── client.py
+│   ├── requirements.txt
+│   └── VERSION
+└── scripts/
+    └── create_update/
+        └── create_update.sh  # Run from here
+```
+
 Ensure you're running from the correct location:
 
 ```bash
+# Development
 cd /path/to/voice_assistant/server/scripts/create_update
 ./create_update.sh
+
+# Production
+cd /opt/javia/scripts/create_update
+./create_update.sh
 ```
+
+**Note:** The pi_client directory must be at `/opt/javia/pi_client` for production installs, not `/opt/pi_client`.
+
+### "Project root: /opt" Error
+
+If you see an error like:
+```
+[INFO] Project root: /opt
+[INFO] Pi client directory: /opt/pi_client
+❌ Error: Pi client directory not found at /opt/pi_client
+```
+
+This means the script is incorrectly detecting the project root. The fix has been implemented to auto-detect both development and production structures. Make sure:
+
+1. You're running the script from the correct location:
+   ```bash
+   cd /opt/javia/scripts/create_update
+   ./create_update.sh
+   ```
+
+2. The pi_client directory exists at `/opt/javia/pi_client`:
+   ```bash
+   ls -la /opt/javia/pi_client
+   ```
+
+3. If the directory doesn't exist, you may need to copy it from your repository or reinstall the server.
 
 ### Package Upload Fails
 
