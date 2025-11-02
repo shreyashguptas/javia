@@ -68,7 +68,7 @@ rm -rf javia  # Remove old temp clone if exists
 git clone https://github.com/shreyashguptas/javia.git
 
 # Run the update script
-cd javia/server/scripts
+cd javia/server/scripts/update_server_files
 sudo ./update_server_files.sh
 ```
 
