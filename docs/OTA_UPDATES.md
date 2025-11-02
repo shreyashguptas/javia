@@ -124,7 +124,27 @@ The device UUID is saved to `~/.javia_device_uuid` and persists across updates.
 
 ### Creating an Update
 
-Use the update creation script:
+The update creation script supports two modes: **interactive** (recommended) and **command-line**.
+
+#### Interactive Mode (Recommended)
+
+Run the script without arguments for a guided, interactive experience:
+
+```bash
+cd /opt/javia/scripts/create_update
+./create_update.sh
+```
+
+The interactive mode guides you through:
+1. **Version Number** - Enter version in vX.Y.Z format with validation
+2. **Update Description** - Describe what's included in the update
+3. **Update Type** - Choose between scheduled (2 AM) or urgent (1 hour inactivity)
+4. **System Packages** - Optionally specify apt packages to install
+5. **Confirmation** - Review and confirm before creating the update
+
+#### Command-Line Mode
+
+You can also provide all parameters directly:
 
 ```bash
 # Scheduled update (applied at 2 AM local time)
@@ -140,9 +160,9 @@ cd /opt/javia/scripts/create_update
 
 ### Script Parameters
 
-- `version`: Version string (e.g., "v1.2.3")
+- `version`: Version string (e.g., "v1.2.3") - must follow vX.Y.Z format
 - `description`: Human-readable description
-- `update_type`: "scheduled" or "urgent"
+- `update_type`: "scheduled" or "urgent" (default: scheduled)
 - `system_packages`: Comma-separated apt packages (optional)
 
 ### What Gets Packaged
