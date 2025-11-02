@@ -19,8 +19,10 @@ fi
 INSTALL_DIR="/opt/javia"
 
 # Determine source directory (must be run from git repo)
+# Script is in: server/scripts/update_server_files/update_server_files.sh
+# Need to go up 2 levels to get to server/
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SERVER_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Validate we're in the right place
 if [ ! -f "$SERVER_DIR/main.py" ]; then
@@ -29,7 +31,7 @@ if [ ! -f "$SERVER_DIR/main.py" ]; then
     echo ""
     echo "Please ensure you:"
     echo "  1. Cloned the repository: git clone https://github.com/shreyashguptas/javia.git"
-    echo "  2. Are running this script from: /tmp/javia/server/scripts/update_server_files.sh"
+    echo "  2. Are running this script from: /tmp/javia/server/scripts/update_server_files/update_server_files.sh"
     echo ""
     exit 1
 fi
