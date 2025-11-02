@@ -2,6 +2,8 @@
 
 This document describes the OTA update system for managing voice assistant Pi clients remotely.
 
+> **📝 Note**: For detailed information about the three update mechanisms (Scheduled, Instant, Urgent) and heartbeat system, see **[UPDATE_MECHANISMS.md](UPDATE_MECHANISMS.md)**.
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -18,8 +20,11 @@ The OTA update system allows you to remotely update all your Raspberry Pi voice 
 ### Key Features
 
 - **Automatic Device Registration**: Pi clients auto-register with UUID7 identifiers on first boot
-- **Scheduled Updates**: Updates applied at 2 AM local time (configurable per device timezone)
-- **Urgent Updates**: Critical patches applied after 1 hour of device inactivity
+- **Device Heartbeat**: Pi clients ping server every 5 minutes to report online status
+- **Three Update Types**:
+  - **Scheduled**: Updates at 2 AM local time (configurable per device timezone)
+  - **Instant**: Immediate updates for devices online in last 5 minutes
+  - **Urgent**: Critical patches applied after 1 hour of device inactivity
 - **Real-time Tracking**: Monitor update status for all devices via Supabase
 - **Rollback Safety**: Failed updates don't brick devices (forward-fix only)
 - **System Package Updates**: Can install/update apt packages if needed

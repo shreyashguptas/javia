@@ -36,6 +36,7 @@ from network.api_client import APIClient
 from device_manager import DeviceManager
 from activity_tracker import ActivityTracker
 from update_manager import UpdateManager
+from heartbeat_manager import HeartbeatManager
 
 # Suppress ALSA warnings (must be done before any audio initialization)
 suppress_alsa_errors()
@@ -70,6 +71,14 @@ def setup():
         # Initialize activity tracker
         config.activity_tracker = ActivityTracker()
         print("[INIT] ✓ Activity tracker initialized")
+        
+        # Initialize heartbeat manager (sends ping every 5 minutes)
+        config.heartbeat_manager = HeartbeatManager(
+            device_manager=config.device_manager,
+            interval_seconds=300  # 5 minutes
+        )
+        config.heartbeat_manager.start()
+        print("[INIT] ✓ Heartbeat manager started (5-minute interval)")
         
         # Initialize update manager if Supabase is configured
         if config.SUPABASE_URL and config.SUPABASE_KEY:
@@ -166,7 +175,8 @@ def main():
         gpio_manager, beep_generator, audio_player, api_client = setup()
         
         print("\n[INFO] Voice assistant ready. OTA updates running in background.")
-        print("[INFO] Updates will be applied at 2 AM local time or after 1 hour inactivity (urgent updates).\n")
+        print("[INFO] Heartbeat: Sending status ping every 5 minutes")
+        print("[INFO] Updates: Instant (if online), Nightly at 2 AM, or Urgent after 1 hour inactivity\n")
         
         while True:
             # Wait for button press
@@ -212,8 +222,13 @@ def main():
     except KeyboardInterrupt:
         print("\n\n[EXIT] Shutting down...")
     finally:
+        # Stop heartbeat manager
+        if hasattr(config, 'heartbeat_manager') and config.heartbeat_manager:
+            config.heartbeat_manager.stop()
+            print("[EXIT] Heartbeat manager stopped")
+        
         # Stop update manager
-        if config.update_manager:
+        if hasattr(config, 'update_manager') and config.update_manager:
             config.update_manager.stop()
             print("[EXIT] Update manager stopped")
         

@@ -193,7 +193,11 @@ class UpdateManager:
             # Determine if we should apply the update now
             should_apply = False
             
-            if update_type == "urgent":
+            if update_type == "instant":
+                # Instant update: apply immediately (device was online in last 5 minutes)
+                logger.info("Instant update detected: applying immediately")
+                should_apply = True
+            elif update_type == "urgent":
                 # Urgent update: wait for 1 hour of inactivity
                 if self.activity_tracker.is_inactive_for(3600):  # 1 hour = 3600 seconds
                     logger.info("Urgent update ready: device inactive for 1 hour")

@@ -198,6 +198,12 @@ update_types = [
         "use_case": "Best for: Feature updates, improvements, non-critical fixes"
     },
     {
+        "key": "instant",
+        "name": "Instant Update",
+        "description": "Devices online in last 5 min update immediately",
+        "use_case": "Best for: Breaking changes requiring immediate deployment"
+    },
+    {
         "key": "urgent",
         "name": "Urgent Update",
         "description": "Devices update after 1 hour of inactivity",
@@ -215,12 +221,12 @@ for i, ut in enumerate(update_types, 1):
 # Read from /dev/tty directly for user input
 try:
     with open('/dev/tty', 'r') as tty:
-        sys.stderr.write("Enter your choice [1-2] (default: 1 - Scheduled): ")
+        sys.stderr.write("Enter your choice [1-3] (default: 1 - Scheduled): ")
         sys.stderr.flush()
         choice = tty.readline().strip()
 except:
     # Fallback if /dev/tty is not available
-    choice = input("Enter your choice [1-2] (default: 1 - Scheduled): ")
+    choice = input("Enter your choice [1-3] (default: 1 - Scheduled): ")
 
 if choice.strip():
     try:
@@ -280,7 +286,11 @@ UPDATE_TYPE_EOF
     fi
     echo ""
     
-    if [ "$UPDATE_TYPE" = "urgent" ]; then
+    if [ "$UPDATE_TYPE" = "instant" ]; then
+        echo "⚡ INSTANT UPDATE"
+        echo "Devices online in the last 5 minutes will update immediately."
+        echo "⚠️  Device will NOT work until update completes!"
+    elif [ "$UPDATE_TYPE" = "urgent" ]; then
         echo "⚠️  URGENT UPDATE"
         echo "Devices will update after 1 hour of inactivity."
     else
@@ -312,8 +322,8 @@ else
     fi
     
     # Validate update type
-    if [ "$UPDATE_TYPE" != "scheduled" ] && [ "$UPDATE_TYPE" != "urgent" ]; then
-        echo "❌ Error: update_type must be 'scheduled' or 'urgent'"
+    if [ "$UPDATE_TYPE" != "scheduled" ] && [ "$UPDATE_TYPE" != "urgent" ] && [ "$UPDATE_TYPE" != "instant" ]; then
+        echo "❌ Error: update_type must be 'scheduled', 'urgent', or 'instant'"
         exit 1
     fi
     
@@ -596,7 +606,13 @@ if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
     echo "Distribution Schedule"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    if [ "$UPDATE_TYPE" = "urgent" ]; then
+    if [ "$UPDATE_TYPE" = "instant" ]; then
+        echo "  ⚡ INSTANT UPDATE"
+        echo "  ├─ Devices last seen in the last 5 minutes will update NOW"
+        echo "  ├─ Device will NOT function until update completes"
+        echo "  ├─ Other devices will update at next heartbeat (within 5 min)"
+        echo "  └─ Use ONLY for critical breaking changes requiring immediate deployment"
+    elif [ "$UPDATE_TYPE" = "urgent" ]; then
         echo "  🚨 URGENT UPDATE"
         echo "  ├─ Devices will check for updates every 5 minutes"
         echo "  ├─ Update installs after 1 hour of inactivity"

@@ -115,7 +115,7 @@ async def schedule_update_for_devices(
     
     Args:
         update_id: Update UUID
-        update_type: Type of update (scheduled or urgent)
+        update_type: Type of update (scheduled, urgent, or instant)
         target_devices: Optional list of device UUIDs to target (None = all devices)
         
     Returns:
@@ -129,9 +129,9 @@ async def schedule_update_for_devices(
         
         # Get target devices
         if target_devices:
-            devices_query = supabase.table("devices").select("id, device_uuid, timezone").in_("device_uuid", target_devices)
+            devices_query = supabase.table("devices").select("id, device_uuid, timezone, last_seen").in_("device_uuid", target_devices)
         else:
-            devices_query = supabase.table("devices").select("id, device_uuid, timezone")
+            devices_query = supabase.table("devices").select("id, device_uuid, timezone, last_seen")
         
         devices_result = devices_query.execute()
         
@@ -141,15 +141,34 @@ async def schedule_update_for_devices(
         
         # Calculate scheduled_for time based on update type
         device_updates = []
+        now = datetime.now(timezone.utc)
+        
         for device in devices_result.data:
-            if update_type == "urgent":
+            # For instant updates, only include devices that were online in the last 5 minutes
+            if update_type == "instant":
+                last_seen_str = device.get("last_seen")
+                if last_seen_str:
+                    last_seen = datetime.fromisoformat(last_seen_str.replace('Z', '+00:00'))
+                    time_since_seen = (now - last_seen).total_seconds()
+                    
+                    # Skip devices not seen in the last 5 minutes
+                    if time_since_seen > 300:  # 300 seconds = 5 minutes
+                        logger.debug(f"Skipping device {device['device_uuid']} for instant update (last seen {time_since_seen:.0f}s ago)")
+                        continue
+                else:
+                    # No last_seen timestamp, skip this device
+                    logger.debug(f"Skipping device {device['device_uuid']} for instant update (no last_seen)")
+                    continue
+                
+                # Instant update: schedule immediately
+                scheduled_for = now
+            elif update_type == "urgent":
                 # Urgent updates: schedule for 1 hour from now (device will apply after inactivity)
-                scheduled_for = datetime.now(timezone.utc) + timedelta(hours=1)
+                scheduled_for = now + timedelta(hours=1)
             else:
                 # Scheduled updates: schedule for 2 AM in device's timezone (next occurrence)
                 # For simplicity, we'll schedule for 2 AM UTC today/tomorrow
                 # The device will handle timezone conversion locally
-                now = datetime.now(timezone.utc)
                 scheduled_for = now.replace(hour=2, minute=0, second=0, microsecond=0)
                 
                 # If 2 AM has already passed today, schedule for tomorrow
@@ -166,7 +185,9 @@ async def schedule_update_for_devices(
         # Insert device_updates
         if device_updates:
             supabase.table("device_updates").insert(device_updates).execute()
-            logger.info(f"Scheduled update for {len(device_updates)} devices")
+            logger.info(f"Scheduled {update_type} update for {len(device_updates)} devices")
+        else:
+            logger.warning(f"No eligible devices for {update_type} update")
         
         return len(device_updates)
         
