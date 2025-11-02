@@ -2,7 +2,7 @@
 set -e
 
 # Script to package Pi client code and create OTA update
-# Usage: ./create_update.sh [version] [description] [update_type] [system_packages]
+# Usage: ./create_update.sh [version] [description] [system_packages]
 # Or run without arguments for interactive mode
 
 echo "==========================================="
@@ -176,78 +176,11 @@ if [ -z "$1" ]; then
     
     echo ""
     
-    # =================================
-    # 3. UPDATE TYPE SELECTION
-    # =================================
-    ((STEP_NUM++))
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Step $STEP_NUM: Update Type"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "Choose when devices should install this update:"
-    echo ""
-    
-    UPDATE_TYPE=$("$VENV_PYTHON" << 'UPDATE_TYPE_EOF'
-import sys
-
-update_types = [
-    {
-        "key": "scheduled",
-        "name": "Scheduled Update",
-        "description": "Devices update at 2 AM local time",
-        "use_case": "Best for: Feature updates, improvements, non-critical fixes"
-    },
-    {
-        "key": "instant",
-        "name": "Instant Update",
-        "description": "Devices online in last 5 min update immediately",
-        "use_case": "Best for: Breaking changes requiring immediate deployment"
-    },
-    {
-        "key": "urgent",
-        "name": "Urgent Update",
-        "description": "Devices update after 1 hour of inactivity",
-        "use_case": "Best for: Critical security patches, urgent bug fixes"
-    }
-]
-
-# Display options
-for i, ut in enumerate(update_types, 1):
-    print(f"{i}. {ut['name']}", file=sys.stderr)
-    print(f"   {ut['description']}", file=sys.stderr)
-    print(f"   {ut['use_case']}", file=sys.stderr)
-    print("", file=sys.stderr)
-
-# Read from /dev/tty directly for user input
-try:
-    with open('/dev/tty', 'r') as tty:
-        sys.stderr.write("Enter your choice [1-3] (default: 1 - Scheduled): ")
-        sys.stderr.flush()
-        choice = tty.readline().strip()
-except:
-    # Fallback if /dev/tty is not available
-    choice = input("Enter your choice [1-3] (default: 1 - Scheduled): ")
-
-if choice.strip():
-    try:
-        idx = int(choice) - 1
-        if 0 <= idx < len(update_types):
-            print(update_types[idx]['key'])
-        else:
-            print("scheduled")
-    except ValueError:
-        print("scheduled")
-else:
-    print("scheduled")
-UPDATE_TYPE_EOF
-)
-    
-    echo ""
-    echo "✓ Selected: $UPDATE_TYPE"
-    echo ""
+    # Update type is no longer needed - all updates are immediate
+    UPDATE_TYPE=""
     
     # =================================
-    # 4. SYSTEM PACKAGES
+    # 3. SYSTEM PACKAGES
     # =================================
     ((STEP_NUM++))
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -278,7 +211,6 @@ UPDATE_TYPE_EOF
     echo ""
     echo "Version:           $VERSION"
     echo "Description:       $DESCRIPTION"
-    echo "Update Type:       $UPDATE_TYPE"
     if [ -n "$SYSTEM_PACKAGES" ]; then
         echo "System Packages:   $SYSTEM_PACKAGES"
     else
@@ -286,17 +218,9 @@ UPDATE_TYPE_EOF
     fi
     echo ""
     
-    if [ "$UPDATE_TYPE" = "instant" ]; then
-        echo "⚡ INSTANT UPDATE"
-        echo "Devices online in the last 5 minutes will update immediately."
-        echo "⚠️  Device will NOT work until update completes!"
-    elif [ "$UPDATE_TYPE" = "urgent" ]; then
-        echo "⚠️  URGENT UPDATE"
-        echo "Devices will update after 1 hour of inactivity."
-    else
-        echo "📅 SCHEDULED UPDATE"
-        echo "Devices will update at 2 AM local time."
-    fi
+    echo "⚡ IMMEDIATE UPDATE"
+    echo "All registered devices will receive this update immediately."
+    echo "Devices will check for updates before processing each query."
     echo ""
     
     read -p "Proceed with creating this update? (Y/n): " CONFIRM
@@ -312,8 +236,8 @@ else
     # Command-line arguments mode (legacy)
     VERSION="$1"
     DESCRIPTION="$2"
-    UPDATE_TYPE="${3:-scheduled}"
-    SYSTEM_PACKAGES="${4:-}"
+    SYSTEM_PACKAGES="${3:-}"
+    UPDATE_TYPE=""  # No longer used
     
     # Validate version format
     if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -321,16 +245,9 @@ else
         exit 1
     fi
     
-    # Validate update type
-    if [ "$UPDATE_TYPE" != "scheduled" ] && [ "$UPDATE_TYPE" != "urgent" ] && [ "$UPDATE_TYPE" != "instant" ]; then
-        echo "❌ Error: update_type must be 'scheduled', 'urgent', or 'instant'"
-        exit 1
-    fi
-    
     echo "Creating update with provided arguments..."
     echo "  Version: $VERSION"
     echo "  Description: $DESCRIPTION"
-    echo "  Type: $UPDATE_TYPE"
     if [ -n "$SYSTEM_PACKAGES" ]; then
         echo "  System Packages: $SYSTEM_PACKAGES"
     fi
@@ -439,7 +356,6 @@ cat > "$METADATA_FILE" <<EOF
 {
   "version": "$VERSION",
   "description": "$DESCRIPTION",
-  "update_type": "$UPDATE_TYPE",
   "requires_system_packages": $REQUIRES_SYSTEM_PACKAGES,
   "system_packages": $SYSTEM_PACKAGES_JSON,
   "created_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -577,7 +493,6 @@ RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$SERVER_URL/api/v1/updates/creat
     -H "X-API-Key: $SERVER_API_KEY" \
     -F "version=$VERSION" \
     -F "description=$DESCRIPTION" \
-    -F "update_type=$UPDATE_TYPE" \
     -F "requires_system_packages=$REQUIRES_SYSTEM_PACKAGES" \
     -F "system_packages=$SYSTEM_PACKAGES_JSON" \
     -F "package=@$PACKAGE_FILE")
@@ -596,33 +511,20 @@ if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
     echo ""
     echo "  Version:         $VERSION"
     echo "  Description:     $DESCRIPTION"
-    echo "  Type:            $UPDATE_TYPE"
     if [ -n "$SYSTEM_PACKAGES" ]; then
         echo "  System Packages: $SYSTEM_PACKAGES"
     fi
     echo "  Package Size:    $PACKAGE_SIZE"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Distribution Schedule"
+    echo "Distribution"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    if [ "$UPDATE_TYPE" = "instant" ]; then
-        echo "  ⚡ INSTANT UPDATE"
-        echo "  ├─ Devices last seen in the last 5 minutes will update NOW"
-        echo "  ├─ Device will NOT function until update completes"
-        echo "  ├─ Other devices will update at next heartbeat (within 5 min)"
-        echo "  └─ Use ONLY for critical breaking changes requiring immediate deployment"
-    elif [ "$UPDATE_TYPE" = "urgent" ]; then
-        echo "  🚨 URGENT UPDATE"
-        echo "  ├─ Devices will check for updates every 5 minutes"
-        echo "  ├─ Update installs after 1 hour of inactivity"
-        echo "  └─ Use for critical security patches and urgent fixes"
-    else
-        echo "  📅 SCHEDULED UPDATE"
-        echo "  ├─ Devices will check for updates daily"
-        echo "  ├─ Update installs at 2 AM local time"
-        echo "  └─ Non-disruptive to normal usage"
-    fi
+    echo "  ⚡ IMMEDIATE UPDATE"
+    echo "  ├─ All registered devices will receive this update"
+    echo "  ├─ Devices check for updates before processing each query"
+    echo "  ├─ Update installs immediately when detected"
+    echo "  └─ Device restarts automatically after successful update"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""

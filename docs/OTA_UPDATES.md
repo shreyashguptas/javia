@@ -1,45 +1,79 @@
 # OTA (Over-The-Air) Update System
 
-This document describes the OTA update system for managing voice assistant Pi clients remotely.
-
-> **📝 Note**: For detailed information about the three update mechanisms (Scheduled, Instant, Urgent) and heartbeat system, see **[UPDATE_MECHANISMS.md](UPDATE_MECHANISMS.md)**.
+This document describes the simplified OTA update system for managing voice assistant Pi clients remotely.
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Architecture](#architecture)
-- [Setup](#setup)
-- [Usage](#usage)
 - [How It Works](#how-it-works)
+- [Setup](#setup)
+- [Creating Updates](#creating-updates)
+- [Monitoring Updates](#monitoring-updates)
 - [Troubleshooting](#troubleshooting)
 
 ## Overview
 
-The OTA update system allows you to remotely update all your Raspberry Pi voice assistant devices without SSH access. Updates are distributed from a central server and applied automatically based on a schedule or urgency.
+The OTA update system allows you to remotely update all your Raspberry Pi voice assistant devices from a central server. When you push an update, ALL registered devices receive it immediately.
 
 ### Key Features
 
 - **Automatic Device Registration**: Pi clients auto-register with UUID7 identifiers on first boot
 - **Device Heartbeat**: Pi clients ping server every 5 minutes to report online status
-- **Three Update Types**:
-  - **Scheduled**: Updates at 2 AM local time (configurable per device timezone)
-  - **Instant**: Immediate updates for devices online in last 5 minutes
-  - **Urgent**: Critical patches applied after 1 hour of device inactivity
+- **Automatic Offline Detection**: Devices marked offline if no heartbeat for 10 minutes
+- **Immediate Updates**: All devices get updates immediately when available
+- **Mandatory Update Checks**: Devices check for updates before processing each query
 - **Real-time Tracking**: Monitor update status for all devices via Supabase
-- **Rollback Safety**: Failed updates don't brick devices (forward-fix only)
 - **System Package Updates**: Can install/update apt packages if needed
 
-## Architecture
+## How It Works
 
-### Components
+### Simple Update Flow
 
-1. **Supabase Database**: Stores device registry, updates, and update status
-2. **Server API**: Manages device registration, heartbeats, and update distribution
-3. **Pi Client Managers**:
-   - `device_manager.py`: Device registration and identification (UUID7)
-   - `activity_tracker.py`: Monitors user activity for safe update timing
-   - `update_manager.py`: Downloads and applies updates
-4. **Update Packaging Script**: `server/scripts/create_update/create_update.sh`
+```
+1. Admin creates update → Server packages code → Uploads to Supabase Storage
+2. Server creates update record → Schedules for ALL registered devices
+3. Pi client presses button → Checks for updates BEFORE recording
+4. If update available → Downloads, installs, restarts immediately
+5. If no update → Proceeds with normal query processing
+```
+
+### Device Heartbeat
+
+- Every 5 minutes, Pi clients send heartbeat to server
+- Updates `last_seen` timestamp and `current_version` in database
+- Server automatically marks devices as "offline" if no heartbeat for 10 minutes
+
+### Update Detection
+
+- **Before each query**: Device checks for pending updates
+- **If update found**: Immediately downloads, installs, and restarts
+- **If no update**: Proceeds with normal voice processing
+
+This ensures devices are always up-to-date before processing queries, preventing issues from outdated code.
+
+## Setup
+
+### Prerequisites
+
+1. **Supabase Project**:
+   - Create a project at [supabase.com](https://supabase.com)
+   - Database migrations are applied automatically
+   - Create storage bucket: "update-packages" (private)
+   - Offline detection function runs automatically
+
+2. **Server Configuration** (`server/.env`):
+   ```bash
+   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_KEY=your-anon-key
+   SUPABASE_SERVICE_KEY=your-service-role-key
+   SERVER_API_KEY=your-secret-api-key
+   ```
+
+3. **Pi Client Configuration** (`pi_client/.env`):
+   ```bash
+   SERVER_URL=https://your-server.com
+   DEVICE_TIMEZONE=America/Los_Angeles  # Your local timezone
+   ```
 
 ### Database Schema
 
@@ -48,9 +82,9 @@ The OTA update system allows you to remotely update all your Raspberry Pi voice 
 - `device_uuid` (text) - UUID7 identifier
 - `device_name` (text) - Optional friendly name
 - `registered_at` (timestamp) - Registration time
-- `last_seen` (timestamp) - Last heartbeat
+- `last_seen` (timestamp) - Last heartbeat (updated every 5 min)
 - `current_version` (text) - Current software version
-- `timezone` (text) - Device timezone (e.g., "America/Los_Angeles")
+- `timezone` (text) - Device timezone
 - `status` (text) - online | offline | updating
 - `metadata` (jsonb) - Hardware info, OS version, etc.
 
@@ -58,7 +92,6 @@ The OTA update system allows you to remotely update all your Raspberry Pi voice 
 - `id` (uuid) - Primary key
 - `version` (text) - Version string (e.g., "v1.2.3")
 - `created_at` (timestamp) - Creation time
-- `update_type` (text) - scheduled | urgent
 - `description` (text) - What's in this update
 - `package_url` (text) - Download URL for ZIP file
 - `requires_system_packages` (bool) - Whether apt packages needed
@@ -69,178 +102,49 @@ The OTA update system allows you to remotely update all your Raspberry Pi voice 
 - `device_id` (uuid) - Foreign key to devices
 - `update_id` (uuid) - Foreign key to updates
 - `status` (text) - pending | downloading | installing | completed | failed
-- `scheduled_for` (timestamp) - When to apply update
 - `started_at` (timestamp) - When update started
 - `completed_at` (timestamp) - When update finished
 - `error_message` (text) - Error details if failed
 
-### Data Flow
+## Creating Updates
 
-```
-1. Admin creates update → Server packages code → Uploads to Supabase Storage
-2. Server creates update record → Schedules for all devices
-3. Pi clients poll/listen for updates → Detect pending update
-4. Pi waits for scheduled time or inactivity → Downloads update
-5. Pi installs update → Restarts service → Reports completion
-```
+### Interactive Mode (Recommended)
 
-## Setup
-
-### Prerequisites
-
-1. **Supabase Project**:
-   - Create a project at [supabase.com](https://supabase.com)
-   - Run the database migration (automatically done via MCP)
-   - Create storage bucket: "update-packages"
-   - Enable realtime on `device_updates` table
-
-2. **Server Configuration**:
-   Add to `server/.env`:
-   ```bash
-   SUPABASE_URL=https://your-project.supabase.co
-   SUPABASE_KEY=your-anon-key
-   SUPABASE_SERVICE_KEY=your-service-role-key
-   ```
-
-3. **Pi Client Configuration**:
-   Add to `pi_client/.env`:
-   ```bash
-   DEVICE_TIMEZONE=America/Los_Angeles  # Your local timezone
-   SUPABASE_URL=https://your-project.supabase.co
-   SUPABASE_KEY=your-anon-key
-   ```
-
-4. **Install Dependencies**:
-   - Server: `pip install -r server/requirements.txt`
-   - Pi: `pip install -r pi_client/requirements.txt`
-
-### First-Time Device Setup
-
-On each Pi device:
-
-1. Clone the repository
-2. Run the setup script: `bash pi_client/deploy/setup.sh`
-3. Enter server URL and API key when prompted
-4. Device will auto-register on first boot
-
-The device UUID is saved to `~/.javia_device_uuid` and persists across updates.
-
-## Usage
-
-### Creating an Update
-
-The update creation script supports two modes: **interactive** (recommended) and **command-line**.
-
-#### Interactive Mode (Recommended)
-
-Run the script without arguments for a guided, interactive experience:
+Run the script without arguments for a guided experience:
 
 ```bash
 cd /opt/javia/scripts/create_update
 ./create_update.sh
 ```
 
-The interactive mode guides you through:
-1. **Version Number** - Enter version in vX.Y.Z format with validation
-2. **Update Description** - Describe what's included in the update
-3. **Update Type** - Choose between scheduled (2 AM) or urgent (1 hour inactivity)
-4. **System Packages** - Optionally specify apt packages to install
-5. **Confirmation** - Review and confirm before creating the update
+The interactive mode prompts for:
+1. **Version Number** - Format: vX.Y.Z (e.g., v1.2.3)
+2. **Update Description** - What's included in this update
+3. **System Packages** - Optional apt packages to install
+4. **Confirmation** - Review and confirm before creating
 
-#### Command-Line Mode
+### Command-Line Mode
 
-You can also provide all parameters directly:
+Provide all parameters directly:
 
 ```bash
-# Scheduled update (applied at 2 AM local time)
 cd /opt/javia/scripts/create_update
-./create_update.sh v1.2.3 "Bug fixes and performance improvements" scheduled
-
-# Urgent update (applied after 1 hour inactivity)
-./create_update.sh v1.2.4 "Critical security patch" urgent
-
-# Update with system packages
-./create_update.sh v1.3.0 "Add new audio codec" scheduled "libopus0,libopus-dev"
+./create_update.sh v1.2.3 "Bug fixes and improvements" ""
 ```
 
-### Script Parameters
-
-- `version`: Version string (e.g., "v1.2.3") - must follow vX.Y.Z format
-- `description`: Human-readable description
-- `update_type`: "scheduled" or "urgent" (default: scheduled)
-- `system_packages`: Comma-separated apt packages (optional)
+Arguments:
+1. Version (e.g., "v1.2.3")
+2. Description
+3. System packages (comma-separated or empty string)
 
 ### What Gets Packaged
 
 The script automatically packages:
 - All Python files from `pi_client/`
 - `requirements.txt`
+- Subdirectories: `audio/`, `hardware/`, `network/`, `utils/`
 - `VERSION` file (updated with new version)
 - `update_metadata.json` (metadata for installer)
-
-### Monitoring Updates
-
-**View all devices**:
-```bash
-curl -H "X-API-Key: YOUR_KEY" http://your-server:8000/api/v1/devices/
-```
-
-**View all updates**:
-```bash
-curl -H "X-API-Key: YOUR_KEY" http://your-server:8000/api/v1/updates/
-```
-
-**Check device's pending updates**:
-```bash
-curl -H "X-API-Key: YOUR_KEY" \
-  http://your-server:8000/api/v1/devices/DEVICE_UUID/updates/check
-```
-
-## How It Works
-
-### Device Registration
-
-On first boot, each Pi client:
-
-1. Generates a UUID7 identifier
-2. Saves it to `~/.javia_device_uuid`
-3. Registers with server via POST `/api/v1/devices/register`
-4. Sends periodic heartbeats (every 5 minutes)
-
-### Activity Tracking
-
-The `activity_tracker` monitors:
-- Button presses
-- Recording sessions
-- Playback sessions
-
-Used to determine safe update times (when device is idle).
-
-### Update Scheduling
-
-**Scheduled Updates** (normal):
-- Created with `update_type=scheduled`
-- Applied at 2 AM in device's local timezone
-- Devices convert UTC schedule to local time using `pytz`
-
-**Urgent Updates** (critical patches):
-- Created with `update_type=urgent`
-- Applied after 1 hour of inactivity
-- Device must be idle (no user interaction)
-
-### Update Process
-
-1. **Detection**: Update manager polls server every 5 minutes
-2. **Waiting**: Waits for scheduled time or inactivity threshold
-3. **Downloading**: Downloads ZIP package from Supabase Storage
-4. **Installing**:
-   - Extracts files to temp directory
-   - Installs system packages (if specified)
-   - Updates Python dependencies
-   - Copies files to installation directory
-   - Updates VERSION file
-5. **Restarting**: Restarts systemd service
-6. **Completion**: Reports success/failure to server
 
 ### Update Package Structure
 
@@ -249,11 +153,56 @@ update_v1.2.3.zip
 ├── pi_client/
 │   ├── client.py
 │   ├── device_manager.py
-│   ├── activity_tracker.py
 │   ├── update_manager.py
+│   ├── heartbeat_manager.py
 │   ├── requirements.txt
-│   └── VERSION
+│   ├── VERSION
+│   ├── audio/
+│   ├── hardware/
+│   ├── network/
+│   └── utils/
 └── update_metadata.json
+```
+
+## Monitoring Updates
+
+### View All Devices
+
+```bash
+curl -H "X-API-Key: YOUR_KEY" http://your-server:8000/api/v1/devices/
+```
+
+### View All Updates
+
+```bash
+curl -H "X-API-Key: YOUR_KEY" http://your-server:8000/api/v1/updates/
+```
+
+### Check Device's Pending Updates
+
+```bash
+curl -H "X-API-Key: YOUR_KEY" \
+  http://your-server:8000/api/v1/devices/DEVICE_UUID/updates/check
+```
+
+### Device Logs (on Pi)
+
+```bash
+# View live logs
+sudo journalctl -u voice-assistant-client -f
+
+# View update-related logs
+sudo journalctl -u voice-assistant-client | grep -i update
+```
+
+### Server Logs
+
+```bash
+# View live logs
+sudo journalctl -u voice-assistant-server -f
+
+# View update-related logs
+sudo journalctl -u voice-assistant-server | grep -i update
 ```
 
 ## Troubleshooting
@@ -267,16 +216,13 @@ update_v1.2.3.zip
    ```bash
    cat ~/javia_client/.env | grep SERVER_URL
    ```
-2. Verify API key is correct
-3. Check server logs:
+2. Verify device is sending heartbeats:
    ```bash
-   sudo journalctl -u voice-assistant-server -f
+   sudo journalctl -u voice-assistant-client | grep -i heartbeat
    ```
-4. Test registration manually:
+3. Check server logs for registration errors:
    ```bash
-   python3 -c "from device_manager import DeviceManager; \
-     dm = DeviceManager('http://your-server:8000', 'YOUR_API_KEY', 'UTC'); \
-     print(dm.register())"
+   sudo journalctl -u voice-assistant-server | grep -i register
    ```
 
 ### Updates Not Detected
@@ -284,26 +230,19 @@ update_v1.2.3.zip
 **Symptoms**: Update created but device doesn't see it
 
 **Solutions**:
-1. Check Supabase connection:
-   ```bash
-   # In pi_client directory
-   python3 -c "from supabase import create_client; \
-     client = create_client('URL', 'KEY'); \
-     print(client.table('devices').select('*').execute())"
+1. Verify update was created in database:
+   ```sql
+   SELECT * FROM updates ORDER BY created_at DESC LIMIT 1;
    ```
-2. Verify device is registered:
-   ```bash
-   curl -H "X-API-Key: KEY" http://server:8000/api/v1/devices/
+2. Check device_updates records:
+   ```sql
+   SELECT * FROM device_updates WHERE status = 'pending';
    ```
-3. Check update manager is running:
+3. Check device logs for update check:
    ```bash
-   sudo journalctl -u voice-assistant-client -f | grep "update"
+   sudo journalctl -u voice-assistant-client | grep "UPDATE CHECK"
    ```
-4. Force update check:
-   ```bash
-   # Restart service to reinitialize update manager
-   sudo systemctl restart voice-assistant-client
-   ```
+4. Force button press to trigger update check
 
 ### Update Failed
 
@@ -312,19 +251,41 @@ update_v1.2.3.zip
 **Solutions**:
 1. Check device logs:
    ```bash
-   sudo journalctl -u voice-assistant-client -n 100
+   sudo journalctl -u voice-assistant-client -n 100 | grep -i error
    ```
-2. Look for error messages in device_updates table:
+2. Look for error messages in database:
    ```sql
    SELECT error_message FROM device_updates 
    WHERE device_id = 'DEVICE_ID' AND status = 'failed'
    ORDER BY created_at DESC LIMIT 1;
    ```
 3. Common issues:
-   - **Network timeout**: Increase timeout in `update_manager.py`
-   - **Insufficient disk space**: Clear `/tmp` directory
-   - **Permission errors**: Check systemd service has correct permissions
+   - **Network timeout**: Check internet connectivity
+   - **Insufficient disk space**: Run `df -h` on Pi
+   - **Permission errors**: Check systemd service permissions
    - **Package conflicts**: Review system_packages requirements
+
+### Device Shows as Offline
+
+**Symptoms**: Device status is "offline" in database but device is running
+
+**Solutions**:
+1. Check if heartbeat is working:
+   ```bash
+   sudo journalctl -u voice-assistant-client | grep -i heartbeat | tail -20
+   ```
+2. Verify server is reachable from device:
+   ```bash
+   curl -I http://your-server:8000/health
+   ```
+3. Check network connectivity:
+   ```bash
+   ping -c 3 google.com
+   ```
+4. Restart service to re-establish heartbeat:
+   ```bash
+   sudo systemctl restart voice-assistant-client
+   ```
 
 ### Update Stuck in "downloading"
 
@@ -337,69 +298,53 @@ update_v1.2.3.zip
    ```
 2. Verify Supabase Storage accessibility:
    ```bash
-   curl -I https://your-project.supabase.co/storage/v1/object/public/update-packages/updates/v1.2.3.zip
+   curl -I https://your-project.supabase.co/storage/v1/object/public/update-packages/
    ```
 3. Restart service to retry:
    ```bash
    sudo systemctl restart voice-assistant-client
    ```
 
-### Device UUID Lost
-
-**Symptoms**: Device re-registers with new UUID after update
-
-**Solutions**:
-- UUID is stored in `~/.javia_device_uuid` which persists across updates
-- If lost, device will generate new UUID (not ideal but functional)
-- Backup UUID file during manual maintenance:
-  ```bash
-  cp ~/.javia_device_uuid ~/.javia_device_uuid.backup
-  ```
-
-### Debugging Tips
-
-**Enable verbose logging**:
-```python
-# In pi_client/client.py, modify:
-logging.basicConfig(level=logging.DEBUG)
-```
-
-**Watch update process in real-time**:
-```bash
-sudo journalctl -u voice-assistant-client -f | grep -E "(UPDATE|OTA|device)"
-```
-
-**Query device status from database**:
-```python
-from supabase import create_client
-client = create_client('URL', 'SERVICE_KEY')
-result = client.table('device_updates').select('*, updates(*), devices(*)').eq('status', 'pending').execute()
-print(result.data)
-```
-
-**Manually trigger update (for testing)**:
-```bash
-# Set scheduled_for to past time
-# Device will apply update immediately
-```
-
-## Security Considerations
-
-1. **API Authentication**: All endpoints require valid API key
-2. **Supabase RLS**: Row-level security policies prevent unauthorized access
-3. **Update Verification**: Consider adding checksum verification to ZIP files
-4. **Service Role Key**: Keep `SUPABASE_SERVICE_KEY` secure (server-side only)
-5. **Network Security**: Use HTTPS for production deployments
-
 ## Best Practices
 
-1. **Version Naming**: Use semantic versioning (v1.2.3)
-2. **Test Updates**: Test on one device before rolling out to all
-3. **Gradual Rollout**: Use `target_devices` to update subset first
-4. **Backup Strategy**: Keep backups of working versions
-5. **Monitor Rollout**: Check device statuses after creating update
-6. **Update Frequency**: Scheduled updates preferred for non-critical changes
-7. **Documentation**: Document what changed in each version
+### Version Numbering
+
+Follow semantic versioning (vX.Y.Z):
+
+- **Patch (Z)**: Bug fixes, typos, minor changes
+  - Example: `v1.2.3` → `v1.2.4`
+  
+- **Minor (Y)**: New features, backward compatible
+  - Example: `v1.2.4` → `v1.3.0`
+  
+- **Major (X)**: Breaking changes, major refactoring
+  - Example: `v1.3.0` → `v2.0.0`
+
+### Testing Strategy
+
+1. **Development Testing**:
+   - Test update locally on development Pi
+   - Verify all functionality works post-update
+   - Check logs for errors
+
+2. **Staged Rollout** (optional):
+   - Use `target_devices` parameter to target specific devices
+   - Test on 1-2 production devices first
+   - Monitor for issues before full rollout
+
+3. **Monitoring**:
+   - Watch device status after pushing update
+   - Check for failed updates in database
+   - Review device logs for any issues
+
+### Update Best Practices
+
+1. **Test First**: Always test updates on dev device before production
+2. **Clear Descriptions**: Write detailed update descriptions
+3. **Version Incrementing**: Follow semantic versioning
+4. **Monitor Rollout**: Check device statuses after creating update
+5. **Keep Backups**: Keep previous versions available for rollback
+6. **Document Changes**: Note what changed in each version
 
 ## API Reference
 
@@ -410,16 +355,70 @@ print(result.data)
 - `GET /api/v1/devices/{uuid}` - Get device info
 - `GET /api/v1/devices/` - List all devices
 - `GET /api/v1/devices/{uuid}/updates/check` - Check for pending updates
-- `PATCH /api/v1/devices/{uuid}/status` - Update device status
 
 ### Update Endpoints
 
-- `POST /api/v1/updates/create` - Create new update
+- `POST /api/v1/updates/create` - Create new update (push to all devices)
 - `GET /api/v1/updates/{id}/download` - Download update package
 - `POST /api/v1/updates/{id}/status` - Report update status
 - `GET /api/v1/updates/` - List all updates
 
 All endpoints require `X-API-Key` header for authentication.
+
+## Security Considerations
+
+1. **API Authentication**: All endpoints require valid API key
+2. **Supabase RLS**: Row-level security policies prevent unauthorized access
+3. **Private Storage**: Update packages stored in private Supabase bucket
+4. **Service Role Key**: Keep `SUPABASE_SERVICE_KEY` secure (server-side only)
+5. **Network Security**: Use HTTPS for production deployments
+6. **Device Authentication**: Devices authenticate via unique UUID7
+
+## System Architecture
+
+```
+┌─────────────────┐
+│  Admin Creates  │
+│     Update      │
+└────────┬────────┘
+         │
+         v
+┌─────────────────┐
+│  Server Uploads │
+│  to Supabase    │
+└────────┬────────┘
+         │
+         v
+┌─────────────────────────────┐
+│  Creates device_updates     │
+│  for ALL registered devices │
+└────────┬────────────────────┘
+         │
+         v
+┌─────────────────────────────┐
+│  Pi Client: Button Press    │
+└────────┬────────────────────┘
+         │
+         v
+┌─────────────────────────────┐
+│  Check for updates (API)    │
+└────────┬────────────────────┘
+         │
+    ┌────┴────┐
+    │         │
+    v         v
+ Update    No Update
+ Found     Found
+    │         │
+    v         │
+ Download     │
+ Install      │
+ Restart      │
+    │         │
+    └────┬────┘
+         v
+   Process Query
+```
 
 ## Future Enhancements
 
@@ -428,7 +427,6 @@ All endpoints require `X-API-Key` header for authentication.
 - [ ] Staged rollouts (percentage-based)
 - [ ] Update scheduling UI
 - [ ] Notification system for failed updates
-- [ ] Automatic version bumping
 - [ ] Delta updates (only changed files)
-- [ ] Update approval workflow
+- [ ] Checksum verification for packages
 

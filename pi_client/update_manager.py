@@ -1,20 +1,16 @@
-"""Update manager for OTA updates with Supabase real-time listener"""
+"""Update manager for OTA updates - simplified for immediate updates"""
 import logging
 import os
 import shutil
 import subprocess
 import sys
-import threading
-import time
 import tempfile
 import zipfile
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 import requests
-import pytz
-from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +19,13 @@ INSTALL_DIR = Path.home() / "javia_client"
 
 
 class UpdateManager:
-    """Manages OTA updates with Supabase real-time subscription"""
+    """Manages OTA updates - applies updates immediately when detected"""
     
     def __init__(
         self,
         server_url: str,
         api_key: Optional[str],
-        device_uuid: str,
-        timezone_str: str,
-        activity_tracker,
-        supabase_url: str,
-        supabase_key: str
+        device_uuid: str
     ):
         """
         Initialize update manager.
@@ -42,124 +34,24 @@ class UpdateManager:
             server_url: Server URL
             api_key: Optional API key for admin operations (not used for device auth)
             device_uuid: Device UUID
-            timezone_str: Device timezone string
-            activity_tracker: ActivityTracker instance
-            supabase_url: Supabase project URL
-            supabase_key: Supabase anon key
         """
         self.server_url = server_url.rstrip('/')
         self.api_key = api_key  # Optional - only needed for admin operations
         self.device_uuid = device_uuid
-        self.timezone_str = timezone_str
-        self.activity_tracker = activity_tracker
-        
-        # Initialize Supabase client
-        self.supabase: Client = create_client(supabase_url, supabase_key)
         
         # Update state
-        self.pending_update: Optional[Dict[str, Any]] = None
         self.update_in_progress = False
-        
-        # Background thread
-        self._running = False
-        self._thread: Optional[threading.Thread] = None
         
         logger.info("Update manager initialized")
     
-    def start(self):
-        """Start the update manager background thread"""
-        if self._running:
-            logger.warning("Update manager already running")
-            return
+    def check_for_update(self) -> Optional[Dict[str, Any]]:
+        """
+        Check if there's a pending update for this device.
+        Called on-demand (before processing queries).
         
-        self._running = True
-        self._thread = threading.Thread(target=self._run_update_loop, daemon=True)
-        self._thread.start()
-        logger.info("Update manager started")
-    
-    def stop(self):
-        """Stop the update manager"""
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=5)
-        logger.info("Update manager stopped")
-    
-    def _run_update_loop(self):
-        """Background thread that checks for updates and applies them"""
-        # Subscribe to device_updates table changes
-        self._setup_realtime_subscription()
-        
-        while self._running:
-            try:
-                # Check if we have a pending update
-                if self.pending_update and not self.update_in_progress:
-                    self._process_pending_update()
-                
-                # Sleep for a bit
-                time.sleep(30)  # Check every 30 seconds
-                
-            except Exception as e:
-                logger.error(f"Error in update loop: {e}")
-                time.sleep(60)  # Wait longer on error
-    
-    def _setup_realtime_subscription(self):
-        """Set up Supabase real-time subscription for device updates"""
-        try:
-            # Get device_id from device_uuid
-            device_result = self.supabase.table("devices").select("id").eq("device_uuid", self.device_uuid).execute()
-            
-            if not device_result.data:
-                logger.warning(f"Device not found in database: {self.device_uuid}")
-                return
-            
-            device_id = device_result.data[0]["id"]
-            
-            # Subscribe to device_updates table
-            def handle_update(payload):
-                """Handle real-time update notification"""
-                try:
-                    logger.info(f"Received real-time update: {payload}")
-                    
-                    # Check if this is for our device and status is pending
-                    data = payload.get("record", {})
-                    if data.get("device_id") == device_id and data.get("status") == "pending":
-                        # Fetch full update details
-                        self._fetch_pending_update()
-                except Exception as e:
-                    logger.error(f"Error handling real-time update: {e}")
-            
-            # Set up subscription
-            # Note: The realtime library API may vary. This is a simplified version.
-            # In production, you may need to use the actual Supabase realtime API
-            logger.info(f"Setting up real-time subscription for device_id: {device_id}")
-            
-            # For now, we'll use polling as a fallback
-            # The Supabase Python client's realtime is still evolving
-            self._start_polling_for_updates()
-            
-        except Exception as e:
-            logger.error(f"Failed to setup real-time subscription: {e}")
-            # Fall back to polling
-            self._start_polling_for_updates()
-    
-    def _start_polling_for_updates(self):
-        """Poll server for updates (fallback if real-time doesn't work)"""
-        def poll_loop():
-            while self._running:
-                try:
-                    # Check for updates every 5 minutes
-                    time.sleep(300)
-                    if not self.pending_update:
-                        self._fetch_pending_update()
-                except Exception as e:
-                    logger.error(f"Error in polling loop: {e}")
-        
-        poll_thread = threading.Thread(target=poll_loop, daemon=True)
-        poll_thread.start()
-        logger.info("Started polling for updates (fallback mode)")
-    
-    def _fetch_pending_update(self):
-        """Fetch pending update from server"""
+        Returns:
+            Update info dict if update available, None otherwise
+        """
         try:
             url = f"{self.server_url}/api/v1/devices/{self.device_uuid}/updates/check"
             headers = {"X-API-Key": self.api_key}
@@ -169,64 +61,40 @@ class UpdateManager:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("update_available"):
-                    self.pending_update = data
-                    logger.info(f"Pending update detected: {data.get('latest_version')}")
+                    logger.info(f"Update available: {data.get('latest_version')}")
+                    return data
                 else:
-                    self.pending_update = None
+                    logger.debug("No updates available")
+                    return None
             else:
-                logger.warning(f"Failed to check for updates: {response.status_code}")
+                logger.warning(f"Update check failed: {response.status_code}")
+                return None
+                
         except Exception as e:
-            logger.error(f"Failed to fetch pending update: {e}")
+            logger.warning(f"Failed to check for updates: {e}")
+            return None
     
-    def _process_pending_update(self):
-        """Process a pending update based on type and schedule"""
-        try:
-            if not self.pending_update:
-                return
-            
-            update_info = self.pending_update.get("update_info", {})
-            device_update = self.pending_update.get("device_update", {})
-            
-            update_type = update_info.get("update_type", "scheduled")
-            scheduled_for_str = device_update.get("scheduled_for")
-            
-            # Determine if we should apply the update now
-            should_apply = False
-            
-            if update_type == "instant":
-                # Instant update: apply immediately (device was online in last 5 minutes)
-                logger.info("Instant update detected: applying immediately")
-                should_apply = True
-            elif update_type == "urgent":
-                # Urgent update: wait for 1 hour of inactivity
-                if self.activity_tracker.is_inactive_for(3600):  # 1 hour = 3600 seconds
-                    logger.info("Urgent update ready: device inactive for 1 hour")
-                    should_apply = True
-                else:
-                    inactivity = self.activity_tracker.get_inactivity_duration_seconds()
-                    logger.debug(f"Waiting for inactivity: {inactivity:.0f}s / 3600s")
-            else:
-                # Scheduled update: check if it's time (2 AM local time)
-                if scheduled_for_str:
-                    scheduled_for = datetime.fromisoformat(scheduled_for_str.replace('Z', '+00:00'))
-                    now = datetime.now(timezone.utc)
-                    
-                    if now >= scheduled_for:
-                        logger.info("Scheduled update ready: time has arrived")
-                        should_apply = True
-                    else:
-                        time_diff = (scheduled_for - now).total_seconds()
-                        logger.debug(f"Waiting for scheduled time: {time_diff:.0f}s remaining")
-            
-            # Apply update if ready
-            if should_apply:
-                self._apply_update()
+    def apply_update_if_available(self) -> bool:
+        """
+        Check for updates and apply immediately if available.
         
-        except Exception as e:
-            logger.error(f"Error processing pending update: {e}")
+        Returns:
+            True if update was applied (device will restart), False otherwise
+        """
+        update_data = self.check_for_update()
+        if update_data:
+            logger.info("Applying update immediately...")
+            self._apply_update(update_data)
+            return True  # Note: This won't actually return as device will restart
+        return False
     
-    def _apply_update(self):
-        """Download and apply the update"""
+    def _apply_update(self, update_data: Dict[str, Any]):
+        """
+        Download and apply the update immediately.
+        
+        Args:
+            update_data: Update information from check_for_update()
+        """
         if self.update_in_progress:
             logger.warning("Update already in progress")
             return
@@ -235,8 +103,7 @@ class UpdateManager:
             self.update_in_progress = True
             logger.info("Starting update process...")
             
-            update_info = self.pending_update.get("update_info", {})
-            device_update = self.pending_update.get("device_update", {})
+            update_info = update_data.get("update_info", {})
             
             update_id = update_info.get("id")
             version = update_info.get("version")
@@ -263,17 +130,14 @@ class UpdateManager:
             
             logger.info(f"Update {version} completed successfully")
             
-            # Clear pending update
-            self.pending_update = None
-            
             # Restart service after successful update
             self._restart_service()
             
         except Exception as e:
             logger.error(f"Update failed: {e}")
             # Report failure
-            if self.pending_update:
-                update_id = self.pending_update.get("update_info", {}).get("id")
+            if update_data:
+                update_id = update_data.get("update_info", {}).get("id")
                 self._report_status(update_id, "failed", error_message=str(e))
             
             self.update_in_progress = False

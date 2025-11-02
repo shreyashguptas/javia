@@ -80,21 +80,13 @@ def setup():
         config.heartbeat_manager.start()
         print("[INIT] ✓ Heartbeat manager started (5-minute interval)")
         
-        # Initialize update manager if Supabase is configured
-        if config.SUPABASE_URL and config.SUPABASE_KEY:
-            config.update_manager = UpdateManager(
-                server_url=config.SERVER_URL,
-                api_key=None,  # Not needed - device authentication uses device UUID
-                device_uuid=config.device_manager.get_device_uuid(),
-                timezone_str=config.DEVICE_TIMEZONE,
-                activity_tracker=config.activity_tracker,
-                supabase_url=config.SUPABASE_URL,
-                supabase_key=config.SUPABASE_KEY
-            )
-            config.update_manager.start()
-            print("[INIT] ✓ Update manager started (OTA updates enabled)")
-        else:
-            print("[INIT] ℹ Supabase not configured - OTA updates disabled")
+        # Initialize update manager
+        config.update_manager = UpdateManager(
+            server_url=config.SERVER_URL,
+            api_key=None,  # Not needed - device authentication uses device UUID
+            device_uuid=config.device_manager.get_device_uuid()
+        )
+        print("[INIT] ✓ Update manager initialized (OTA updates enabled)")
     except Exception as e:
         print(f"[INIT] ⚠️  OTA system initialization failed: {e}")
         print("[INIT] Continuing without OTA updates...")
@@ -174,13 +166,27 @@ def main():
         # Setup all components
         gpio_manager, beep_generator, audio_player, api_client = setup()
         
-        print("\n[INFO] Voice assistant ready. OTA updates running in background.")
-        print("[INFO] Heartbeat: Sending status ping every 5 minutes")
-        print("[INFO] Updates: Instant (if online), Nightly at 2 AM, or Urgent after 1 hour inactivity\n")
+        print("\n[INFO] Voice assistant ready. Heartbeat sends ping every 5 minutes.")
+        print("[INFO] Updates: Applied immediately before processing each query\n")
         
         while True:
             # Wait for button press
             gpio_manager.wait_for_button_press()
+            
+            # Check for updates BEFORE processing query (mandatory)
+            if hasattr(config, 'update_manager') and config.update_manager:
+                try:
+                    print("\n[UPDATE CHECK] Checking for updates...")
+                    if config.update_manager.apply_update_if_available():
+                        # Update is being applied, device will restart
+                        print("[UPDATE] Update detected! Installing now...")
+                        print("[UPDATE] Device will restart automatically...")
+                        # This code won't be reached as device will restart
+                        sys.exit(0)
+                    print("[UPDATE CHECK] ✓ No updates available\n")
+                except Exception as e:
+                    print(f"[UPDATE CHECK] ⚠️  Update check failed: {e}")
+                    print("[UPDATE CHECK] Continuing with query processing...\n")
             
             # Play start beep
             beep_generator.play_beep_async(config.START_BEEP_FILE, "start")
@@ -226,11 +232,6 @@ def main():
         if hasattr(config, 'heartbeat_manager') and config.heartbeat_manager:
             config.heartbeat_manager.stop()
             print("[EXIT] Heartbeat manager stopped")
-        
-        # Stop update manager
-        if hasattr(config, 'update_manager') and config.update_manager:
-            config.update_manager.stop()
-            print("[EXIT] Update manager stopped")
         
         # Close GPIO devices
         gpio_manager.cleanup()

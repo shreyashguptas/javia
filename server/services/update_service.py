@@ -3,7 +3,7 @@ import logging
 import zipfile
 import json
 import shutil
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from uuid import UUID
@@ -32,7 +32,7 @@ async def create_update(
     package_path: Optional[Path] = None
 ) -> UpdateResponse:
     """
-    Create a new update and schedule it for devices.
+    Create a new update and schedule it for ALL devices immediately.
     
     Args:
         request: Update creation request
@@ -79,7 +79,6 @@ async def create_update(
         insert_data = {
             "version": request.version,
             "description": request.description,
-            "update_type": request.update_type,
             "package_url": package_url,
             "requires_system_packages": request.requires_system_packages,
             "system_packages": request.system_packages
@@ -87,12 +86,11 @@ async def create_update(
         
         created = supabase.table("updates").insert(insert_data).execute()
         update_data = created.data[0]
-        logger.info(f"Created update: {request.version} (type: {request.update_type})")
+        logger.info(f"Created update: {request.version}")
         
-        # Schedule update for devices
+        # Schedule update for devices (all devices, immediately)
         await schedule_update_for_devices(
             update_id=update_data["id"],
-            update_type=request.update_type,
             target_devices=request.target_devices
         )
         
@@ -107,15 +105,13 @@ async def create_update(
 
 async def schedule_update_for_devices(
     update_id: str,
-    update_type: str,
     target_devices: Optional[List[str]] = None
 ) -> int:
     """
-    Schedule an update for devices.
+    Schedule an update for ALL devices immediately.
     
     Args:
         update_id: Update UUID
-        update_type: Type of update (scheduled, urgent, or instant)
         target_devices: Optional list of device UUIDs to target (None = all devices)
         
     Returns:
@@ -129,9 +125,9 @@ async def schedule_update_for_devices(
         
         # Get target devices
         if target_devices:
-            devices_query = supabase.table("devices").select("id, device_uuid, timezone, last_seen").in_("device_uuid", target_devices)
+            devices_query = supabase.table("devices").select("id, device_uuid").in_("device_uuid", target_devices)
         else:
-            devices_query = supabase.table("devices").select("id, device_uuid, timezone, last_seen")
+            devices_query = supabase.table("devices").select("id, device_uuid")
         
         devices_result = devices_query.execute()
         
@@ -139,55 +135,19 @@ async def schedule_update_for_devices(
             logger.warning("No devices found to schedule update for")
             return 0
         
-        # Calculate scheduled_for time based on update type
+        # Create device_updates for ALL devices with status=pending
         device_updates = []
-        now = datetime.now(timezone.utc)
-        
         for device in devices_result.data:
-            # For instant updates, only include devices that were online in the last 5 minutes
-            if update_type == "instant":
-                last_seen_str = device.get("last_seen")
-                if last_seen_str:
-                    last_seen = datetime.fromisoformat(last_seen_str.replace('Z', '+00:00'))
-                    time_since_seen = (now - last_seen).total_seconds()
-                    
-                    # Skip devices not seen in the last 5 minutes
-                    if time_since_seen > 300:  # 300 seconds = 5 minutes
-                        logger.debug(f"Skipping device {device['device_uuid']} for instant update (last seen {time_since_seen:.0f}s ago)")
-                        continue
-                else:
-                    # No last_seen timestamp, skip this device
-                    logger.debug(f"Skipping device {device['device_uuid']} for instant update (no last_seen)")
-                    continue
-                
-                # Instant update: schedule immediately
-                scheduled_for = now
-            elif update_type == "urgent":
-                # Urgent updates: schedule for 1 hour from now (device will apply after inactivity)
-                scheduled_for = now + timedelta(hours=1)
-            else:
-                # Scheduled updates: schedule for 2 AM in device's timezone (next occurrence)
-                # For simplicity, we'll schedule for 2 AM UTC today/tomorrow
-                # The device will handle timezone conversion locally
-                scheduled_for = now.replace(hour=2, minute=0, second=0, microsecond=0)
-                
-                # If 2 AM has already passed today, schedule for tomorrow
-                if scheduled_for <= now:
-                    scheduled_for += timedelta(days=1)
-            
             device_updates.append({
                 "device_id": device["id"],
                 "update_id": update_id,
-                "status": "pending",
-                "scheduled_for": scheduled_for.isoformat()
+                "status": "pending"
             })
         
         # Insert device_updates
         if device_updates:
             supabase.table("device_updates").insert(device_updates).execute()
-            logger.info(f"Scheduled {update_type} update for {len(device_updates)} devices")
-        else:
-            logger.warning(f"No eligible devices for {update_type} update")
+            logger.info(f"Scheduled update for {len(device_updates)} devices (all will update immediately)")
         
         return len(device_updates)
         
@@ -300,8 +260,7 @@ async def check_for_updates(device_uuid: str) -> UpdateCheckResponse:
                 update_info=UpdateResponse(**update_info),
                 device_update=DeviceUpdateResponse(
                     **{k: v for k, v in device_update.items() if k != "updates"},
-                    update_version=update_info["version"],
-                    update_type=update_info["update_type"]
+                    update_version=update_info["version"]
                 )
             )
         else:

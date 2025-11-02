@@ -51,7 +51,6 @@ class CreateUpdateRequest(BaseModel):
     """Request model for creating a new update"""
     version: str = Field(..., description="Version string (e.g., 'v1.2.3')")
     description: str = Field(..., description="Description of what's in this update")
-    update_type: str = Field(default="scheduled", description="Update type: 'scheduled' or 'urgent'")
     requires_system_packages: bool = Field(default=False, description="Whether this update requires apt packages")
     system_packages: List[str] = Field(default_factory=list, description="List of apt packages to install")
     target_devices: Optional[List[str]] = Field(None, description="Optional list of device UUIDs to target (None = all devices)")
@@ -62,7 +61,6 @@ class UpdateResponse(BaseModel):
     id: UUID
     version: str
     created_at: datetime
-    update_type: str
     description: str
     package_url: Optional[str]
     requires_system_packages: bool
@@ -84,14 +82,12 @@ class DeviceUpdateResponse(BaseModel):
     device_id: UUID
     update_id: UUID
     status: str
-    scheduled_for: Optional[datetime]
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     error_message: Optional[str]
     
     # Include related update info for convenience
     update_version: Optional[str] = None
-    update_type: Optional[str] = None
 
 
 class UpdateCheckResponse(BaseModel):

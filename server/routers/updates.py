@@ -35,24 +35,23 @@ router = APIRouter(
 async def create_update_endpoint(
     version: str = Form(...),
     description: str = Form(...),
-    update_type: str = Form("scheduled"),
     requires_system_packages: bool = Form(False),
     system_packages: str = Form("[]"),  # JSON string array
     target_devices: Optional[str] = Form(None),  # JSON string array or None
     package: Optional[UploadFile] = File(None)
 ):
     """
-    Create a new update and schedule it for devices.
+    Create a new update and push it to ALL devices immediately.
     
     This is an admin endpoint used to push new updates to devices.
     The update package (ZIP file) should contain the updated Pi client code.
+    All registered devices will receive the update immediately.
     
     **Authentication**: Requires valid API key
     
     **Form Data**:
     - `version`: Version string (e.g., 'v1.2.3')
     - `description`: Description of what's in this update
-    - `update_type`: Update type ('scheduled' or 'urgent')
     - `requires_system_packages`: Whether this update requires apt packages
     - `system_packages`: JSON string array of apt packages to install
     - `target_devices`: Optional JSON string array of device UUIDs (None = all devices)
@@ -72,7 +71,6 @@ async def create_update_endpoint(
         request = CreateUpdateRequest(
             version=version,
             description=description,
-            update_type=update_type,
             requires_system_packages=requires_system_packages,
             system_packages=system_packages_list,
             target_devices=target_devices_list
@@ -94,7 +92,7 @@ async def create_update_endpoint(
         if package_path and package_path.exists():
             package_path.unlink()
         
-        logger.info(f"Update created: {version} ({update_type})")
+        logger.info(f"Update created: {version}")
         return update
         
     except json.JSONDecodeError as e:
