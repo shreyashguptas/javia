@@ -438,9 +438,6 @@ EOF
 
 echo "    ✓ Metadata file created"
 
-# Copy metadata to package
-cp "$METADATA_FILE" "$TEMP_DIR/update_metadata.json"
-
 # Create ZIP package
 if [ "$USE_TEMP_CLONE" = true ]; then
     echo "[5/7] Creating ZIP package..."
