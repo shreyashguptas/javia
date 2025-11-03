@@ -16,36 +16,11 @@ from audio.hardware_detect import is_googlevoicehat, get_alsa_device_name
 logger = logging.getLogger(__name__)
 
 
-# ==================== ALSA MIXER CONTROL ====================
-
-def ensure_capture_volume():
-    """
-    Ensure ALSA capture volume is set to maximum for I2S microphones.
-    
-    I2S microphones like INMP441 don't have hardware volume control,
-    but ALSA mixer settings can affect the recording level.
-    """
-    try:
-        # Try to set capture volume to 100% using amixer
-        result = subprocess.run(
-            ['amixer', 'sset', 'Capture', '100%'],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
-        
-        if result.returncode == 0:
-            logger.info("[AUDIO] ✓ Set capture volume to 100%")
-        else:
-            # Capture control might not exist - that's okay for some drivers
-            logger.debug("[AUDIO] Capture volume control not available (this is normal for I2S mics)")
-    except FileNotFoundError:
-        logger.debug("[AUDIO] amixer not found (okay for direct I2S recording)")
-    except Exception as e:
-        logger.debug(f"[AUDIO] Could not set capture volume: {e}")
-
-
 # ==================== AUDIO RECORDING ====================
+
+# Note: ALSA mixer controls are NOT used for I2S microphones (INMP441)
+# I2S devices have fixed hardware gain, no software mixer control needed
+# Any ALSA mixer manipulation can actually REDUCE recording quality
 
 class StreamingAudioRecorder:
     """
@@ -172,9 +147,6 @@ def record_audio_with_arecord(gpio_manager):
     process = None
     
     try:
-        # Ensure capture volume is set correctly
-        ensure_capture_volume()
-        
         # Get ALSA device name from hardware detection
         device_name_original = get_alsa_device_name()
         device_name = device_name_original
