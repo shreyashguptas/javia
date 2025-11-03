@@ -38,7 +38,7 @@ AMPLIFIER_SD_PIN = int(os.getenv('AMPLIFIER_SD_PIN', '27'))
 SAMPLE_RATE = int(os.getenv('SAMPLE_RATE', '48000'))
 CHANNELS = 1
 CHUNK_SIZE = 512  # Reduced from 1024 for lower latency (5.3ms vs 10.6ms per chunk)
-MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))  # 2.0x gain reaches ~100% of max (perfect for Whisper)
+MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '1.0'))  # No gain needed - INMP441 outputs 70-80% signal naturally
 FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
 
 # ==================== VOLUME CONFIGURATION ====================
