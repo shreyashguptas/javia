@@ -4,7 +4,7 @@
 
 ### Required Hardware
 - **Raspberry Pi 5** - High-performance quad-core ARM Cortex-A76 with 40-pin GPIO header
-- **INMP441 MEMS Microphone** - I2S digital microphone (24-bit, up to 64kHz)
+- **2x INMP441 MEMS Microphones** - I2S digital microphones (24-bit, up to 64kHz) for stereo recording
 - **MAX98357A I2S Amplifier** - 3W Class D amplifier with built-in DAC
 - **3W 4Ω Speaker** - Connected to MAX98357A output terminals
 - **KY-040 Rotary Encoder** - Rotary encoder with push button (for volume control and push-to-talk)
@@ -19,17 +19,39 @@
 - Then connect ALL component grounds to the **breadboard negative rail**
 - The breadboard distributes ground to all components
 
-### INMP441 Microphone to Raspberry Pi
+### Dual INMP441 Microphones to Raspberry Pi (Stereo Setup)
+
+**CRITICAL**: Both microphones share the same I2S clock and data pins. The L/R pin determines which channel (left/right) each microphone uses.
+
+#### INMP441 Microphone #1 (Left Channel)
 ```
-INMP441 Pin  →  Connection
+INMP441 #1 Pin  →  Connection
 ─────────────────────────────────────────────────
-VDD          →  3.3V (Pi Pin 1 via breadboard+)
-GND          →  Ground (breadboard negative rail)
-SCK          →  GPIO18/PCM_CLK (Pi Pin 12) [DIRECT]
-WS           →  GPIO19/PCM_FS (Pi Pin 35) [DIRECT]
-SD           →  GPIO20/PCM_DIN (Pi Pin 38) [DIRECT]
-L/R          →  Ground (breadboard negative rail) [for left channel]
+VDD             →  3.3V (Pi Pin 1 via breadboard+)
+GND             →  Ground (breadboard negative rail)
+SCK             →  GPIO18/PCM_CLK (Pi Pin 12) [DIRECT - shared with Mic #2]
+WS              →  GPIO19/PCM_FS (Pi Pin 35) [DIRECT - shared with Mic #2]
+SD              →  GPIO20/PCM_DIN (Pi Pin 38) [DIRECT - shared with Mic #2]
+L/R             →  Ground (breadboard negative rail) [LEFT channel select]
 ```
+
+#### INMP441 Microphone #2 (Right Channel)
+```
+INMP441 #2 Pin  →  Connection
+─────────────────────────────────────────────────
+VDD             →  3.3V (Pi Pin 1 via breadboard+)
+GND             →  Ground (breadboard negative rail)
+SCK             →  GPIO18/PCM_CLK (Pi Pin 12) [DIRECT - shared with Mic #1]
+WS              →  GPIO19/PCM_FS (Pi Pin 35) [DIRECT - shared with Mic #1]
+SD              →  GPIO20/PCM_DIN (Pi Pin 38) [DIRECT - shared with Mic #1]
+L/R             →  3.3V (Pi Pin 1 via breadboard+) [RIGHT channel select]
+```
+
+**Key Points:**
+- Both microphones share SCK, WS, and SD pins (I2S bus)
+- L/R pin determines which channel: GND = Left, 3.3V = Right
+- I2S protocol multiplexes both microphones on the same data line
+- Spacing between mics: 3-6cm recommended for optimal stereo separation
 
 ### MAX98357A Amplifier to Raspberry Pi
 ```
@@ -94,11 +116,11 @@ Pin 39 (GND)       ●○  Pin 40 (GPIO21/PCM_DOUT)
 - **Pin 6 (GND)** → Breadboard negative rail → Common ground for all components
 
 **I2S Shared Signals** (direct wire connections):
-- **Pin 12 (GPIO18/PCM_CLK)** → Microphone SCK & Amplifier BCLK [Shared]
-- **Pin 35 (GPIO19/PCM_FS)** → Microphone WS & Amplifier LRC [Shared]
+- **Pin 12 (GPIO18/PCM_CLK)** → Both Microphones SCK & Amplifier BCLK [Shared]
+- **Pin 35 (GPIO19/PCM_FS)** → Both Microphones WS & Amplifier LRC [Shared]
 
 **I2S Data Lines** (direct wire connections):
-- **Pin 38 (GPIO20/PCM_DIN)** → Microphone SD (data from mic to Pi)
+- **Pin 38 (GPIO20/PCM_DIN)** → Both Microphones SD (stereo data from mics to Pi)
 - **Pin 40 (GPIO21/PCM_DOUT)** → Amplifier DIN (data from Pi to amp)
 
 **Control Pins** (direct wire connections):
@@ -121,16 +143,32 @@ Pin 39 (GND)       ●○  Pin 40 (GPIO21/PCM_DOUT)
 - Pin 6 is chosen because it's adjacent to Pin 1 (3.3V), making breadboard wiring neat
 - You only need ONE ground connection - the breadboard distributes it
 
-### 2. INMP441 Microphone
-1. Insert INMP441 into breadboard
+### 2. Dual INMP441 Microphones (Stereo Setup)
+
+#### Microphone #1 (Left Channel)
+1. Insert INMP441 #1 into breadboard
 2. Connect **VDD** → breadboard **positive rail** (gets 3.3V)
 3. Connect **GND** → breadboard **negative rail** (common ground)
-4. Connect **L/R** → breadboard **negative rail** (configures left channel)
+4. Connect **L/R** → breadboard **negative rail** (LEFT channel: GND)
 5. Connect **SCK** → Pi **Pin 12 (GPIO18)** [DIRECT wire to Pi]
 6. Connect **WS** → Pi **Pin 35 (GPIO19)** [DIRECT wire to Pi]
 7. Connect **SD** → Pi **Pin 38 (GPIO20)** [DIRECT wire to Pi]
 
-**Wire types**: Steps 2-4 use breadboard, steps 5-7 are direct GPIO wires
+#### Microphone #2 (Right Channel)
+1. Insert INMP441 #2 into breadboard (space 3-6cm from Mic #1)
+2. Connect **VDD** → breadboard **positive rail** (gets 3.3V)
+3. Connect **GND** → breadboard **negative rail** (common ground)
+4. Connect **L/R** → breadboard **positive rail** (RIGHT channel: 3.3V)
+5. Connect **SCK** → Pi **Pin 12 (GPIO18)** [DIRECT wire to Pi - shared with Mic #1]
+6. Connect **WS** → Pi **Pin 35 (GPIO19)** [DIRECT wire to Pi - shared with Mic #1]
+7. Connect **SD** → Pi **Pin 38 (GPIO20)** [DIRECT wire to Pi - shared with Mic #1]
+
+**Critical Notes:**
+- **L/R Pin Determines Channel**: Mic #1 L/R→GND (left), Mic #2 L/R→3.3V (right)
+- **Shared I2S Bus**: Both mics connect to the same SCK, WS, and SD pins
+- **Wire Types**: Steps 2-4 use breadboard rails, steps 5-7 are direct GPIO wires
+- **Microphone Spacing**: Position 3-6cm apart for optimal stereo separation
+- **Orientation**: Point both microphones in the same direction (sound ports aligned)
 
 ### 3. MAX98357A Amplifier
 1. Insert MAX98357A into breadboard
@@ -168,7 +206,7 @@ Pin 39 (GND)       ●○  Pin 40 (GPIO21/PCM_DOUT)
 
 ### Component Power Draw
 - **Raspberry Pi 5**: ~4-8W typical, up to 12W peak (significantly higher than Pi Zero)
-- **INMP441 Microphone**: ~4.6mW (1.4mA @ 3.3V)
+- **2x INMP441 Microphones**: ~9.2mW total (2.8mA @ 3.3V for both)
 - **MAX98357A Idle**: ~165mW (50mA @ 3.3V)
 - **MAX98357A Active**: Up to 3W when playing audio
 - **KY-040 Rotary Encoder**: ~1.65mW (0.5mA @ 3.3V)
@@ -188,14 +226,17 @@ Pin 39 (GND)       ●○  Pin 40 (GPIO21/PCM_DOUT)
 
 ## Hardware Notes
 
-### INMP441 Microphone
+### INMP441 Microphone (Dual Setup)
 - **Type**: MEMS omnidirectional microphone
 - **Interface**: I2S digital output
 - **Resolution**: 24-bit
-- **Sample Rate**: Up to 64kHz (we use 48kHz)
+- **Sample Rate**: Up to 64kHz (we use 48kHz stereo)
 - **SNR**: 61dB
 - **Sensitivity**: -26dBFS
-- **Power**: 3.3V, 1.4mA
+- **Power**: 3.3V, 1.4mA per microphone (2.8mA total for both)
+- **Configuration**: Stereo pair (L/R channel select via L/R pin)
+- **Channel Select**: L/R pin LOW = Left channel, L/R pin HIGH = Right channel
+- **Benefits**: Stereo recording, spatial audio, better noise rejection, beamforming capability
 
 ### MAX98357A Amplifier
 - **Type**: Class D amplifier with integrated DAC
@@ -247,8 +288,10 @@ The software driver `googlevoicehat-soundcard` is used because:
 Before first power-on:
 - [ ] All power connections verified (3.3V and GND)
 - [ ] No short circuits between power rails
-- [ ] GPIO18/19 shared correctly between mic and amp
-- [ ] GPIO20 connected to microphone SD pin
+- [ ] GPIO18/19 shared correctly between both mics and amp
+- [ ] GPIO20 connected to both microphone SD pins
+- [ ] **CRITICAL**: Mic #1 L/R → GND, Mic #2 L/R → 3.3V
+- [ ] Both microphones spaced 3-6cm apart
 - [ ] GPIO21 connected to amplifier DIN pin
 - [ ] GPIO27 connected to amplifier SD pin
 - [ ] Speaker connected to amplifier output
@@ -257,7 +300,7 @@ Before first power-on:
 - [ ] Rotary encoder SW connected to GPIO17
 - [ ] Rotary encoder + connected to 3.3V (via breadboard)
 - [ ] Rotary encoder - connected to GND (via breadboard)
-- [ ] Power supply is 3A or higher
+- [ ] Power supply is 5A (27W recommended for Pi 5)
 
 After power-on:
 - [ ] Pi boots successfully
@@ -267,12 +310,15 @@ After power-on:
 
 ## Troubleshooting Hardware
 
-### Microphone Not Detected
+### Microphones Not Detected or Only One Channel Working
 **Check:**
-1. 3.3V power at INMP441 VDD pin
-2. All I2S signal connections (SCK, WS, SD)
-3. L/R pin connected to GND
-4. No loose breadboard connections
+1. 3.3V power at both INMP441 VDD pins
+2. All I2S signal connections (SCK, WS, SD) to both microphones
+3. **CRITICAL**: Mic #1 L/R pin → GND (left channel), Mic #2 L/R pin → 3.3V (right channel)
+4. Both microphones SD pins connected to Pi Pin 38 (GPIO20)
+5. No loose breadboard connections
+6. Test with: `arecord -D plughw:CARD=sndrpigooglevoi,DEV=0 -f S16_LE -r 48000 -c 2 test.wav`
+7. Check stereo recording: `aplay test.wav` and verify both channels have audio
 
 ### Speaker Not Working
 **Check:**
@@ -313,18 +359,22 @@ After power-on:
 RASPBERRY PI 5                 BREADBOARD                    COMPONENTS
 ═════════════                  ══════════                    ══════════
 
-Pin 1 (3.3V) ────────────────► Positive Rail ──┬──────────► INMP441 VDD
+Pin 1 (3.3V) ────────────────► Positive Rail ──┬──────────► INMP441 #1 VDD
+                                                ├──────────► INMP441 #2 VDD
+                                                ├──────────► INMP441 #2 L/R (Right channel)
                                                 ├──────────► MAX98357A VDD
                                                 └──────────► Rotary Encoder +
 
-Pin 6 (GND) ─────────────────► Negative Rail ──┬──────────► INMP441 GND
-                                                ├──────────► INMP441 L/R
+Pin 6 (GND) ─────────────────► Negative Rail ──┬──────────► INMP441 #1 GND
+                                                ├──────────► INMP441 #1 L/R (Left channel)
+                                                ├──────────► INMP441 #2 GND
                                                 ├──────────► MAX98357A GND
                                                 └──────────► Rotary Encoder -
 
 Pin 11 (GPIO17) ──────────────────────────────────────────► Rotary Encoder SW
 
-Pin 12 (GPIO18) ──┬────────────────────────────────────────► INMP441 SCK
+Pin 12 (GPIO18) ──┬────────────────────────────────────────► INMP441 #1 SCK
+                  ├────────────────────────────────────────► INMP441 #2 SCK
                   └────────────────────────────────────────► MAX98357A BCLK
 
 Pin 13 (GPIO27) ──────────────────────────────────────────► MAX98357A SD
@@ -333,10 +383,12 @@ Pin 15 (GPIO22) ─────────────────────�
 
 Pin 16 (GPIO23) ──────────────────────────────────────────► Rotary Encoder DT
 
-Pin 35 (GPIO19) ──┬────────────────────────────────────────► INMP441 WS
+Pin 35 (GPIO19) ──┬────────────────────────────────────────► INMP441 #1 WS
+                  ├────────────────────────────────────────► INMP441 #2 WS
                   └────────────────────────────────────────► MAX98357A LRC
 
-Pin 38 (GPIO20) ──────────────────────────────────────────► INMP441 SD
+Pin 38 (GPIO20) ──┬────────────────────────────────────────► INMP441 #1 SD
+                  └────────────────────────────────────────► INMP441 #2 SD
 
 Pin 40 (GPIO21) ──────────────────────────────────────────► MAX98357A DIN
 
@@ -347,23 +399,36 @@ MAX98357A OUT- ─────────────────────�
 
 ### Wire Count Summary
 - **2 wires**: Pi → Breadboard (3.3V and GND)
-- **7 wires**: Breadboard → Components (power and ground distribution)
-- **10 wires**: Pi GPIO → Components (direct signal wires)
+- **10 wires**: Breadboard → Components (power and ground distribution)
+- **13 wires**: Pi GPIO → Components (direct signal wires - 3 shared I2S pins each have 3 connections)
 - **2 wires**: Amplifier → Speaker
-- **Total: 21 wires**
+- **Total: 27 wires**
 
 ### Ground Distribution Explained
 ```
 Pi Pin 6 (GND)
       ↓
-Breadboard Negative Rail (distributes to 4 connections)
-      ├─→ INMP441 GND
-      ├─→ INMP441 L/R
+Breadboard Negative Rail (distributes to 6 connections)
+      ├─→ INMP441 #1 GND
+      ├─→ INMP441 #1 L/R (Left channel select)
+      ├─→ INMP441 #2 GND
       ├─→ MAX98357A GND
       └─→ Rotary Encoder GND (-)
 ```
 
-**Key Point**: Only ONE wire goes from Pi to breadboard ground. The breadboard then distributes ground to all four components that need it.
+**Key Point**: Only ONE wire goes from Pi to breadboard ground. The breadboard then distributes ground to all components that need it.
+
+### Power (3.3V) Distribution Explained
+```
+Pi Pin 1 (3.3V)
+      ↓
+Breadboard Positive Rail (distributes to 5 connections)
+      ├─→ INMP441 #1 VDD
+      ├─→ INMP441 #2 VDD
+      ├─→ INMP441 #2 L/R (Right channel select)
+      ├─→ MAX98357A VDD
+      └─→ Rotary Encoder VCC (+)
+```
 
 ## Next Steps
 

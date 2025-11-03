@@ -165,7 +165,7 @@ def record_audio_with_arecord(gpio_manager, beep_generator):
                 '-D', device_name,              # ALSA device (hw: for I2S is more reliable)
                 '-f', 'S16_LE',                 # 16-bit signed little-endian
                 '-r', str(config.SAMPLE_RATE),  # 48000 Hz
-                '-c', str(config.CHANNELS),     # 1 channel (mono)
+                '-c', str(config.CHANNELS),     # 2 channels (stereo - dual INMP441 mics)
                 str(config.RECORDING_FILE)      # Output file
             ],
             stdout=subprocess.PIPE,
@@ -299,7 +299,7 @@ def record_audio_with_arecord(gpio_manager, beep_generator):
         duration = time.time() - start_time
         
         # Calculate expected minimum file size (at least 0.5 seconds of audio)
-        # 48000 Hz * 2 bytes/sample * 1 channel * 0.5 seconds = 48000 bytes minimum
+        # 48000 Hz * 2 bytes/sample * 2 channels * 0.5 seconds = 96000 bytes minimum
         expected_min_size = config.SAMPLE_RATE * 2 * config.CHANNELS * 0.5
         
         if file_size < expected_min_size:
