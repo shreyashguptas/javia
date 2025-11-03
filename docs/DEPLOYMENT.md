@@ -72,6 +72,7 @@ javia/                 # Git repository root
 - **Network**: Internet connection (public IP not required with Cloudflare Tunnel!)
 - **Ports**: No inbound ports need to be open (Cloudflare Tunnel uses outbound connections)
 - **Git**: Installed
+- **FFmpeg**: Required for audio compression (automatically installed by setup script)
 
 **Note:** With Cloudflare Tunnel, your server can be behind NAT/firewall and doesn't need a public IP address or open ports!
 
@@ -814,6 +815,22 @@ Common issues:
 - Missing environment variables in `.env`
 - Port 8000 already in use
 - Python dependencies not installed
+- **FFmpeg not installed** - Audio compression will fail with "No such file or directory: 'ffmpeg'"
+
+#### Audio Processing Errors
+
+If you see errors like "Audio compression failed: [Errno 2] No such file or directory: 'ffmpeg'":
+
+**Solution:**
+```bash
+# Install ffmpeg manually
+sudo apt update && sudo apt install ffmpeg
+
+# Restart the service
+sudo systemctl restart voice-assistant-server.service
+```
+
+**Note:** The deployment script should automatically install ffmpeg. If it didn't, you can install it manually as shown above.
 
 #### Nginx 502 Bad Gateway
 

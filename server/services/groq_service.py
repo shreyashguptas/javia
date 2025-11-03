@@ -34,6 +34,46 @@ class TTSError(GroqServiceError):
     pass
 
 
+def check_ffmpeg_available() -> bool:
+    """
+    Check if ffmpeg is available on the system.
+
+    Returns:
+        bool: True if ffmpeg is available, False otherwise
+    """
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["ffmpeg", "-version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+        return False
+
+
+def check_ffprobe_available() -> bool:
+    """
+    Check if ffprobe is available on the system.
+
+    Returns:
+        bool: True if ffprobe is available, False otherwise
+    """
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["ffprobe", "-version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+        return False
+
+
 def compress_audio_for_groq(audio_file_path: Path) -> Path:
     """
     Compress audio file to optimal format for Groq API while preserving stereo quality.
@@ -52,6 +92,14 @@ def compress_audio_for_groq(audio_file_path: Path) -> Path:
     """
     import subprocess
     import tempfile
+
+    # Check if ffmpeg is available
+    if not check_ffmpeg_available():
+        raise TranscriptionError(
+            "Audio compression failed: ffmpeg is not installed. "
+            "Please install ffmpeg on the server system. "
+            "Run: apt update && apt install ffmpeg"
+        )
 
     logger.info(f"Compressing audio for Groq API: {audio_file_path}")
 
@@ -113,6 +161,14 @@ def split_audio_into_chunks(audio_file_path: Path, max_chunk_size_mb: int = 45) 
     """
     import subprocess
     import tempfile
+
+    # Check if ffprobe is available
+    if not check_ffprobe_available():
+        raise TranscriptionError(
+            "Audio splitting failed: ffprobe is not installed. "
+            "Please install ffmpeg on the server system. "
+            "Run: apt update && apt install ffmpeg"
+        )
 
     logger.info(f"Splitting audio into chunks: {audio_file_path}")
 
