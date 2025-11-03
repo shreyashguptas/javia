@@ -6,12 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from fastapi.responses import FileResponse, StreamingResponse
 
 from middleware.auth import verify_api_key
+from middleware.device_auth import verify_device_uuid
 from models.devices import (
     CreateUpdateRequest,
     UpdateResponse,
     DeviceUpdateStatusRequest,
     DeviceUpdateResponse,
-    UpdateListResponse
+    UpdateListResponse,
+    DeviceResponse
 )
 from services.update_service import (
     create_update,
@@ -24,14 +26,14 @@ from utils.supabase_client import get_supabase_admin_client
 
 logger = logging.getLogger(__name__)
 
+# Router WITHOUT global auth dependency - auth applied per endpoint
 router = APIRouter(
     prefix="/api/v1/updates",
-    tags=["updates"],
-    dependencies=[Depends(verify_api_key)]
+    tags=["updates"]
 )
 
 
-@router.post("/create", response_model=UpdateResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=UpdateResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_api_key)])
 async def create_update_endpoint(
     version: str = Form(...),
     description: str = Form(...),
@@ -47,7 +49,7 @@ async def create_update_endpoint(
     The update package (ZIP file) should contain the updated Pi client code.
     All registered devices will receive the update immediately.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires valid API key (ADMIN ONLY)
     
     **Form Data**:
     - `version`: Version string (e.g., 'v1.2.3')
@@ -109,14 +111,17 @@ async def create_update_endpoint(
 
 
 @router.get("/{update_id}/download")
-async def download_update_endpoint(update_id: str):
+async def download_update_endpoint(
+    update_id: str,
+    device: DeviceResponse = Depends(verify_device_uuid)
+):
     """
     Download an update package.
     
     This endpoint is called by Pi clients to download update packages.
     The package is retrieved from Supabase Storage.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires X-Device-UUID header (DEVICE AUTH)
     
     **Path Parameters**:
     - `update_id`: Update UUID
@@ -171,24 +176,35 @@ async def download_update_endpoint(update_id: str):
 
 
 @router.post("/{update_id}/status", response_model=DeviceUpdateResponse)
-async def update_status_endpoint(update_id: str, request: DeviceUpdateStatusRequest):
+async def update_status_endpoint(
+    update_id: str, 
+    request: DeviceUpdateStatusRequest,
+    device: DeviceResponse = Depends(verify_device_uuid)
+):
     """
     Update the status of a device update.
     
     This endpoint is called by Pi clients to report progress on update installation.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires X-Device-UUID header (DEVICE AUTH)
     
     **Path Parameters**:
     - `update_id`: Update UUID
     
     **Request Body**:
-    - `device_uuid`: Device UUID reporting status
+    - `device_uuid`: Device UUID reporting status (must match X-Device-UUID header)
     - `status`: Update status (pending, downloading, installing, completed, failed)
     - `error_message`: Optional error message if status is 'failed'
     
     **Returns**: Updated device_update information
     """
+    # Verify the request device UUID matches the authenticated device UUID
+    if request.device_uuid != device.device_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Device UUID in request does not match authenticated device"
+        )
+    
     try:
         device_update = await update_device_update_status(update_id, request)
         logger.info(f"Update status updated: {request.device_uuid} -> {request.status}")
@@ -206,12 +222,12 @@ async def update_status_endpoint(update_id: str, request: DeviceUpdateStatusRequ
         )
 
 
-@router.get("/", response_model=UpdateListResponse)
+@router.get("/", response_model=UpdateListResponse, dependencies=[Depends(verify_api_key)])
 async def list_updates_endpoint(limit: int = 100, offset: int = 0):
     """
     List all updates.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires valid API key (ADMIN ONLY)
     
     **Query Parameters**:
     - `limit`: Maximum number of updates to return (default: 100)

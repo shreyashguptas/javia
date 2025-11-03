@@ -46,7 +46,7 @@ class UpdateManager:
     
     def check_for_update(self) -> Optional[Dict[str, Any]]:
         """
-        Check if there's a pending update for this device.
+        Check if there's a pending update for this device using device UUID authentication.
         Called on-demand (before processing queries).
         
         Returns:
@@ -54,7 +54,7 @@ class UpdateManager:
         """
         try:
             url = f"{self.server_url}/api/v1/devices/{self.device_uuid}/updates/check"
-            headers = {"X-API-Key": self.api_key}
+            headers = {"X-Device-UUID": self.device_uuid}
             
             response = requests.get(url, headers=headers, timeout=10)
             
@@ -68,6 +68,7 @@ class UpdateManager:
                     return None
             else:
                 logger.warning(f"Update check failed: {response.status_code}")
+                print(f"Update check failed: {response.status_code}")
                 return None
                 
         except Exception as e:
@@ -144,7 +145,7 @@ class UpdateManager:
     
     def _download_update(self, update_id: str, version: str) -> Optional[Path]:
         """
-        Download update package from server.
+        Download update package from server using device UUID authentication.
         
         Args:
             update_id: Update UUID
@@ -155,7 +156,7 @@ class UpdateManager:
         """
         try:
             url = f"{self.server_url}/api/v1/updates/{update_id}/download"
-            headers = {"X-API-Key": self.api_key}
+            headers = {"X-Device-UUID": self.device_uuid}
             
             logger.info(f"Downloading update {version}...")
             
@@ -277,7 +278,7 @@ class UpdateManager:
     
     def _report_status(self, update_id: str, status: str, error_message: Optional[str] = None):
         """
-        Report update status to server.
+        Report update status to server using device UUID authentication.
         
         Args:
             update_id: Update UUID
@@ -287,7 +288,7 @@ class UpdateManager:
         try:
             url = f"{self.server_url}/api/v1/updates/{update_id}/status"
             headers = {
-                "X-API-Key": self.api_key,
+                "X-Device-UUID": self.device_uuid,
                 "Content-Type": "application/json"
             }
             

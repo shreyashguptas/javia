@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from middleware.auth import verify_api_key
+from middleware.device_auth import verify_device_uuid
 from models.devices import (
     DeviceRegisterRequest,
     DeviceHeartbeatRequest,
@@ -22,22 +23,22 @@ from services.update_service import check_for_updates, UpdateServiceError
 
 logger = logging.getLogger(__name__)
 
+# Router WITHOUT global auth dependency - auth applied per endpoint
 router = APIRouter(
     prefix="/api/v1/devices",
-    tags=["devices"],
-    dependencies=[Depends(verify_api_key)]
+    tags=["devices"]
 )
 
 
-@router.post("/register", response_model=DeviceResponse, status_code=status.HTTP_200_OK)
+@router.post("/register", response_model=DeviceResponse, status_code=status.HTTP_200_OK, dependencies=[Depends(verify_api_key)])
 async def register_device_endpoint(request: DeviceRegisterRequest):
     """
     Register a new device or update existing device registration.
     
-    This endpoint is called by Pi clients on first boot to register with the server.
-    If the device UUID already exists, it updates the registration information.
+    This endpoint is called by server admins to register devices.
+    Registration is typically done via the register_device.sh script on the server.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires valid API key (ADMIN ONLY)
     
     **Request Body**:
     - `device_uuid`: UUID7 identifier for the device
@@ -60,17 +61,21 @@ async def register_device_endpoint(request: DeviceRegisterRequest):
 
 
 @router.post("/{device_uuid}/heartbeat", response_model=DeviceResponse)
-async def heartbeat_endpoint(device_uuid: str, request: DeviceHeartbeatRequest):
+async def heartbeat_endpoint(
+    device_uuid: str, 
+    request: DeviceHeartbeatRequest,
+    device: DeviceResponse = Depends(verify_device_uuid)
+):
     """
     Update device heartbeat and status.
     
     This endpoint should be called periodically by Pi clients to update their
     last_seen timestamp and current software version.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires X-Device-UUID header (DEVICE AUTH)
     
     **Path Parameters**:
-    - `device_uuid`: Device UUID
+    - `device_uuid`: Device UUID (must match X-Device-UUID header)
     
     **Request Body**:
     - `current_version`: Current software version running on device
@@ -79,6 +84,13 @@ async def heartbeat_endpoint(device_uuid: str, request: DeviceHeartbeatRequest):
     
     **Returns**: Updated device information
     """
+    # Verify the path UUID matches the authenticated device UUID
+    if device_uuid != device.device_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Device UUID in path does not match authenticated device"
+        )
+    
     try:
         device = await update_device_heartbeat(device_uuid, request)
         logger.debug(f"Heartbeat updated: {device_uuid}")
@@ -96,12 +108,12 @@ async def heartbeat_endpoint(device_uuid: str, request: DeviceHeartbeatRequest):
         )
 
 
-@router.get("/{device_uuid}", response_model=DeviceResponse)
+@router.get("/{device_uuid}", response_model=DeviceResponse, dependencies=[Depends(verify_api_key)])
 async def get_device_endpoint(device_uuid: str):
     """
     Get device information by UUID.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires valid API key (ADMIN ONLY)
     
     **Path Parameters**:
     - `device_uuid`: Device UUID
@@ -117,7 +129,7 @@ async def get_device_endpoint(device_uuid: str):
     return device
 
 
-@router.get("/", response_model=DeviceListResponse)
+@router.get("/", response_model=DeviceListResponse, dependencies=[Depends(verify_api_key)])
 async def list_devices_endpoint(
     status: str = None,
     limit: int = 100,
@@ -126,7 +138,7 @@ async def list_devices_endpoint(
     """
     List all registered devices with optional filtering.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires valid API key (ADMIN ONLY)
     
     **Query Parameters**:
     - `status`: Optional status filter (online, offline, updating)
@@ -146,19 +158,29 @@ async def list_devices_endpoint(
 
 
 @router.get("/{device_uuid}/updates/check", response_model=UpdateCheckResponse)
-async def check_for_updates_endpoint(device_uuid: str):
+async def check_for_updates_endpoint(
+    device_uuid: str,
+    device: DeviceResponse = Depends(verify_device_uuid)
+):
     """
     Check if there are pending updates for a device.
     
     This endpoint is called by Pi clients to check if they have any pending updates.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires X-Device-UUID header (DEVICE AUTH)
     
     **Path Parameters**:
-    - `device_uuid`: Device UUID
+    - `device_uuid`: Device UUID (must match X-Device-UUID header)
     
     **Returns**: Update check response with available update information
     """
+    # Verify the path UUID matches the authenticated device UUID
+    if device_uuid != device.device_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Device UUID in path does not match authenticated device"
+        )
+    
     try:
         return await check_for_updates(device_uuid)
     except UpdateServiceError as e:
@@ -174,12 +196,12 @@ async def check_for_updates_endpoint(device_uuid: str):
         )
 
 
-@router.patch("/{device_uuid}/status")
+@router.patch("/{device_uuid}/status", dependencies=[Depends(verify_api_key)])
 async def update_device_status_endpoint(device_uuid: str, status: str):
     """
     Update device status.
     
-    **Authentication**: Requires valid API key
+    **Authentication**: Requires valid API key (ADMIN ONLY)
     
     **Path Parameters**:
     - `device_uuid`: Device UUID

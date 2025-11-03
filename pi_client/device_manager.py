@@ -164,7 +164,7 @@ class DeviceManager:
     
     def send_heartbeat(self, status: str = "online") -> bool:
         """
-        Send heartbeat to server.
+        Send heartbeat to server using device UUID authentication.
         
         Args:
             status: Device status (online, offline, updating)
@@ -175,7 +175,7 @@ class DeviceManager:
         try:
             url = f"{self.server_url}/api/v1/devices/{self.device_uuid}/heartbeat"
             headers = {
-                "X-API-Key": self.api_key,
+                "X-Device-UUID": self.device_uuid,
                 "Content-Type": "application/json"
             }
             
@@ -192,15 +192,17 @@ class DeviceManager:
                 return True
             else:
                 logger.warning(f"Heartbeat failed: {response.status_code}")
+                print(f"Heartbeat failed: {response.status_code}")
                 return False
                 
         except Exception as e:
             logger.warning(f"Failed to send heartbeat: {e}")
+            print(f"Heartbeat failed (server may be unreachable)")
             return False
     
     def check_for_updates(self) -> Optional[Dict[str, Any]]:
         """
-        Check if there are pending updates for this device.
+        Check if there are pending updates for this device using device UUID authentication.
         
         Returns:
             Update info dict if update available, None otherwise
@@ -208,7 +210,7 @@ class DeviceManager:
         try:
             url = f"{self.server_url}/api/v1/devices/{self.device_uuid}/updates/check"
             headers = {
-                "X-API-Key": self.api_key
+                "X-Device-UUID": self.device_uuid
             }
             
             response = requests.get(url, headers=headers, timeout=10)
@@ -223,6 +225,7 @@ class DeviceManager:
                     return None
             else:
                 logger.warning(f"Update check failed: {response.status_code}")
+                print(f"Update check failed: {response.status_code}")
                 return None
                 
         except Exception as e:
