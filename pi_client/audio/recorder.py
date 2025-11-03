@@ -4,6 +4,7 @@ Audio Recorder for Pi Voice Assistant Client
 Records audio from I2S microphone using PyAudio or arecord fallback
 """
 
+import os
 import time
 import wave
 import subprocess
@@ -175,19 +176,16 @@ def record_audio_with_arecord(gpio_manager):
         ensure_capture_volume()
         
         # Get ALSA device name from hardware detection
-        device_name = get_alsa_device_name()
+        device_name_original = get_alsa_device_name()
+        device_name = device_name_original
         
-        # For I2S microphones (like INMP441), we need to use hw: instead of plughw:
-        # to avoid ALSA's software mixing which can cause issues
-        # Change plughw to hw for better compatibility with I2S devices
-        if "plughw" in device_name:
-            # Try hw: first for I2S devices (better performance)
-            device_name_hw = device_name.replace("plughw", "hw")
-            logger.info(f"[AUDIO] Using hw: device for I2S microphone: {device_name_hw}")
-            device_name = device_name_hw
+        logger.info(f"[AUDIO] Default device: {device_name}")
         
-        # Start arecord in background with verbose mode to capture any warnings
-        # Note: We capture both stdout and stderr to see ALSA messages
+        # Start arecord in background
+        # Note: We capture stderr to see ALSA error messages
+        logger.info(f"[AUDIO] Starting arecord on device: {device_name}")
+        logger.info(f"[AUDIO] Output file: {config.RECORDING_FILE}")
+        
         process = subprocess.Popen(
             [
                 'arecord',
@@ -195,15 +193,55 @@ def record_audio_with_arecord(gpio_manager):
                 '-f', 'S16_LE',                 # 16-bit signed little-endian
                 '-r', str(config.SAMPLE_RATE),  # 48000 Hz
                 '-c', str(config.CHANNELS),     # 1 channel (mono)
-                '-V', 'mono',                   # Verbose mode + VU meter (helps debug levels)
                 str(config.RECORDING_FILE)      # Output file
             ],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True  # Get text output for stderr monitoring
+            stderr=subprocess.PIPE
         )
         
-        logger.info(f"[AUDIO] arecord started (PID: {process.pid}) on device: {device_name}")
+        logger.info(f"[AUDIO] arecord started (PID: {process.pid})")
+        
+        # Give arecord a moment to initialize and detect any immediate errors
+        time.sleep(0.2)
+        
+        # Check if process is still running (didn't crash immediately)
+        if process.poll() is not None:
+            # Process already terminated - there was an error
+            stdout, stderr = process.communicate()
+            error_msg = stderr.decode('utf-8', errors='ignore') if stderr else "Unknown error"
+            logger.error(f"[ERROR] arecord failed to start with device {device_name}")
+            logger.error(f"[ERROR] Error: {error_msg}")
+            
+            # If we used plughw and it failed, don't retry
+            # If we used hw and it failed, try plughw as fallback
+            if device_name != device_name_original:
+                logger.info(f"[AUDIO] Retrying with original device: {device_name_original}")
+                device_name = device_name_original
+                
+                # Retry with original device
+                process = subprocess.Popen(
+                    [
+                        'arecord',
+                        '-D', device_name,
+                        '-f', 'S16_LE',
+                        '-r', str(config.SAMPLE_RATE),
+                        '-c', str(config.CHANNELS),
+                        str(config.RECORDING_FILE)
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                
+                logger.info(f"[AUDIO] Retry: arecord started (PID: {process.pid})")
+                time.sleep(0.2)
+                
+                if process.poll() is not None:
+                    stdout, stderr = process.communicate()
+                    error_msg = stderr.decode('utf-8', errors='ignore') if stderr else "Unknown error"
+                    logger.error(f"[ERROR] arecord also failed with {device_name}: {error_msg}")
+                    return False
+            else:
+                return False
         
         # Wait for button to be released first
         while gpio_manager.button.is_pressed:
@@ -222,24 +260,39 @@ def record_audio_with_arecord(gpio_manager):
         logger.info("[AUDIO] " + "="*40)
         logger.info("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
         
-        # Stop arecord gracefully
+        # Stop arecord gracefully and give it time to flush the file
+        logger.info("[AUDIO] Stopping arecord and flushing to disk...")
         process.terminate()
         
         try:
-            stdout, stderr = process.communicate(timeout=2)
+            # Wait for process to terminate and capture output
+            stdout, stderr = process.communicate(timeout=3)
+            
+            # Decode stderr to check for errors
+            stderr_text = stderr.decode('utf-8', errors='ignore') if stderr else ""
             
             # Log any errors or warnings from arecord
-            if stderr:
-                # Filter out common harmless warnings
-                for line in stderr.split('\n'):
-                    if line.strip() and 'VU meter' not in line and '|' not in line:
-                        if 'warning' in line.lower() or 'error' in line.lower():
-                            logger.warning(f"[AUDIO] arecord: {line.strip()}")
+            if stderr_text:
+                logger.info("[AUDIO] arecord output:")
+                for line in stderr_text.split('\n'):
+                    if line.strip():
+                        # Log all output to help diagnose
+                        if 'error' in line.lower() or 'failed' in line.lower():
+                            logger.error(f"  {line.strip()}")
+                        elif 'warning' in line.lower():
+                            logger.warning(f"  {line.strip()}")
                         else:
-                            logger.debug(f"[AUDIO] arecord: {line.strip()}")
+                            logger.info(f"  {line.strip()}")
         except subprocess.TimeoutExpired:
+            logger.warning("[AUDIO] arecord didn't terminate gracefully, forcing kill...")
             process.kill()
             stdout, stderr = process.communicate()
+            stderr_text = stderr.decode('utf-8', errors='ignore') if stderr else ""
+            if stderr_text:
+                logger.error(f"[AUDIO] arecord errors: {stderr_text}")
+        
+        # Give the filesystem a moment to sync
+        time.sleep(0.1)
         
         # Wait for button release
         while gpio_manager.button.is_pressed:
@@ -247,7 +300,22 @@ def record_audio_with_arecord(gpio_manager):
         
         # Check if file was created
         if not config.RECORDING_FILE.exists():
-            logger.error("[ERROR] Recording file was not created")
+            logger.error("[ERROR] Recording file was not created!")
+            logger.error(f"[ERROR] Expected file at: {config.RECORDING_FILE}")
+            logger.error("[ERROR] Possible causes:")
+            logger.error("[ERROR]   1. arecord couldn't access the audio device")
+            logger.error("[ERROR]   2. Filesystem permissions issue")
+            logger.error("[ERROR]   3. Audio device is busy or locked")
+            logger.error("[ERROR]   4. Hardware not properly initialized")
+            
+            # Try to check directory permissions
+            audio_dir = config.RECORDING_FILE.parent
+            if audio_dir.exists():
+                logger.info(f"[DEBUG] Audio directory exists: {audio_dir}")
+                logger.info(f"[DEBUG] Directory is writable: {os.access(audio_dir, os.W_OK)}")
+            else:
+                logger.error(f"[ERROR] Audio directory does not exist: {audio_dir}")
+            
             return False
         
         file_size = config.RECORDING_FILE.stat().st_size
