@@ -8,47 +8,11 @@ import time
 import wave
 import subprocess
 import pyaudio
+import logging
 import config
+from audio.hardware_detect import is_googlevoicehat, get_alsa_device_name
 
-
-# ==================== HARDWARE DETECTION ====================
-
-def is_googlevoicehat_device():
-    """
-    Check if googlevoicehat driver is present.
-    
-    The googlevoicehat-soundcard driver has known compatibility issues with PyAudio,
-    causing segmentation faults. This function detects the driver so we can use
-    the more reliable arecord method instead.
-    
-    Returns:
-        bool: True if googlevoicehat is detected, False otherwise
-    """
-    try:
-        result = subprocess.run(
-            ['arecord', '-l'], 
-            capture_output=True, 
-            text=True,
-            timeout=2
-        )
-        
-        output = result.stdout.lower()
-        
-        # Check for googlevoicehat driver indicators
-        is_voicehat = (
-            'googlevoicehat' in output or 
-            'sndrpigooglevoi' in output or
-            'google voicehat' in output
-        )
-        
-        if is_voicehat:
-            print("[AUDIO] ✓ Detected googlevoicehat driver - using arecord for reliability")
-        
-        return is_voicehat
-        
-    except Exception as e:
-        print(f"[AUDIO] Could not detect audio hardware: {e}")
-        return False
+logger = logging.getLogger(__name__)
 
 
 # ==================== AUDIO RECORDING ====================
@@ -172,19 +136,21 @@ def record_audio_with_arecord(gpio_manager):
     Returns:
         bool: True if successful, False otherwise
     """
-    print("[AUDIO] Recording with arecord... SPEAK NOW!")
-    print("[AUDIO] " + "="*40)
+    logger.info("[AUDIO] Recording with arecord... SPEAK NOW!")
+    logger.info("[AUDIO] " + "="*40)
     
     process = None
     
     try:
+        # Get ALSA device name from hardware detection
+        device_name = get_alsa_device_name()
+        
         # Start arecord in background
-        # Use full CARD name for better reliability across Pi models
         process = subprocess.Popen(
             [
                 'arecord',
-                '-D', 'plughw:CARD=sndrpigooglevoi,DEV=0',  # googlevoicehat device (full name)
-                '-f', 'S16_LE',       # 16-bit signed little-endian
+                '-D', device_name,              # ALSA device (e.g., plughw:CARD=sndrpigooglevoi,DEV=0)
+                '-f', 'S16_LE',                 # 16-bit signed little-endian
                 '-r', str(config.SAMPLE_RATE),  # 48000 Hz
                 '-c', str(config.CHANNELS),     # 1 channel (mono)
                 str(config.RECORDING_FILE)      # Output file
@@ -193,7 +159,7 @@ def record_audio_with_arecord(gpio_manager):
             stderr=subprocess.PIPE
         )
         
-        print(f"[AUDIO] arecord started (PID: {process.pid})")
+        logger.info(f"[AUDIO] arecord started (PID: {process.pid})")
         
         # Wait for button to be released first
         while gpio_manager.button.is_pressed:
@@ -206,11 +172,11 @@ def record_audio_with_arecord(gpio_manager):
             elapsed = time.time() - start_time
             if int(elapsed) > 0 and int(elapsed) % 1 == 0:
                 if int(elapsed * 10) % 10 == 0:  # Only print once per second
-                    print(f"[AUDIO] {int(elapsed)}s recorded...")
+                    logger.info(f"[AUDIO] {int(elapsed)}s recorded...")
             time.sleep(0.1)
         
-        print("[AUDIO] " + "="*40)
-        print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+        logger.info("[AUDIO] " + "="*40)
+        logger.info("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
         
         # Stop arecord gracefully
         process.terminate()
@@ -227,23 +193,23 @@ def record_audio_with_arecord(gpio_manager):
         
         # Check if file was created
         if not config.RECORDING_FILE.exists():
-            print("[ERROR] Recording file was not created")
+            logger.error("[ERROR] Recording file was not created")
             return False
         
         file_size = config.RECORDING_FILE.stat().st_size
         if file_size < 1000:
-            print(f"[WARNING] Recording file is very small ({file_size} bytes)")
+            logger.warning(f"[WARNING] Recording file is very small ({file_size} bytes)")
         
         duration = time.time() - start_time
-        print(f"[AUDIO] Recording complete ({duration:.1f}s, {file_size} bytes)")
-        print(f"[AUDIO] Saved: {config.RECORDING_FILE}")
+        logger.info(f"[AUDIO] Recording complete ({duration:.1f}s, {file_size} bytes)")
+        logger.info(f"[AUDIO] Saved: {config.RECORDING_FILE}")
         
         return True
         
     except Exception as e:
-        print(f"[ERROR] Recording failed: {e}")
+        logger.error(f"[ERROR] Recording failed: {e}")
         import traceback
-        print(f"[DEBUG] {traceback.format_exc()}")
+        logger.debug(f"{traceback.format_exc()}")
         return False
         
     finally:
@@ -281,13 +247,14 @@ def record_audio(gpio_manager):
         bool: True if successful, False otherwise
     """
     # Detect hardware and route to appropriate method
-    if is_googlevoicehat_device():
+    if is_googlevoicehat():
         # Use arecord for googlevoicehat (prevents segmentation faults)
+        logger.info("[AUDIO] ✓ Detected googlevoicehat driver - using arecord for reliability")
         return record_audio_with_arecord(gpio_manager)
     
     # For other hardware, try PyAudio with arecord fallback
-    print("[AUDIO] Recording... SPEAK NOW!")
-    print("[AUDIO] " + "="*40)
+    logger.info("[AUDIO] Recording... SPEAK NOW!")
+    logger.info("[AUDIO] " + "="*40)
     
     audio = None
     stream = None

@@ -13,7 +13,16 @@ os.environ['JACK_NO_AUDIO_RESERVATION'] = '1'
 import sys
 import time
 import subprocess
-import pyaudio
+import logging
+
+# Configure logging FIRST (before any other imports)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',  # Clean format matching our existing output style
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+
+logger = logging.getLogger(__name__)
 
 # Import configuration
 import config
@@ -45,15 +54,15 @@ suppress_alsa_errors()
 
 def setup():
     """Initialize the system with performance optimizations"""
-    print("\n" + "="*50)
-    print("Raspberry Pi Voice Assistant Client Starting...")
-    print("="*50 + "\n")
+    logger.info("\n" + "="*50)
+    logger.info("Raspberry Pi Voice Assistant Client Starting...")
+    logger.info("="*50 + "\n")
     
     # Optimize system performance first
     optimize_system_performance()
     
     # Initialize OTA update system
-    print("\n[INIT] Initializing OTA update system...")
+    logger.info("\n[INIT] Initializing OTA update system...")
     
     try:
         # Initialize device manager (no API key needed - device auth is via UUID)
@@ -62,15 +71,15 @@ def setup():
             api_key=None,  # Not needed - device authentication uses device UUID
             timezone=config.DEVICE_TIMEZONE
         )
-        print(f"[INIT] ✓ Device UUID: {config.device_manager.get_device_uuid()}")
-        print(f"[INIT] ✓ Current version: {config.device_manager.get_current_version()}")
+        logger.info(f"[INIT] ✓ Device UUID: {config.device_manager.get_device_uuid()}")
+        logger.info(f"[INIT] ✓ Current version: {config.device_manager.get_current_version()}")
         
         # Note: Device registration is now done manually on the server via register_device.sh
         # The device must be registered before it can make requests to the server
         
         # Initialize activity tracker
         config.activity_tracker = ActivityTracker()
-        print("[INIT] ✓ Activity tracker initialized")
+        logger.info("[INIT] ✓ Activity tracker initialized")
         
         # Initialize heartbeat manager (sends ping every 5 minutes)
         config.heartbeat_manager = HeartbeatManager(
@@ -78,7 +87,7 @@ def setup():
             interval_seconds=300  # 5 minutes
         )
         config.heartbeat_manager.start()
-        print("[INIT] ✓ Heartbeat manager started (5-minute interval)")
+        logger.info("[INIT] ✓ Heartbeat manager started (5-minute interval)")
         
         # Initialize update manager
         config.update_manager = UpdateManager(
@@ -86,14 +95,14 @@ def setup():
             api_key=None,  # Not needed - device authentication uses device UUID
             device_uuid=config.device_manager.get_device_uuid()
         )
-        print("[INIT] ✓ Update manager initialized (OTA updates enabled)")
+        logger.info("[INIT] ✓ Update manager initialized (OTA updates enabled)")
     except Exception as e:
-        print(f"[INIT] ⚠️  OTA system initialization failed: {e}")
-        print("[INIT] Continuing without OTA updates...")
+        logger.warning(f"[INIT] ⚠️  OTA system initialization failed: {e}")
+        logger.warning("[INIT] Continuing without OTA updates...")
     
     # Create audio directory
     config.AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"[INIT] Audio directory: {config.AUDIO_DIR}")
+    logger.info(f"[INIT] Audio directory: {config.AUDIO_DIR}")
     
     # Clean up old recordings (but keep beep files)
     try:
@@ -101,26 +110,26 @@ def setup():
             config.RECORDING_FILE.unlink()
         if config.RESPONSE_FILE.exists():
             config.RESPONSE_FILE.unlink()
-        print(f"[INIT] Cleaned up old audio files")
+        logger.info(f"[INIT] Cleaned up old audio files")
     except Exception as e:
-        print(f"[INIT] Could not clean old files: {e}")
+        logger.warning(f"[INIT] Could not clean old files: {e}")
     
     # Initialize hardware (GPIO, buttons, encoder, amplifier)
-    print("\n[INIT] Initializing hardware...")
+    logger.info("\n[INIT] Initializing hardware...")
     gpio_manager = GPIOManager(activity_tracker=config.activity_tracker)
     
     # Initialize beep generator
-    print("\n[INIT] Setting up audio feedback beeps...")
+    logger.info("\n[INIT] Setting up audio feedback beeps...")
     beep_generator = BeepGenerator(gpio_manager)
     beep_generator.generate_beep_sounds()
     
     # Verify beep files exist
     if config.START_BEEP_FILE.exists() and config.STOP_BEEP_FILE.exists():
-        print(f"[INIT] ✓ Beep files ready:")
-        print(f"[INIT]   - Start: {config.START_BEEP_FILE}")
-        print(f"[INIT]   - Stop:  {config.STOP_BEEP_FILE}")
+        logger.info(f"[INIT] ✓ Beep files ready:")
+        logger.info(f"[INIT]   - Start: {config.START_BEEP_FILE}")
+        logger.info(f"[INIT]   - Stop:  {config.STOP_BEEP_FILE}")
     else:
-        print(f"[WARNING] Beep files missing! Audio feedback disabled.")
+        logger.warning(f"[WARNING] Beep files missing! Audio feedback disabled.")
     
     # Initialize audio player
     audio_player = I2SPlayer(gpio_manager)
@@ -130,30 +139,30 @@ def setup():
     
     # Check server URL
     if config.SERVER_URL == "http://localhost:8000":
-        print("\n[WARNING] Using default server URL (localhost:8000)")
-        print("[WARNING] Please set SERVER_URL in .env for production use")
+        logger.warning("\n[WARNING] Using default server URL (localhost:8000)")
+        logger.warning("[WARNING] Please set SERVER_URL in .env for production use")
     
-    print(f"[INIT] Server URL: {config.SERVER_URL}")
+    logger.info(f"[INIT] Server URL: {config.SERVER_URL}")
     
     # Test audio devices
-    print("\n[INIT] Checking audio devices...")
+    logger.info("\n[INIT] Checking audio devices...")
     try:
         result = subprocess.run(['arecord', '-l'], 
                               capture_output=True, text=True, check=True)
-        print("[INIT] Recording devices found:")
-        print(result.stdout)
+        logger.info("[INIT] Recording devices found:")
+        logger.info(result.stdout)
     except Exception as e:
-        print(f"[WARNING] Could not list recording devices: {e}")
+        logger.warning(f"[WARNING] Could not list recording devices: {e}")
     
     try:
         result = subprocess.run(['aplay', '-l'], 
                               capture_output=True, text=True, check=True)
-        print("[INIT] Playback devices found:")
-        print(result.stdout)
+        logger.info("[INIT] Playback devices found:")
+        logger.info(result.stdout)
     except Exception as e:
-        print(f"[WARNING] Could not list playback devices: {e}")
+        logger.warning(f"[WARNING] Could not list playback devices: {e}")
     
-    print("\n[READY] System ready! Press button to start...\n")
+    logger.info("\n[READY] System ready! Press button to start...\n")
     
     return gpio_manager, beep_generator, audio_player, api_client
 
@@ -166,8 +175,8 @@ def main():
         # Setup all components
         gpio_manager, beep_generator, audio_player, api_client = setup()
         
-        print("\n[INFO] Voice assistant ready. Heartbeat sends ping every 5 minutes.")
-        print("[INFO] Updates: Applied immediately before processing each query\n")
+        logger.info("\n[INFO] Voice assistant ready. Heartbeat sends ping every 5 minutes.")
+        logger.info("[INFO] Updates: Applied immediately before processing each query\n")
         
         while True:
             # Wait for button press
@@ -176,29 +185,29 @@ def main():
             # Check for updates BEFORE processing query (mandatory)
             if hasattr(config, 'update_manager') and config.update_manager:
                 try:
-                    print("\n[UPDATE CHECK] Checking for updates...")
+                    logger.info("\n[UPDATE CHECK] Checking for updates...")
                     if config.update_manager.apply_update_if_available():
                         # Update is being applied, device will restart
-                        print("[UPDATE] Update detected! Installing now...")
-                        print("[UPDATE] Device will restart automatically...")
+                        logger.info("[UPDATE] Update detected! Installing now...")
+                        logger.info("[UPDATE] Device will restart automatically...")
                         # This code won't be reached as device will restart
                         sys.exit(0)
-                    print("[UPDATE CHECK] ✓ No updates available\n")
+                    logger.info("[UPDATE CHECK] ✓ No updates available\n")
                 except Exception as e:
-                    print(f"[UPDATE CHECK] ⚠️  Update check failed: {e}")
-                    print("[UPDATE CHECK] Continuing with query processing...\n")
+                    logger.warning(f"[UPDATE CHECK] ⚠️  Update check failed: {e}")
+                    logger.warning("[UPDATE CHECK] Continuing with query processing...\n")
             
             # Play start beep
             beep_generator.play_beep_async(config.START_BEEP_FILE, "start")
             
-            print("\n" + "="*50)
-            print("STARTING CONVERSATION")
-            print("="*50 + "\n")
+            logger.info("\n" + "="*50)
+            logger.info("STARTING CONVERSATION")
+            logger.info("="*50 + "\n")
             
             # Step 1: Record
-            print("[STEP 1/3] Recording audio...")
+            logger.info("[STEP 1/3] Recording audio...")
             if not record_audio(gpio_manager):
-                print("[ERROR] Recording failed. Restarting...")
+                logger.error("[ERROR] Recording failed. Restarting...")
                 time.sleep(2)
                 continue
             
@@ -206,32 +215,32 @@ def main():
             beep_generator.play_beep_async(config.STOP_BEEP_FILE, "stop")
             
             # Step 2: Send to server
-            print("\n[STEP 2/3] Processing on server...")
+            logger.info("\n[STEP 2/3] Processing on server...")
             if not api_client.send_audio_to_server():
-                print("[ERROR] Server processing failed. Restarting...")
+                logger.error("[ERROR] Server processing failed. Restarting...")
                 time.sleep(2)
                 continue
             
             # Step 3: Play
-            print("\n[STEP 3/3] Playing response...")
+            logger.info("\n[STEP 3/3] Playing response...")
             playback_completed = audio_player.play(config.RESPONSE_FILE)
             
             if playback_completed:
-                print("\n[COMPLETE] Conversation complete!")
-                print("="*50 + "\n")
+                logger.info("\n[COMPLETE] Conversation complete!")
+                logger.info("="*50 + "\n")
                 time.sleep(1)
             else:
-                print("\n[INTERRUPT] Waiting for next button press...")
-                print("="*50 + "\n")
+                logger.info("\n[INTERRUPT] Waiting for next button press...")
+                logger.info("="*50 + "\n")
                 time.sleep(0.5)
             
     except KeyboardInterrupt:
-        print("\n\n[EXIT] Shutting down...")
+        logger.info("\n\n[EXIT] Shutting down...")
     finally:
         # Stop heartbeat manager
         if hasattr(config, 'heartbeat_manager') and config.heartbeat_manager:
             config.heartbeat_manager.stop()
-            print("[EXIT] Heartbeat manager stopped")
+            logger.info("[EXIT] Heartbeat manager stopped")
         
         # Close GPIO devices
         gpio_manager.cleanup()

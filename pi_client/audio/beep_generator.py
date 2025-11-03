@@ -6,11 +6,14 @@ Generates and plays beep sounds for audio feedback
 
 import time
 import wave
-import threading
+import subprocess
+import logging
 import numpy as np
-import pyaudio
 import config
 from utils.system_utils import apply_volume_to_audio
+from audio.hardware_detect import is_googlevoicehat, get_alsa_device_name
+
+logger = logging.getLogger(__name__)
 
 
 class BeepGenerator:
@@ -128,103 +131,159 @@ class BeepGenerator:
     
     def play_beep_async(self, beep_file, description=""):
         """
-        Play a short beep sound with REAL-TIME volume control.
+        Play a short beep sound with volume control.
         
-        REAL-TIME VOLUME:
-        - Beep respects current_volume setting
-        - Uses PyAudio streaming for real-time volume scaling
-        - No pre-processing - volume applied during playback
+        STRATEGY:
+        - For googlevoicehat: Use aplay (no PyAudio = no segfaults)
+        - For other hardware: Use PyAudio (better control)
+        - Volume scaling: Pre-scale WAV file before playback
+        - Synchronous playback: Wait for completion (beeps are short)
         
         Args:
             beep_file: Path to beep WAV file
             description: Description for logging (e.g., "start", "stop")
         """
-        def _play_beep_thread():
-            if not beep_file.exists():
-                return
+        if not beep_file.exists():
+            logger.warning(f"Beep file not found: {beep_file}")
+            return
+        
+        try:
+            current_vol = self.gpio_manager.get_current_volume()
             
-            audio = None
-            stream = None
+            # Create volume-scaled temporary file
+            temp_beep = config.AUDIO_DIR / f"temp_{description}_beep.wav"
+            self._scale_wav_file(beep_file, temp_beep, current_vol)
             
+            # Enable amplifier
+            self.gpio_manager.enable_amplifier()
+            time.sleep(0.02)  # Stabilization time
+            
+            # Play beep using appropriate method
+            if is_googlevoicehat():
+                self._play_with_aplay(temp_beep)
+            else:
+                self._play_with_pyaudio(temp_beep)
+            
+            # Wait for beep to complete
+            time.sleep(0.05)
+            
+            # Disable amplifier
+            self.gpio_manager.disable_amplifier()
+            
+            # Clean up temp file
+            if temp_beep.exists():
+                temp_beep.unlink()
+            
+            if config.VERBOSE_OUTPUT:
+                logger.info(f"[BEEP] ▶ {description} beep (volume: {current_vol}%)")
+                
+        except Exception as e:
+            logger.error(f"Failed to play beep: {e}")
+            self.gpio_manager.disable_amplifier()
+            # Clean up temp file on error
             try:
-                # Read beep WAV file
-                with wave.open(str(beep_file), 'rb') as wf:
-                    channels = wf.getnchannels()
-                    sample_width = wf.getsampwidth()
-                    sample_rate = wf.getframerate()
-                    beep_data = wf.readframes(wf.getnframes())
-                
-                # Apply REAL-TIME volume scaling
-                current_vol = self.gpio_manager.get_current_volume()
-                scaled_beep = apply_volume_to_audio(beep_data, current_vol, sample_width)
-                
-                # Initialize PyAudio for playback
-                audio = pyaudio.PyAudio()
-                
-                # Find output device
-                device_index = None
-                for i in range(audio.get_device_count()):
-                    info = audio.get_device_info_by_index(i)
-                    device_name = info.get('name', '').lower()
-                    max_output = info.get('maxOutputChannels', 0)
-                    
-                    if max_output > 0 and ('googlevoicehat' in device_name or 
-                                          'voicehat' in device_name or
-                                          'sndrpigooglevoi' in device_name):
-                        device_index = i
-                        break
-                
-                # Open output stream
-                stream = audio.open(
-                    format=audio.get_format_from_width(sample_width),
-                    channels=channels,
-                    rate=sample_rate,
-                    output=True,
-                    output_device_index=device_index
-                )
-                
-                # Enable amplifier
-                self.gpio_manager.enable_amplifier()
-                time.sleep(0.02)
-                
-                # Play scaled beep
-                stream.write(scaled_beep)
-                
-                # Wait for playback to complete
-                time.sleep(0.02)
-                
-                # Disable amplifier
-                self.gpio_manager.disable_amplifier()
-                
-                # Clean up
-                if stream:
+                if temp_beep.exists():
+                    temp_beep.unlink()
+            except:
+                pass
+    
+    def _scale_wav_file(self, input_file, output_file, volume_percent):
+        """
+        Pre-scale WAV file to target volume.
+        
+        Args:
+            input_file: Input WAV file path
+            output_file: Output WAV file path
+            volume_percent: Volume level 0-100
+        """
+        with wave.open(str(input_file), 'rb') as wf:
+            params = wf.getparams()
+            audio_data = wf.readframes(wf.getnframes())
+            
+            # Scale audio data
+            scaled_data = apply_volume_to_audio(audio_data, volume_percent, params.sampwidth)
+            
+            # Write scaled file
+            with wave.open(str(output_file), 'wb') as out_wf:
+                out_wf.setparams(params)
+                out_wf.writeframes(scaled_data)
+    
+    def _play_with_aplay(self, wav_file):
+        """
+        Play WAV file using aplay (for googlevoicehat).
+        
+        Args:
+            wav_file: Path to WAV file
+        """
+        try:
+            device_name = get_alsa_device_name()
+            subprocess.run(
+                ['aplay', '-D', device_name, str(wav_file)],
+                capture_output=True,
+                check=True,
+                timeout=2
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("Beep playback timeout")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"aplay failed: {e}")
+        except Exception as e:
+            logger.error(f"Beep playback error: {e}")
+    
+    def _play_with_pyaudio(self, wav_file):
+        """
+        Play WAV file using PyAudio (for non-googlevoicehat hardware).
+        
+        Args:
+            wav_file: Path to WAV file
+        """
+        import pyaudio
+        
+        audio = None
+        stream = None
+        
+        try:
+            # Read WAV file
+            with wave.open(str(wav_file), 'rb') as wf:
+                channels = wf.getnchannels()
+                sample_width = wf.getsampwidth()
+                sample_rate = wf.getframerate()
+                audio_data = wf.readframes(wf.getnframes())
+            
+            # Initialize PyAudio
+            audio = pyaudio.PyAudio()
+            
+            # Open output stream
+            stream = audio.open(
+                format=audio.get_format_from_width(sample_width),
+                channels=channels,
+                rate=sample_rate,
+                output=True
+            )
+            
+            # Play audio
+            stream.write(audio_data)
+            
+            # Clean up
+            stream.stop_stream()
+            stream.close()
+            audio.terminate()
+            
+        except Exception as e:
+            logger.error(f"PyAudio playback error: {e}")
+            if stream:
+                try:
                     stream.stop_stream()
                     stream.close()
-                if audio:
+                except:
+                    pass
+            if audio:
+                try:
                     audio.terminate()
-                
-            except Exception:
-                self.gpio_manager.disable_amplifier()
-                try:
-                    if stream:
-                        stream.stop_stream()
-                        stream.close()
                 except:
                     pass
-                try:
-                    if audio:
-                        audio.terminate()
-                except:
-                    pass
-        
-        # Start beep in background thread - returns immediately
-        thread = threading.Thread(target=_play_beep_thread, daemon=True)
-        thread.start()
-        if config.VERBOSE_OUTPUT:
-            current_vol = self.gpio_manager.get_current_volume()
-            print(f"[BEEP] ▶ {description} beep (volume: {current_vol}%)")
     
     def play_beep(self, beep_file, description=""):
-        """Legacy synchronous beep - kept for compatibility"""
+        """Play beep synchronously (wrapper for compatibility)"""
         self.play_beep_async(beep_file, description)
 

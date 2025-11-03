@@ -7,12 +7,16 @@ Plays audio through I2S amplifier with real-time volume control
 import time
 import wave
 import shutil
-import pyaudio
+import subprocess
+import logging
 from pathlib import Path
 import config
 from .base_player import AudioPlayer
 from .effects import apply_fade_in_out, add_silence_padding
 from utils.system_utils import apply_volume_to_audio
+from .hardware_detect import is_googlevoicehat, get_alsa_device_name
+
+logger = logging.getLogger(__name__)
 
 
 class I2SPlayer(AudioPlayer):
@@ -38,22 +42,16 @@ class I2SPlayer(AudioPlayer):
     
     def play(self, audio_file_path: Path) -> bool:
         """
-        Play audio through I2S amplifier with REAL-TIME volume control.
+        Play audio through I2S amplifier with volume control.
         
-        REAL-TIME FEATURES:
-        - Volume changes take effect immediately during playback
-        - Rotate encoder while speaking to adjust volume
-        - Smooth volume transitions with no clicks
-        
-        AUDIO QUALITY:
-        - Minimal processing to preserve quality
-        - Optional fade/padding (only if configured)
-        - PyAudio streaming for real-time control
+        STRATEGY:
+        - For googlevoicehat: Use aplay (no PyAudio = no segfaults)
+        - For other hardware: Use PyAudio (real-time volume control)
+        - Button interrupt: Terminate aplay process or stop PyAudio stream
         
         VOLUME CONTROL:
-        - Monitors current_volume every chunk (10ms)
-        - Applies volume scaling in real-time
-        - Changes are immediate and smooth
+        - googlevoicehat: Pre-scale audio file to target volume
+        - PyAudio: Real-time volume scaling per chunk
         
         Args:
             audio_file_path: Path to WAV file to play
@@ -62,8 +60,149 @@ class I2SPlayer(AudioPlayer):
             bool: True if playback completed, False if interrupted
         """
         if not audio_file_path.exists():
-            print("[ERROR] Response file not found")
+            logger.error("Response file not found")
             return False
+        
+        # Route to appropriate playback method
+        if is_googlevoicehat():
+            return self._play_with_aplay(audio_file_path)
+        else:
+            return self._play_with_pyaudio(audio_file_path)
+    
+    def _play_with_aplay(self, audio_file_path: Path) -> bool:
+        """
+        Play audio using aplay (for googlevoicehat).
+        
+        Args:
+            audio_file_path: Path to WAV file to play
+        
+        Returns:
+            bool: True if playback completed, False if interrupted
+        """
+        temp_processed_file = None
+        process = None
+        
+        try:
+            if config.VERBOSE_OUTPUT:
+                logger.info("[PLAYBACK] Preparing audio...")
+            
+            # Apply optional processing (fade/padding) and volume scaling
+            temp_processed_file = config.AUDIO_DIR / "temp_response_processed.wav"
+            
+            # Copy original to temp file
+            shutil.copy(audio_file_path, temp_processed_file)
+            
+            # Apply fade and padding ONLY if configured
+            if config.FADE_DURATION_MS > 0:
+                if config.VERBOSE_OUTPUT:
+                    logger.info(f"[PLAYBACK] Applying {config.FADE_DURATION_MS}ms fade effects...")
+                apply_fade_in_out(temp_processed_file, fade_duration_ms=config.FADE_DURATION_MS)
+            
+            # Add silence padding
+            if config.VERBOSE_OUTPUT:
+                logger.info("[PLAYBACK] Adding silence padding...")
+            add_silence_padding(temp_processed_file, padding_ms=50)
+            
+            # Apply volume scaling
+            current_vol = self.gpio_manager.get_current_volume()
+            volume_scaled_file = config.AUDIO_DIR / "temp_response_volume.wav"
+            self._scale_wav_file(temp_processed_file, volume_scaled_file, current_vol)
+            
+            # Enable amplifier
+            self.gpio_manager.enable_amplifier()
+            time.sleep(0.200)  # Stabilization time
+            
+            # Start aplay in background
+            device_name = get_alsa_device_name()
+            process = subprocess.Popen(
+                ['aplay', '-D', device_name, str(volume_scaled_file)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            logger.info(f"[PLAYBACK] Playing (volume: {current_vol}%)... Press button to stop")
+            self._is_playing = True
+            
+            # Monitor for button press or process completion
+            interrupted = False
+            while process.poll() is None:
+                if self.gpio_manager.button.is_pressed:
+                    logger.info("\n[INTERRUPT] *** BUTTON PRESSED! Stopping playback... ***")
+                    process.terminate()
+                    try:
+                        process.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    interrupted = True
+                    break
+                time.sleep(0.05)
+            
+            # Wait for audio to complete
+            time.sleep(0.200)
+            
+            # Disable amplifier
+            self.gpio_manager.disable_amplifier()
+            
+            # Clean up temp files
+            if temp_processed_file and temp_processed_file.exists():
+                temp_processed_file.unlink()
+            if volume_scaled_file.exists():
+                volume_scaled_file.unlink()
+            
+            self._is_playing = False
+            
+            if interrupted:
+                logger.info("[INTERRUPT] Playback cancelled!")
+                while self.gpio_manager.button.is_pressed:
+                    time.sleep(0.01)
+                return False
+            else:
+                logger.info("[PLAYBACK] Complete!")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Playback error: {e}")
+            import traceback
+            logger.debug(f"{traceback.format_exc()}")
+            self.gpio_manager.disable_amplifier()
+            
+            # Clean up process
+            if process and process.poll() is None:
+                try:
+                    process.terminate()
+                    process.wait(timeout=1)
+                except:
+                    try:
+                        process.kill()
+                    except:
+                        pass
+            
+            # Clean up temp files
+            try:
+                if temp_processed_file and temp_processed_file.exists():
+                    temp_processed_file.unlink()
+                if 'volume_scaled_file' in locals() and volume_scaled_file.exists():
+                    volume_scaled_file.unlink()
+            except:
+                pass
+            
+            self._is_playing = False
+            return False
+    
+    def _play_with_pyaudio(self, audio_file_path: Path) -> bool:
+        """
+        Play audio using PyAudio (for non-googlevoicehat hardware).
+        
+        Real-time volume control during playback.
+        
+        Args:
+            audio_file_path: Path to WAV file to play
+        
+        Returns:
+            bool: True if playback completed, False if interrupted
+        """
+        import pyaudio
         
         audio = None
         stream = None
@@ -71,24 +210,23 @@ class I2SPlayer(AudioPlayer):
         
         try:
             if config.VERBOSE_OUTPUT:
-                print("[PLAYBACK] Preparing audio...")
+                logger.info("[PLAYBACK] Preparing audio...")
             
             # Apply optional processing (fade/padding) to a temp file
-            # Volume scaling happens in real-time during playback
             temp_processed_file = config.AUDIO_DIR / "temp_response_processed.wav"
             
             # Copy original to temp file
             shutil.copy(audio_file_path, temp_processed_file)
             
-            # Apply fade and padding ONLY if configured (optional for quality)
+            # Apply fade and padding ONLY if configured
             if config.FADE_DURATION_MS > 0:
                 if config.VERBOSE_OUTPUT:
-                    print(f"[PLAYBACK] Applying {config.FADE_DURATION_MS}ms fade effects...")
+                    logger.info(f"[PLAYBACK] Applying {config.FADE_DURATION_MS}ms fade effects...")
                 apply_fade_in_out(temp_processed_file, fade_duration_ms=config.FADE_DURATION_MS)
             
-            # Add minimal silence padding (reduced from 150ms to 50ms for performance)
+            # Add minimal silence padding
             if config.VERBOSE_OUTPUT:
-                print("[PLAYBACK] Adding silence padding...")
+                logger.info("[PLAYBACK] Adding silence padding...")
             add_silence_padding(temp_processed_file, padding_ms=50)
             
             # Read WAV file
@@ -101,26 +239,12 @@ class I2SPlayer(AudioPlayer):
                 # Initialize PyAudio
                 audio = pyaudio.PyAudio()
                 
-                # Find output device
-                device_index = None
-                for i in range(audio.get_device_count()):
-                    info = audio.get_device_info_by_index(i)
-                    device_name = info.get('name', '').lower()
-                    max_output = info.get('maxOutputChannels', 0)
-                    
-                    if max_output > 0 and ('googlevoicehat' in device_name or 
-                                          'voicehat' in device_name or
-                                          'sndrpigooglevoi' in device_name):
-                        device_index = i
-                        break
-                
-                # Open output stream
+                # Open output stream (use default device)
                 stream = audio.open(
                     format=audio.get_format_from_width(sample_width),
                     channels=channels,
                     rate=sample_rate,
                     output=True,
-                    output_device_index=device_index,
                     frames_per_buffer=config.CHUNK_SIZE
                 )
                 
@@ -130,10 +254,9 @@ class I2SPlayer(AudioPlayer):
                 
                 # Play audio with real-time volume control
                 current_vol = self.gpio_manager.get_current_volume()
-                print(f"[PLAYBACK] Playing (volume: {current_vol}%)... Rotate encoder to adjust, press button to stop")
+                logger.info(f"[PLAYBACK] Playing (volume: {current_vol}%)... Rotate encoder to adjust, press button to stop")
                 
                 self._is_playing = True
-                chunk_size = config.CHUNK_SIZE * channels * sample_width
                 last_displayed_volume = current_vol
                 interrupted = False
                 
@@ -154,12 +277,12 @@ class I2SPlayer(AudioPlayer):
                     
                     # Display volume changes in real-time
                     if current_vol != last_displayed_volume:
-                        print(f"[PLAYBACK] Volume adjusted: {last_displayed_volume}% → {current_vol}%")
+                        logger.info(f"[PLAYBACK] Volume adjusted: {last_displayed_volume}% → {current_vol}%")
                         last_displayed_volume = current_vol
                     
                     # Check for button interrupt
                     if self.gpio_manager.button.is_pressed:
-                        print("\n[INTERRUPT] *** BUTTON PRESSED! Stopping playback... ***")
+                        logger.info("\n[INTERRUPT] *** BUTTON PRESSED! Stopping playback... ***")
                         interrupted = True
                         break
             
@@ -183,18 +306,18 @@ class I2SPlayer(AudioPlayer):
             self._is_playing = False
             
             if interrupted:
-                print("[INTERRUPT] Playback cancelled!")
+                logger.info("[INTERRUPT] Playback cancelled!")
                 while self.gpio_manager.button.is_pressed:
                     time.sleep(0.01)
                 return False
             else:
-                print("[PLAYBACK] Complete!")
+                logger.info("[PLAYBACK] Complete!")
                 return True
                 
         except Exception as e:
-            print(f"[ERROR] Playback error: {e}")
+            logger.error(f"Playback error: {e}")
             import traceback
-            print(f"[DEBUG] {traceback.format_exc()}")
+            logger.debug(f"{traceback.format_exc()}")
             self.gpio_manager.disable_amplifier()
             
             # Clean up
@@ -221,6 +344,27 @@ class I2SPlayer(AudioPlayer):
             self._is_playing = False
             return False
     
+    def _scale_wav_file(self, input_file, output_file, volume_percent):
+        """
+        Pre-scale WAV file to target volume.
+        
+        Args:
+            input_file: Input WAV file path
+            output_file: Output WAV file path
+            volume_percent: Volume level 0-100
+        """
+        with wave.open(str(input_file), 'rb') as wf:
+            params = wf.getparams()
+            audio_data = wf.readframes(wf.getnframes())
+            
+            # Scale audio data
+            scaled_data = apply_volume_to_audio(audio_data, volume_percent, params.sampwidth)
+            
+            # Write scaled file
+            with wave.open(str(output_file), 'wb') as out_wf:
+                out_wf.setparams(params)
+                out_wf.writeframes(scaled_data)
+    
     def stop(self):
         """
         Stop current playback.
@@ -229,7 +373,7 @@ class I2SPlayer(AudioPlayer):
         Could be extended to support programmatic stopping.
         """
         if self._is_playing:
-            print("[PLAYER] Stopping playback...")
+            logger.info("[PLAYER] Stopping playback...")
             self._is_playing = False
             self.gpio_manager.disable_amplifier()
 
