@@ -116,12 +116,17 @@ def setup():
     
     # Initialize hardware (GPIO, buttons, encoder, amplifier)
     logger.info("\n[INIT] Initializing hardware...")
-    gpio_manager = GPIOManager(activity_tracker=config.activity_tracker)
     
-    # Initialize beep generator
+    # Initialize beep generator first (needed by GPIO manager)
     logger.info("\n[INIT] Setting up audio feedback beeps...")
-    beep_generator = BeepGenerator(gpio_manager)
+    beep_generator = BeepGenerator(gpio_manager=None)  # Will be set after GPIO init
     beep_generator.generate_beep_sounds()
+    
+    # Initialize GPIO manager with beep generator for immediate feedback
+    gpio_manager = GPIOManager(activity_tracker=config.activity_tracker, beep_generator=beep_generator)
+    
+    # Update beep generator with gpio_manager reference
+    beep_generator.gpio_manager = gpio_manager
     
     # Verify beep files exist
     if config.START_BEEP_FILE.exists() and config.STOP_BEEP_FILE.exists():
@@ -179,7 +184,7 @@ def main():
         logger.info("[INFO] Updates: Applied immediately before processing each query\n")
         
         while True:
-            # Wait for button press
+            # Wait for button press (plays start beep automatically)
             gpio_manager.wait_for_button_press()
             
             # Check for updates BEFORE processing query (mandatory)
@@ -197,22 +202,16 @@ def main():
                     logger.warning(f"[UPDATE CHECK] ⚠️  Update check failed: {e}")
                     logger.warning("[UPDATE CHECK] Continuing with query processing...\n")
             
-            # Play start beep
-            beep_generator.play_beep_async(config.START_BEEP_FILE, "start")
-            
             logger.info("\n" + "="*50)
             logger.info("STARTING CONVERSATION")
             logger.info("="*50 + "\n")
             
-            # Step 1: Record
+            # Step 1: Record (plays stop beep automatically)
             logger.info("[STEP 1/3] Recording audio...")
-            if not record_audio(gpio_manager):
+            if not record_audio(gpio_manager, beep_generator):
                 logger.error("[ERROR] Recording failed. Restarting...")
                 time.sleep(2)
                 continue
-            
-            # Play stop beep after recording
-            beep_generator.play_beep_async(config.STOP_BEEP_FILE, "stop")
             
             # Step 2: Send to server
             logger.info("\n[STEP 2/3] Processing on server...")

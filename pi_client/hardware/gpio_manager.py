@@ -5,6 +5,7 @@ Manages button, rotary encoder, and amplifier hardware
 """
 
 import time
+import threading
 from gpiozero import Button, OutputDevice, RotaryEncoder
 import config
 
@@ -20,14 +21,16 @@ class GPIOManager:
     - Volume state management
     """
     
-    def __init__(self, activity_tracker=None):
+    def __init__(self, activity_tracker=None, beep_generator=None):
         """
         Initialize GPIO hardware.
         
         Args:
             activity_tracker: Optional ActivityTracker instance for recording button presses
+            beep_generator: Optional BeepGenerator instance for audio feedback
         """
         self.activity_tracker = activity_tracker
+        self.beep_generator = beep_generator
         self.current_volume = config.INITIAL_VOLUME
         
         # Initialize GPIO objects
@@ -118,6 +121,10 @@ class GPIOManager:
         # Record activity for update manager
         if self.activity_tracker:
             self.activity_tracker.record_activity("button_press")
+        
+        # Play start beep asynchronously - doesn't block recording startup
+        if self.beep_generator:
+            self.beep_generator.play_beep_async(config.START_BEEP_FILE, "start")
         
         time.sleep(0.02)  # Minimal debounce (reduced from 0.05)
     

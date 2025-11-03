@@ -73,9 +73,9 @@ def get_audio_device_index(audio):
     
     try:
         device_count = audio.get_device_count()
-        print(f"[AUDIO] Scanning {device_count} audio devices...")
+        logger.info(f"[AUDIO] Scanning {device_count} audio devices...")
     except Exception as e:
-        print(f"[ERROR] Could not get device count: {e}")
+        logger.error(f"[ERROR] Could not get device count: {e}")
         return None
     
     # First pass: Look for Voice HAT devices
@@ -85,17 +85,17 @@ def get_audio_device_index(audio):
             device_name = info.get('name', '').lower()
             max_input = info.get('maxInputChannels', 0)
             
-            print(f"[AUDIO] Device {i}: {info.get('name', 'Unknown')} (inputs: {max_input})")
+            logger.info(f"[AUDIO] Device {i}: {info.get('name', 'Unknown')} (inputs: {max_input})")
             
             if max_input > 0 and ('googlevoicehat' in device_name or 
                                   'voicehat' in device_name or
                                   'sndrpigooglevoi' in device_name or
                                   'google' in device_name):
                 device_index = i
-                print(f"[AUDIO] ✓ Found Voice HAT device at index {i}: {info.get('name')}")
+                logger.info(f"[AUDIO] ✓ Found Voice HAT device at index {i}: {info.get('name')}")
                 break
         except Exception as e:
-            print(f"[AUDIO] Error checking device {i}: {e}")
+            logger.warning(f"[AUDIO] Error checking device {i}: {e}")
             continue
     
     # Second pass: If Voice HAT not found, use default input device
@@ -103,9 +103,9 @@ def get_audio_device_index(audio):
         try:
             default_info = audio.get_default_input_device_info()
             device_index = default_info['index']
-            print(f"[AUDIO] Using default input device: {default_info.get('name')}")
+            logger.info(f"[AUDIO] Using default input device: {default_info.get('name')}")
         except Exception as e:
-            print(f"[AUDIO] No default input device: {e}")
+            logger.warning(f"[AUDIO] No default input device: {e}")
     
     # Third pass: Use any input device
     if device_index is None:
@@ -114,7 +114,7 @@ def get_audio_device_index(audio):
                 info = audio.get_device_info_by_index(i)
                 if info.get('maxInputChannels', 0) > 0:
                     device_index = i
-                    print(f"[AUDIO] Using first available input device {i}: {info.get('name')}")
+                    logger.info(f"[AUDIO] Using first available input device {i}: {info.get('name')}")
                     break
             except Exception:
                 continue
@@ -123,12 +123,12 @@ def get_audio_device_index(audio):
     config._CACHED_AUDIO_DEVICE_INDEX = device_index
     
     if device_index is None:
-        print("[ERROR] No input device found after scanning all devices")
+        logger.error("[ERROR] No input device found after scanning all devices")
     
     return device_index
 
 
-def record_audio_with_arecord(gpio_manager):
+def record_audio_with_arecord(gpio_manager, beep_generator):
     """
     Record audio using arecord command (more reliable for I2S devices).
     
@@ -137,6 +137,7 @@ def record_audio_with_arecord(gpio_manager):
     
     Args:
         gpio_manager: GPIOManager instance for button control
+        beep_generator: BeepGenerator instance for audio feedback
     
     Returns:
         bool: True if successful, False otherwise
@@ -231,6 +232,10 @@ def record_audio_with_arecord(gpio_manager):
         
         logger.info("[AUDIO] " + "="*40)
         logger.info("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+        
+        # Play stop beep to indicate mic stopped listening
+        if beep_generator:
+            beep_generator.play_beep_async(config.STOP_BEEP_FILE, "stop")
         
         # Stop arecord gracefully and give it time to flush the file
         logger.info("[AUDIO] Stopping arecord and flushing to disk...")
@@ -366,7 +371,7 @@ def record_audio_with_arecord(gpio_manager):
                     pass
 
 
-def record_audio(gpio_manager):
+def record_audio(gpio_manager, beep_generator):
     """
     Record RAW audio from I2S microphone - NO processing on Pi.
     
@@ -383,6 +388,7 @@ def record_audio(gpio_manager):
     
     Args:
         gpio_manager: GPIOManager instance for button control
+        beep_generator: BeepGenerator instance for audio feedback
     
     Returns:
         bool: True if successful, False otherwise
@@ -391,7 +397,7 @@ def record_audio(gpio_manager):
     if is_googlevoicehat():
         # Use arecord for googlevoicehat (prevents segmentation faults)
         logger.info("[AUDIO] ✓ Detected googlevoicehat driver - using arecord for reliability")
-        return record_audio_with_arecord(gpio_manager)
+        return record_audio_with_arecord(gpio_manager, beep_generator)
     
     # For other hardware, try PyAudio with arecord fallback
     logger.info("[AUDIO] Recording... SPEAK NOW!")
@@ -411,30 +417,30 @@ def record_audio(gpio_manager):
         device_index = get_audio_device_index(audio)
         
         if device_index is None:
-            print("[ERROR] No input devices found via PyAudio!")
-            print("[INFO] Falling back to arecord method...")
+            logger.error("[ERROR] No input devices found via PyAudio!")
+            logger.info("[INFO] Falling back to arecord method...")
             # Clean up PyAudio before fallback
             try:
                 if audio:
                     audio.terminate()
                     audio = None
             except Exception as cleanup_error:
-                print(f"[DEBUG] PyAudio cleanup error: {cleanup_error}")
-            return record_audio_with_arecord(gpio_manager)
+                logger.debug(f"[DEBUG] PyAudio cleanup error: {cleanup_error}")
+            return record_audio_with_arecord(gpio_manager, beep_generator)
         
         # Validate device
         try:
             device_info = audio.get_device_info_by_index(device_index)
             max_inputs = device_info.get('maxInputChannels', 0)
             device_name = device_info.get('name', 'Unknown')
-            print(f"[AUDIO] Using device {device_index}: {device_name} ({max_inputs} input channels)")
+            logger.info(f"[AUDIO] Using device {device_index}: {device_name} ({max_inputs} input channels)")
             
             if max_inputs < 1:
-                print("[WARNING] Device reports 0 input channels, trying anyway...")
+                logger.warning("[WARNING] Device reports 0 input channels, trying anyway...")
                 # Don't fail - googlevoicehat might report 0 but still work
         except Exception as e:
-            print(f"[WARNING] Could not validate device {device_index}: {e}")
-            print("[AUDIO] Attempting to open stream anyway...")
+            logger.warning(f"[WARNING] Could not validate device {device_index}: {e}")
+            logger.info("[AUDIO] Attempting to open stream anyway...")
         
         # Open stream with optimized buffer size
         try:
@@ -446,10 +452,10 @@ def record_audio(gpio_manager):
                 input_device_index=device_index,
                 frames_per_buffer=config.CHUNK_SIZE  # 512 samples = 10.6ms latency at 48kHz
             )
-            print(f"[AUDIO] ✓ Stream opened successfully")
+            logger.info(f"[AUDIO] ✓ Stream opened successfully")
         except Exception as e:
-            print(f"[ERROR] Failed to open audio stream: {e}")
-            print(f"[DEBUG] Trying without specifying device index...")
+            logger.error(f"[ERROR] Failed to open audio stream: {e}")
+            logger.debug(f"[DEBUG] Trying without specifying device index...")
             # Try without specifying device (use default)
             try:
                 stream = audio.open(
@@ -459,18 +465,18 @@ def record_audio(gpio_manager):
                     input=True,
                     frames_per_buffer=config.CHUNK_SIZE
                 )
-                print(f"[AUDIO] ✓ Stream opened with default device")
+                logger.info(f"[AUDIO] ✓ Stream opened with default device")
             except Exception as e2:
-                print(f"[ERROR] Failed to open stream with default device: {e2}")
-                print("[INFO] Falling back to arecord method...")
+                logger.error(f"[ERROR] Failed to open stream with default device: {e2}")
+                logger.info("[INFO] Falling back to arecord method...")
                 # Clean up PyAudio before fallback
                 try:
                     if audio:
                         audio.terminate()
                         audio = None
                 except Exception as cleanup_error:
-                    print(f"[DEBUG] PyAudio cleanup error: {cleanup_error}")
-                return record_audio_with_arecord(gpio_manager)
+                    logger.debug(f"[DEBUG] PyAudio cleanup error: {cleanup_error}")
+                return record_audio_with_arecord(gpio_manager, beep_generator)
         
         # Initialize recorder - NO amplification (done on server)
         recorder = StreamingAudioRecorder()
@@ -488,21 +494,25 @@ def record_audio(gpio_manager):
                 # Progress indicator every second
                 if recorder.chunk_count % (config.SAMPLE_RATE // config.CHUNK_SIZE) == 0:
                     seconds = recorder.chunk_count // (config.SAMPLE_RATE // config.CHUNK_SIZE)
-                    print(f"[AUDIO] {seconds}s recorded...")
+                    logger.info(f"[AUDIO] {seconds}s recorded...")
             except Exception as e:
-                print(f"[WARNING] Audio buffer issue: {e}")
+                logger.warning(f"[WARNING] Audio buffer issue: {e}")
                 continue
         
-        print("[AUDIO] " + "="*40)
-        print("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+        logger.info("[AUDIO] " + "="*40)
+        logger.info("[BUTTON] *** BUTTON PRESSED! Stopping recording... ***")
+        
+        # Play stop beep asynchronously (non-blocking)
+        if beep_generator:
+            beep_generator.play_beep_async(config.STOP_BEEP_FILE, "stop")
         
         # Validate recording
         if recorder.chunk_count == 0:
-            print("[ERROR] No audio data recorded")
+            logger.error("[ERROR] No audio data recorded")
             return False
         
         total_seconds = recorder.get_duration()
-        print(f"[AUDIO] Recording complete ({total_seconds:.1f}s)")
+        logger.info(f"[AUDIO] Recording complete ({total_seconds:.1f}s)")
         
         # Get sample width BEFORE closing audio
         sample_width = audio.get_sample_size(pyaudio.paInt16)
@@ -521,7 +531,7 @@ def record_audio(gpio_manager):
             time.sleep(0.005)
         
         # Get RAW audio data - zero processing time!
-        print(f"[AUDIO] Raw audio ready (server will amplify)")
+        logger.info(f"[AUDIO] Raw audio ready (server will amplify)")
         audio_data = recorder.get_audio_data()
         
         # Save to WAV file
@@ -533,20 +543,20 @@ def record_audio(gpio_manager):
         
         # Validate saved file
         if not config.RECORDING_FILE.exists():
-            print("[ERROR] Recording file was not saved")
+            logger.error("[ERROR] Recording file was not saved")
             return False
         
         file_size = config.RECORDING_FILE.stat().st_size
         if file_size < 1000:
-            print(f"[WARNING] Recording file is very small ({file_size} bytes)")
+            logger.warning(f"[WARNING] Recording file is very small ({file_size} bytes)")
         
-        print(f"[AUDIO] Saved: {config.RECORDING_FILE} ({file_size} bytes)")
+        logger.info(f"[AUDIO] Saved: {config.RECORDING_FILE} ({file_size} bytes)")
         return True
         
     except Exception as e:
-        print(f"[ERROR] Recording failed: {e}")
+        logger.error(f"[ERROR] Recording failed: {e}")
         import traceback
-        print(f"[DEBUG] {traceback.format_exc()}")
+        logger.debug(f"[DEBUG] {traceback.format_exc()}")
         return False
         
     finally:
@@ -556,12 +566,12 @@ def record_audio(gpio_manager):
             try:
                 stream.stop_stream()
             except Exception as stop_error:
-                print(f"[DEBUG] Stream stop error (ignored): {stop_error}")
+                logger.debug(f"[DEBUG] Stream stop error (ignored): {stop_error}")
             
             try:
                 stream.close()
             except Exception as close_error:
-                print(f"[DEBUG] Stream close error (ignored): {close_error}")
+                logger.debug(f"[DEBUG] Stream close error (ignored): {close_error}")
             
             stream = None
         
@@ -569,7 +579,7 @@ def record_audio(gpio_manager):
             try:
                 audio.terminate()
             except Exception as terminate_error:
-                print(f"[DEBUG] PyAudio terminate error (ignored): {terminate_error}")
+                logger.debug(f"[DEBUG] PyAudio terminate error (ignored): {terminate_error}")
             
             audio = None
 

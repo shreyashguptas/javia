@@ -30,10 +30,12 @@ def detect_audio_hardware() -> str:
     
     # Return cached result if available
     if _hardware_type_cache is not None:
+        logger.info(f"[HW DETECT] Using cached hardware type: {_hardware_type_cache}")
         return _hardware_type_cache
     
     try:
         # Run arecord -l to list capture devices
+        logger.info("[HW DETECT] Running 'arecord -l' to detect audio hardware...")
         result = subprocess.run(
             ['arecord', '-l'], 
             capture_output=True, 
@@ -42,6 +44,7 @@ def detect_audio_hardware() -> str:
         )
         
         output = result.stdout.lower()
+        logger.info(f"[HW DETECT] arecord output:\n{result.stdout}")
         
         # Check for googlevoicehat driver indicators
         is_voicehat = (
@@ -52,17 +55,20 @@ def detect_audio_hardware() -> str:
         
         if is_voicehat:
             _hardware_type_cache = "googlevoicehat"
-            logger.info("Detected googlevoicehat audio hardware")
+            logger.info("[HW DETECT] ✓ Detected googlevoicehat audio hardware")
+            logger.info("[HW DETECT] Will use arecord for recording (PyAudio incompatible)")
         else:
             _hardware_type_cache = "other"
-            logger.info("Detected non-googlevoicehat audio hardware")
+            logger.info("[HW DETECT] ✓ Detected non-googlevoicehat audio hardware")
+            logger.info("[HW DETECT] Will use PyAudio with arecord fallback")
         
         return _hardware_type_cache
         
     except Exception as e:
-        logger.warning(f"Could not detect audio hardware: {e}")
+        logger.warning(f"[HW DETECT] Could not detect audio hardware: {e}")
         # Default to "other" on detection failure
         _hardware_type_cache = "other"
+        logger.info("[HW DETECT] Defaulting to 'other' hardware type")
         return _hardware_type_cache
 
 
@@ -90,10 +96,14 @@ def get_alsa_device_name() -> str:
     hardware_type = detect_audio_hardware()
     
     if hardware_type == "googlevoicehat":
-        return "plughw:CARD=sndrpigooglevoi,DEV=0"
+        device_name = "plughw:CARD=sndrpigooglevoi,DEV=0"
+        logger.info(f"[HW DETECT] Using ALSA device: {device_name}")
+        return device_name
     else:
         # Default ALSA device
-        return "default"
+        device_name = "default"
+        logger.info(f"[HW DETECT] Using ALSA device: {device_name}")
+        return device_name
 
 
 def reset_cache():
