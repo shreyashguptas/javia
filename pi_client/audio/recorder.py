@@ -11,6 +11,48 @@ import pyaudio
 import config
 
 
+# ==================== HARDWARE DETECTION ====================
+
+def is_googlevoicehat_device():
+    """
+    Check if googlevoicehat driver is present.
+    
+    The googlevoicehat-soundcard driver has known compatibility issues with PyAudio,
+    causing segmentation faults. This function detects the driver so we can use
+    the more reliable arecord method instead.
+    
+    Returns:
+        bool: True if googlevoicehat is detected, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ['arecord', '-l'], 
+            capture_output=True, 
+            text=True,
+            timeout=2
+        )
+        
+        output = result.stdout.lower()
+        
+        # Check for googlevoicehat driver indicators
+        is_voicehat = (
+            'googlevoicehat' in output or 
+            'sndrpigooglevoi' in output or
+            'google voicehat' in output
+        )
+        
+        if is_voicehat:
+            print("[AUDIO] ✓ Detected googlevoicehat driver - using arecord for reliability")
+        
+        return is_voicehat
+        
+    except Exception as e:
+        print(f"[AUDIO] Could not detect audio hardware: {e}")
+        return False
+
+
+# ==================== AUDIO RECORDING ====================
+
 class StreamingAudioRecorder:
     """
     Records audio WITHOUT amplification - raw capture only.
@@ -221,8 +263,13 @@ def record_audio(gpio_manager):
     """
     Record RAW audio from I2S microphone - NO processing on Pi.
     
+    STRATEGY:
+    - Detects hardware type first (googlevoicehat vs other)
+    - Uses arecord for googlevoicehat (eliminates segfaults)
+    - Uses PyAudio for other devices (with arecord fallback)
+    
     CRITICAL PERFORMANCE OPTIMIZATION:
-    - Zero audio processing on Pi Zero 2 W (just raw capture)
+    - Zero audio processing on Pi (just raw capture)
     - Amplification handled by server (has powerful CPU)
     - Fastest possible recording - minimal CPU usage
     - Instant availability after recording stops
@@ -233,6 +280,12 @@ def record_audio(gpio_manager):
     Returns:
         bool: True if successful, False otherwise
     """
+    # Detect hardware and route to appropriate method
+    if is_googlevoicehat_device():
+        # Use arecord for googlevoicehat (prevents segmentation faults)
+        return record_audio_with_arecord(gpio_manager)
+    
+    # For other hardware, try PyAudio with arecord fallback
     print("[AUDIO] Recording... SPEAK NOW!")
     print("[AUDIO] " + "="*40)
     
@@ -252,8 +305,13 @@ def record_audio(gpio_manager):
         if device_index is None:
             print("[ERROR] No input devices found via PyAudio!")
             print("[INFO] Falling back to arecord method...")
-            if audio:
-                audio.terminate()
+            # Clean up PyAudio before fallback
+            try:
+                if audio:
+                    audio.terminate()
+                    audio = None
+            except Exception as cleanup_error:
+                print(f"[DEBUG] PyAudio cleanup error: {cleanup_error}")
             return record_audio_with_arecord(gpio_manager)
         
         # Validate device
@@ -296,7 +354,15 @@ def record_audio(gpio_manager):
                 print(f"[AUDIO] ✓ Stream opened with default device")
             except Exception as e2:
                 print(f"[ERROR] Failed to open stream with default device: {e2}")
-                return False
+                print("[INFO] Falling back to arecord method...")
+                # Clean up PyAudio before fallback
+                try:
+                    if audio:
+                        audio.terminate()
+                        audio = None
+                except Exception as cleanup_error:
+                    print(f"[DEBUG] PyAudio cleanup error: {cleanup_error}")
+                return record_audio_with_arecord(gpio_manager)
         
         # Initialize recorder - NO amplification (done on server)
         recorder = StreamingAudioRecorder()
@@ -376,17 +442,26 @@ def record_audio(gpio_manager):
         return False
         
     finally:
-        # Clean up resources
-        try:
-            if stream is not None:
+        # Defensive cleanup - ensure resources are freed even on errors
+        # This prevents resource leaks that could cause issues on next recording
+        if stream is not None:
+            try:
                 stream.stop_stream()
+            except Exception as stop_error:
+                print(f"[DEBUG] Stream stop error (ignored): {stop_error}")
+            
+            try:
                 stream.close()
-        except:
-            pass
+            except Exception as close_error:
+                print(f"[DEBUG] Stream close error (ignored): {close_error}")
+            
+            stream = None
         
-        try:
-            if audio is not None:
+        if audio is not None:
+            try:
                 audio.terminate()
-        except:
-            pass
+            except Exception as terminate_error:
+                print(f"[DEBUG] PyAudio terminate error (ignored): {terminate_error}")
+            
+            audio = None
 
