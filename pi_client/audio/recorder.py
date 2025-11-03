@@ -15,6 +15,35 @@ from audio.hardware_detect import is_googlevoicehat, get_alsa_device_name
 logger = logging.getLogger(__name__)
 
 
+# ==================== ALSA MIXER CONTROL ====================
+
+def ensure_capture_volume():
+    """
+    Ensure ALSA capture volume is set to maximum for I2S microphones.
+    
+    I2S microphones like INMP441 don't have hardware volume control,
+    but ALSA mixer settings can affect the recording level.
+    """
+    try:
+        # Try to set capture volume to 100% using amixer
+        result = subprocess.run(
+            ['amixer', 'sset', 'Capture', '100%'],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        
+        if result.returncode == 0:
+            logger.info("[AUDIO] ✓ Set capture volume to 100%")
+        else:
+            # Capture control might not exist - that's okay for some drivers
+            logger.debug("[AUDIO] Capture volume control not available (this is normal for I2S mics)")
+    except FileNotFoundError:
+        logger.debug("[AUDIO] amixer not found (okay for direct I2S recording)")
+    except Exception as e:
+        logger.debug(f"[AUDIO] Could not set capture volume: {e}")
+
+
 # ==================== AUDIO RECORDING ====================
 
 class StreamingAudioRecorder:
@@ -142,24 +171,39 @@ def record_audio_with_arecord(gpio_manager):
     process = None
     
     try:
+        # Ensure capture volume is set correctly
+        ensure_capture_volume()
+        
         # Get ALSA device name from hardware detection
         device_name = get_alsa_device_name()
         
-        # Start arecord in background
+        # For I2S microphones (like INMP441), we need to use hw: instead of plughw:
+        # to avoid ALSA's software mixing which can cause issues
+        # Change plughw to hw for better compatibility with I2S devices
+        if "plughw" in device_name:
+            # Try hw: first for I2S devices (better performance)
+            device_name_hw = device_name.replace("plughw", "hw")
+            logger.info(f"[AUDIO] Using hw: device for I2S microphone: {device_name_hw}")
+            device_name = device_name_hw
+        
+        # Start arecord in background with verbose mode to capture any warnings
+        # Note: We capture both stdout and stderr to see ALSA messages
         process = subprocess.Popen(
             [
                 'arecord',
-                '-D', device_name,              # ALSA device (e.g., plughw:CARD=sndrpigooglevoi,DEV=0)
+                '-D', device_name,              # ALSA device (hw: for I2S is more reliable)
                 '-f', 'S16_LE',                 # 16-bit signed little-endian
                 '-r', str(config.SAMPLE_RATE),  # 48000 Hz
                 '-c', str(config.CHANNELS),     # 1 channel (mono)
+                '-V', 'mono',                   # Verbose mode + VU meter (helps debug levels)
                 str(config.RECORDING_FILE)      # Output file
             ],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            text=True  # Get text output for stderr monitoring
         )
         
-        logger.info(f"[AUDIO] arecord started (PID: {process.pid})")
+        logger.info(f"[AUDIO] arecord started (PID: {process.pid}) on device: {device_name}")
         
         # Wait for button to be released first
         while gpio_manager.button.is_pressed:
@@ -182,10 +226,20 @@ def record_audio_with_arecord(gpio_manager):
         process.terminate()
         
         try:
-            process.wait(timeout=2)
+            stdout, stderr = process.communicate(timeout=2)
+            
+            # Log any errors or warnings from arecord
+            if stderr:
+                # Filter out common harmless warnings
+                for line in stderr.split('\n'):
+                    if line.strip() and 'VU meter' not in line and '|' not in line:
+                        if 'warning' in line.lower() or 'error' in line.lower():
+                            logger.warning(f"[AUDIO] arecord: {line.strip()}")
+                        else:
+                            logger.debug(f"[AUDIO] arecord: {line.strip()}")
         except subprocess.TimeoutExpired:
             process.kill()
-            process.wait()
+            stdout, stderr = process.communicate()
         
         # Wait for button release
         while gpio_manager.button.is_pressed:
@@ -197,12 +251,42 @@ def record_audio_with_arecord(gpio_manager):
             return False
         
         file_size = config.RECORDING_FILE.stat().st_size
-        if file_size < 1000:
-            logger.warning(f"[WARNING] Recording file is very small ({file_size} bytes)")
-        
         duration = time.time() - start_time
-        logger.info(f"[AUDIO] Recording complete ({duration:.1f}s, {file_size} bytes)")
+        
+        # Calculate expected minimum file size (at least 0.5 seconds of audio)
+        # 48000 Hz * 2 bytes/sample * 1 channel * 0.5 seconds = 48000 bytes minimum
+        expected_min_size = config.SAMPLE_RATE * 2 * config.CHANNELS * 0.5
+        
+        if file_size < expected_min_size:
+            logger.error(f"[ERROR] Recording file is too small ({file_size} bytes, expected >{expected_min_size:.0f})")
+            logger.error("[ERROR] Microphone may not be working - check hardware connections")
+            logger.error("[ERROR] Verify INMP441 is connected to GPIO20 (PCM_DIN)")
+        elif file_size < 1000:
+            logger.warning(f"[WARNING] Recording file is very small ({file_size} bytes)")
+        else:
+            logger.info(f"[AUDIO] ✓ Recording looks good ({duration:.1f}s, {file_size:,} bytes)")
+        
         logger.info(f"[AUDIO] Saved: {config.RECORDING_FILE}")
+        
+        # Additional diagnostic: Check if file contains mostly silence
+        try:
+            import wave
+            import numpy as np
+            with wave.open(str(config.RECORDING_FILE), 'rb') as wf:
+                audio_data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+                max_amplitude = np.abs(audio_data).max()
+                avg_amplitude = np.abs(audio_data).mean()
+                
+                logger.info(f"[AUDIO] Signal levels - Max: {max_amplitude}/32768, Avg: {avg_amplitude:.1f}/32768")
+                
+                if max_amplitude < 100:
+                    logger.warning("[WARNING] Audio signal is very weak - microphone might not be working!")
+                    logger.warning("[WARNING] Check that INMP441 L/R pin is connected to ground")
+                    logger.warning("[WARNING] Check that INMP441 VDD has 3.3V power")
+                elif max_amplitude < 1000:
+                    logger.warning("[WARNING] Audio signal is quiet - consider checking microphone gain")
+        except Exception as diag_error:
+            logger.debug(f"[DEBUG] Could not analyze audio levels: {diag_error}")
         
         return True
         
