@@ -10,7 +10,7 @@ from urllib.parse import unquote
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 import config
-from audio.codec import compress_to_opus, decompress_from_opus
+from audio.codec import decompress_from_opus
 
 
 class APIClient:
@@ -78,13 +78,13 @@ class APIClient:
     
     def send_audio_to_server(self):
         """
-        Send audio to server with Opus compression.
+        Send audio to server as WAV format.
         
-        PERFORMANCE OPTIMIZATIONS:
-        - Opus compression (90% file size reduction)
+        OPTIMIZATIONS:
         - Connection reuse (keep-alive)
         - Streaming upload (memory efficient)
-        - 10x faster upload times
+        - Server-side gain amplification
+        - No compression needed (Pi 5 has plenty of bandwidth)
         
         Returns:
             bool: True if successful, False otherwise
@@ -99,22 +99,18 @@ class APIClient:
             print("[ERROR] Recording file not found")
             return False
         
-        # Compress WAV to Opus before upload
-        if not compress_to_opus(config.RECORDING_FILE, config.RECORDING_OPUS_FILE, bitrate=96000):
-            print("[ERROR] Failed to compress audio")
-            return False
-        
-        opus_file_size = config.RECORDING_OPUS_FILE.stat().st_size
-        if opus_file_size < 100:
-            print(f"[ERROR] Compressed file too small ({opus_file_size} bytes)")
+        # Send WAV directly (no compression - Pi 5 has plenty of bandwidth)
+        wav_file_size = config.RECORDING_FILE.stat().st_size
+        if wav_file_size < 1000:
+            print(f"[ERROR] Recording file too small ({wav_file_size} bytes)")
             return False
         
         try:
             session = self._get_http_session()
             
-            with open(config.RECORDING_OPUS_FILE, 'rb') as audio_file:
+            with open(config.RECORDING_FILE, 'rb') as audio_file:
                 files = {
-                    'audio': ('recording.opus', audio_file, 'audio/opus')
+                    'audio': ('recording.wav', audio_file, 'audio/wav')
                 }
                 data = {
                     'session_id': None,  # TODO: Implement session management
@@ -122,7 +118,7 @@ class APIClient:
                 }
                 
                 if config.VERBOSE_OUTPUT:
-                    print(f"[SERVER] Uploading {opus_file_size} bytes Opus (gain: {config.MICROPHONE_GAIN}x on server)...")
+                    print(f"[SERVER] Uploading {wav_file_size} bytes WAV (gain: {config.MICROPHONE_GAIN}x on server)...")
                 upload_start = time.time()
                 
                 # Send request with persistent session (faster than new connection)
