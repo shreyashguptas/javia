@@ -39,7 +39,7 @@ SAMPLE_RATE = int(os.getenv('SAMPLE_RATE', '48000'))
 CHANNELS = 2  # Stereo: 2x INMP441 microphones (L/R channels)
 CHUNK_SIZE = 512  # Reduced from 1024 for lower latency (5.3ms vs 10.6ms per chunk)
 MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '1.0'))  # No gain needed - INMP441 outputs 70-80% signal naturally
-FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
+FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '0'))  # Disabled by default for performance
 
 # ==================== VOLUME CONFIGURATION ====================
 

@@ -95,10 +95,10 @@ class I2SPlayer(AudioPlayer):
                     logger.info(f"[PLAYBACK] Applying {config.FADE_DURATION_MS}ms fade effects...")
                 apply_fade_in_out(temp_processed_file, fade_duration_ms=config.FADE_DURATION_MS)
 
-            # Add silence padding
+            # Add minimal silence padding (reduced for performance)
             if config.VERBOSE_OUTPUT:
                 logger.info("[PLAYBACK] Adding silence padding...")
-            add_silence_padding(temp_processed_file, padding_ms=50)
+            add_silence_padding(temp_processed_file, padding_ms=10)
             
             # Apply volume scaling
             current_vol = self.gpio_manager.get_current_volume()
@@ -218,10 +218,10 @@ class I2SPlayer(AudioPlayer):
                     logger.info(f"[PLAYBACK] Applying {config.FADE_DURATION_MS}ms fade effects...")
                 apply_fade_in_out(temp_processed_file, fade_duration_ms=config.FADE_DURATION_MS)
 
-            # Add minimal silence padding
+            # Add minimal silence padding (reduced for performance)
             if config.VERBOSE_OUTPUT:
                 logger.info("[PLAYBACK] Adding silence padding...")
-            add_silence_padding(temp_processed_file, padding_ms=50)
+            add_silence_padding(temp_processed_file, padding_ms=10)
             
             # Read WAV file
             with wave.open(str(temp_processed_file), 'rb') as wf:

@@ -39,7 +39,7 @@ Always use clear, simple language at the appropriate level for the question. Pri
     log_level: str = "info"
     
     # Audio Configuration
-    max_audio_size_mb: int = 25
+    max_audio_size_mb: int = 50  # Allow larger files before compression/chunking
     sample_rate: int = 48000
     
     model_config = SettingsConfigDict(

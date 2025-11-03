@@ -7,11 +7,13 @@ Centralized hardware detection to determine audio device capabilities
 import subprocess
 import logging
 from typing import Optional
+import config
 
 logger = logging.getLogger(__name__)
 
 # Cache detection result to avoid repeated subprocess calls
 _hardware_type_cache: Optional[str] = None
+_device_name_cache: Optional[str] = None
 
 
 def detect_audio_hardware() -> str:
@@ -30,7 +32,8 @@ def detect_audio_hardware() -> str:
     
     # Return cached result if available
     if _hardware_type_cache is not None:
-        logger.info(f"[HW DETECT] Using cached hardware type: {_hardware_type_cache}")
+        if config.VERBOSE_OUTPUT:
+            logger.info(f"[HW DETECT] Using cached hardware type: {_hardware_type_cache}")
         return _hardware_type_cache
     
     try:
@@ -89,25 +92,34 @@ def is_googlevoicehat() -> bool:
 def get_alsa_device_name() -> str:
     """
     Get the ALSA device name for audio operations.
-    
+
     Returns:
         str: ALSA device name (e.g., 'plughw:CARD=sndrpigooglevoi,DEV=0')
     """
+    global _device_name_cache
+
+    # Return cached result if available
+    if _device_name_cache is not None:
+        if config.VERBOSE_OUTPUT:
+            logger.info(f"[HW DETECT] Using ALSA device: {_device_name_cache}")
+        return _device_name_cache
+
     hardware_type = detect_audio_hardware()
-    
+
     if hardware_type == "googlevoicehat":
-        device_name = "plughw:CARD=sndrpigooglevoi,DEV=0"
-        logger.info(f"[HW DETECT] Using ALSA device: {device_name}")
-        return device_name
+        _device_name_cache = "plughw:CARD=sndrpigooglevoi,DEV=0"
     else:
         # Default ALSA device
-        device_name = "default"
-        logger.info(f"[HW DETECT] Using ALSA device: {device_name}")
-        return device_name
+        _device_name_cache = "default"
+
+    if config.VERBOSE_OUTPUT:
+        logger.info(f"[HW DETECT] Using ALSA device: {_device_name_cache}")
+    return _device_name_cache
 
 
 def reset_cache():
     """Reset the hardware detection cache (for testing)"""
-    global _hardware_type_cache
+    global _hardware_type_cache, _device_name_cache
     _hardware_type_cache = None
+    _device_name_cache = None
 
