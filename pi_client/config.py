@@ -38,7 +38,7 @@ AMPLIFIER_SD_PIN = int(os.getenv('AMPLIFIER_SD_PIN', '27'))
 SAMPLE_RATE = int(os.getenv('SAMPLE_RATE', '48000'))
 CHANNELS = 1
 CHUNK_SIZE = 512  # Reduced from 1024 for lower latency (5.3ms vs 10.6ms per chunk)
-MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '2.0'))
+MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '5.0'))  # Increased from 2.0 to 5.0 for INMP441 MEMS mic
 FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
 
 # ==================== VOLUME CONFIGURATION ====================

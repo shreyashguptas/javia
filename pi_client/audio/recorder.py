@@ -347,12 +347,29 @@ def record_audio_with_arecord(gpio_manager):
                 
                 logger.info(f"[AUDIO] Signal levels - Max: {max_amplitude}/32768, Avg: {avg_amplitude:.1f}/32768")
                 
+                # Calculate expected amplitude after server-side amplification
+                amplified_max = max_amplitude * config.MICROPHONE_GAIN
+                amplified_percent = (amplified_max / 32768) * 100
+                
+                logger.info(f"[AUDIO] After {config.MICROPHONE_GAIN}x gain on server: ~{amplified_percent:.0f}% of max")
+                
                 if max_amplitude < 100:
-                    logger.warning("[WARNING] Audio signal is very weak - microphone might not be working!")
-                    logger.warning("[WARNING] Check that INMP441 L/R pin is connected to ground")
-                    logger.warning("[WARNING] Check that INMP441 VDD has 3.3V power")
+                    logger.error("[ERROR] Audio signal is critically weak - microphone might not be working!")
+                    logger.error("[ERROR] Check hardware connections:")
+                    logger.error("[ERROR]   1. INMP441 L/R pin → Ground (for left channel)")
+                    logger.error("[ERROR]   2. INMP441 VDD → 3.3V")
+                    logger.error("[ERROR]   3. INMP441 SD → GPIO20 (PCM_DIN)")
+                    logger.error("[ERROR]   4. INMP441 WS → GPIO19 (PCM_FS)")
+                    logger.error("[ERROR]   5. INMP441 SCK → GPIO18 (PCM_CLK)")
                 elif max_amplitude < 1000:
-                    logger.warning("[WARNING] Audio signal is quiet - consider checking microphone gain")
+                    logger.warning("[WARNING] Audio signal is very quiet - microphone might not be working properly")
+                    logger.warning("[WARNING] Check INMP441 connections and verify it's not damaged")
+                elif amplified_max < 10000:
+                    logger.warning(f"[WARNING] Audio will be quiet even with {config.MICROPHONE_GAIN}x gain")
+                    logger.warning(f"[WARNING] Consider speaking louder or positioning mic closer")
+                elif amplified_max > 32768:
+                    logger.warning(f"[WARNING] Audio may clip with {config.MICROPHONE_GAIN}x gain!")
+                    logger.warning(f"[WARNING] Reduce MICROPHONE_GAIN in config.py or .env file")
         except Exception as diag_error:
             logger.debug(f"[DEBUG] Could not analyze audio levels: {diag_error}")
         
