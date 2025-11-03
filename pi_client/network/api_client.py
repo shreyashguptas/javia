@@ -93,21 +93,19 @@ class APIClient:
         if self.device_manager:
             self.device_manager.send_heartbeat()
         
-        print("[SERVER] Preparing audio for upload...")
-        
         if not config.RECORDING_FILE.exists():
             print("[ERROR] Recording file not found")
             return False
-        
+
         # Send WAV directly (no compression - Pi 5 has plenty of bandwidth)
         wav_file_size = config.RECORDING_FILE.stat().st_size
         if wav_file_size < 1000:
             print(f"[ERROR] Recording file too small ({wav_file_size} bytes)")
             return False
-        
+
         try:
             session = self._get_http_session()
-            
+
             with open(config.RECORDING_FILE, 'rb') as audio_file:
                 files = {
                     'audio': ('recording.wav', audio_file, 'audio/wav')
@@ -116,11 +114,11 @@ class APIClient:
                     'session_id': None,  # TODO: Implement session management
                     'microphone_gain': str(config.MICROPHONE_GAIN)  # Server will amplify audio
                 }
-                
+
                 if config.VERBOSE_OUTPUT:
                     print(f"[SERVER] Uploading {wav_file_size} bytes WAV (gain: {config.MICROPHONE_GAIN}x on server)...")
                 upload_start = time.time()
-                
+
                 # Send request with persistent session (faster than new connection)
                 response = session.post(
                     f"{self.server_url}/api/v1/process",
@@ -129,11 +127,11 @@ class APIClient:
                     timeout=120,
                     stream=True
                 )
-                
+
                 upload_time = time.time() - upload_start
                 if config.VERBOSE_OUTPUT:
                     print(f"[SERVER] Upload complete ({upload_time:.2f}s)")
-                
+
                 if config.VERBOSE_OUTPUT:
                     print(f"[SERVER] Response code: {response.status_code}")
                 
@@ -158,8 +156,8 @@ class APIClient:
                         return False
                     
                     if config.VERBOSE_OUTPUT:
-                        print(f"[SUCCESS] Opus audio saved: {config.RESPONSE_OPUS_FILE} ({total_bytes} bytes)")
-                    
+                        print(f"[SUCCESS] Audio response received ({total_bytes} bytes)")
+
                     # Decompress Opus to WAV for playback
                     if not decompress_from_opus(config.RESPONSE_OPUS_FILE, config.RESPONSE_FILE):
                         print("[ERROR] Failed to decompress response audio")

@@ -83,21 +83,18 @@ class I2SPlayer(AudioPlayer):
         process = None
         
         try:
-            if config.VERBOSE_OUTPUT:
-                logger.info("[PLAYBACK] Preparing audio...")
-            
             # Apply optional processing (fade/padding) and volume scaling
             temp_processed_file = config.AUDIO_DIR / "temp_response_processed.wav"
-            
+
             # Copy original to temp file
             shutil.copy(audio_file_path, temp_processed_file)
-            
+
             # Apply fade and padding ONLY if configured
             if config.FADE_DURATION_MS > 0:
                 if config.VERBOSE_OUTPUT:
                     logger.info(f"[PLAYBACK] Applying {config.FADE_DURATION_MS}ms fade effects...")
                 apply_fade_in_out(temp_processed_file, fade_duration_ms=config.FADE_DURATION_MS)
-            
+
             # Add silence padding
             if config.VERBOSE_OUTPUT:
                 logger.info("[PLAYBACK] Adding silence padding...")
@@ -209,21 +206,18 @@ class I2SPlayer(AudioPlayer):
         temp_processed_file = None
         
         try:
-            if config.VERBOSE_OUTPUT:
-                logger.info("[PLAYBACK] Preparing audio...")
-            
             # Apply optional processing (fade/padding) to a temp file
             temp_processed_file = config.AUDIO_DIR / "temp_response_processed.wav"
-            
+
             # Copy original to temp file
             shutil.copy(audio_file_path, temp_processed_file)
-            
+
             # Apply fade and padding ONLY if configured
             if config.FADE_DURATION_MS > 0:
                 if config.VERBOSE_OUTPUT:
                     logger.info(f"[PLAYBACK] Applying {config.FADE_DURATION_MS}ms fade effects...")
                 apply_fade_in_out(temp_processed_file, fade_duration_ms=config.FADE_DURATION_MS)
-            
+
             # Add minimal silence padding
             if config.VERBOSE_OUTPUT:
                 logger.info("[PLAYBACK] Adding silence padding...")

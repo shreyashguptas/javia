@@ -71,31 +71,35 @@ def setup():
             api_key=None,  # Not needed - device authentication uses device UUID
             timezone=config.DEVICE_TIMEZONE
         )
-        logger.info(f"[INIT] ✓ Device UUID: {config.device_manager.get_device_uuid()}")
-        logger.info(f"[INIT] ✓ Current version: {config.device_manager.get_current_version()}")
+        if config.VERBOSE_OUTPUT:
+            logger.info(f"[INIT] ✓ Device UUID: {config.device_manager.get_device_uuid()}")
+            logger.info(f"[INIT] ✓ Current version: {config.device_manager.get_current_version()}")
         
         # Note: Device registration is now done manually on the server via register_device.sh
         # The device must be registered before it can make requests to the server
         
         # Initialize activity tracker
         config.activity_tracker = ActivityTracker()
-        logger.info("[INIT] ✓ Activity tracker initialized")
-        
+        if config.VERBOSE_OUTPUT:
+            logger.info("[INIT] ✓ Activity tracker initialized")
+
         # Initialize heartbeat manager (sends ping every 5 minutes)
         config.heartbeat_manager = HeartbeatManager(
             device_manager=config.device_manager,
             interval_seconds=300  # 5 minutes
         )
         config.heartbeat_manager.start()
-        logger.info("[INIT] ✓ Heartbeat manager started (5-minute interval)")
-        
+        if config.VERBOSE_OUTPUT:
+            logger.info("[INIT] ✓ Heartbeat manager started (5-minute interval)")
+
         # Initialize update manager
         config.update_manager = UpdateManager(
             server_url=config.SERVER_URL,
             api_key=None,  # Not needed - device authentication uses device UUID
             device_uuid=config.device_manager.get_device_uuid()
         )
-        logger.info("[INIT] ✓ Update manager initialized (OTA updates enabled)")
+        if config.VERBOSE_OUTPUT:
+            logger.info("[INIT] ✓ Update manager initialized (OTA updates enabled)")
     except Exception as e:
         logger.warning(f"[INIT] ⚠️  OTA system initialization failed: {e}")
         logger.warning("[INIT] Continuing without OTA updates...")
@@ -149,23 +153,24 @@ def setup():
     
     logger.info(f"[INIT] Server URL: {config.SERVER_URL}")
     
-    # Test audio devices
-    logger.info("\n[INIT] Checking audio devices...")
-    try:
-        result = subprocess.run(['arecord', '-l'], 
-                              capture_output=True, text=True, check=True)
-        logger.info("[INIT] Recording devices found:")
-        logger.info(result.stdout)
-    except Exception as e:
-        logger.warning(f"[WARNING] Could not list recording devices: {e}")
-    
-    try:
-        result = subprocess.run(['aplay', '-l'], 
-                              capture_output=True, text=True, check=True)
-        logger.info("[INIT] Playback devices found:")
-        logger.info(result.stdout)
-    except Exception as e:
-        logger.warning(f"[WARNING] Could not list playback devices: {e}")
+    # Test audio devices (only if verbose)
+    if config.VERBOSE_OUTPUT:
+        logger.info("\n[INIT] Checking audio devices...")
+        try:
+            result = subprocess.run(['arecord', '-l'],
+                                  capture_output=True, text=True, check=True)
+            logger.info("[INIT] Recording devices found:")
+            logger.info(result.stdout)
+        except Exception as e:
+            logger.warning(f"[WARNING] Could not list recording devices: {e}")
+
+        try:
+            result = subprocess.run(['aplay', '-l'],
+                                  capture_output=True, text=True, check=True)
+            logger.info("[INIT] Playback devices found:")
+            logger.info(result.stdout)
+        except Exception as e:
+            logger.warning(f"[WARNING] Could not list playback devices: {e}")
     
     logger.info("\n[READY] System ready! Press button to start...\n")
     
@@ -190,17 +195,14 @@ def main():
             # Check for updates BEFORE processing query (mandatory)
             if hasattr(config, 'update_manager') and config.update_manager:
                 try:
-                    logger.info("\n[UPDATE CHECK] Checking for updates...")
                     if config.update_manager.apply_update_if_available():
                         # Update is being applied, device will restart
                         logger.info("[UPDATE] Update detected! Installing now...")
                         logger.info("[UPDATE] Device will restart automatically...")
                         # This code won't be reached as device will restart
                         sys.exit(0)
-                    logger.info("[UPDATE CHECK] ✓ No updates available\n")
                 except Exception as e:
-                    logger.warning(f"[UPDATE CHECK] ⚠️  Update check failed: {e}")
-                    logger.warning("[UPDATE CHECK] Continuing with query processing...\n")
+                    logger.warning(f"[UPDATE] Update check failed: {e}")
             
             logger.info("\n" + "="*50)
             logger.info("STARTING CONVERSATION")

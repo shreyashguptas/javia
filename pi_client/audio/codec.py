@@ -6,7 +6,10 @@ Handles compression and decompression of audio files using Opus codec
 
 import wave
 import opuslib
+import logging
 import config
+
+logger = logging.getLogger(__name__)
 
 
 def compress_to_opus(wav_path, opus_path, bitrate=96000):
@@ -29,7 +32,7 @@ def compress_to_opus(wav_path, opus_path, bitrate=96000):
     """
     try:
         if config.VERBOSE_OUTPUT:
-            print(f"[OPUS] Compressing audio to Opus format ({bitrate//1000}kbps)...")
+            logger.info(f"[OPUS] Compressing audio to Opus format ({bitrate//1000}kbps)...")
         
         # Read WAV file
         with wave.open(str(wav_path), 'rb') as wf:
@@ -92,13 +95,14 @@ def compress_to_opus(wav_path, opus_path, bitrate=96000):
         compression_ratio = (1 - compressed_size / original_size) * 100
         
         if config.VERBOSE_OUTPUT:
-            print(f"[OPUS] ✓ Compressed: {original_size} → {compressed_size} bytes ({compression_ratio:.1f}% reduction)")
+            logger.info(f"[OPUS] ✓ Compressed: {original_size} → {compressed_size} bytes ({compression_ratio:.1f}% reduction)")
         return True
         
     except Exception as e:
-        print(f"[ERROR] Opus compression failed: {e}")
-        import traceback
-        print(f"[DEBUG] {traceback.format_exc()}")
+        logger.error(f"Opus compression failed: {e}")
+        if config.VERBOSE_OUTPUT:
+            import traceback
+            logger.debug(f"{traceback.format_exc()}")
         return False
 
 
@@ -119,7 +123,7 @@ def decompress_from_opus(opus_path, wav_path):
     """
     try:
         if config.VERBOSE_OUTPUT:
-            print(f"[OPUS] Decompressing Opus to WAV for playback...")
+            logger.info(f"[OPUS] Decompressing Opus to WAV for playback...")
         
         # Read Opus file
         with open(opus_path, 'rb') as f:
@@ -156,16 +160,17 @@ def decompress_from_opus(opus_path, wav_path):
         if wav_path.exists():
             file_size = wav_path.stat().st_size
             if config.VERBOSE_OUTPUT:
-                print(f"[OPUS] ✓ Decompressed to WAV: {file_size} bytes")
+                logger.info(f"[OPUS] ✓ Decompressed to WAV: {file_size} bytes")
         else:
-            print(f"[ERROR] WAV file not created!")
+            logger.error(f"WAV file not created!")
             return False
-        
+
         return True
-        
+
     except Exception as e:
-        print(f"[ERROR] Opus decompression failed: {e}")
-        import traceback
-        print(f"[DEBUG] {traceback.format_exc()}")
+        logger.error(f"Opus decompression failed: {e}")
+        if config.VERBOSE_OUTPUT:
+            import traceback
+            logger.debug(f"{traceback.format_exc()}")
         return False
 

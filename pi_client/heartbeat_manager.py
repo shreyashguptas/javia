@@ -70,9 +70,7 @@ class HeartbeatManager:
         """Send a single heartbeat to the server"""
         try:
             success = self.device_manager.send_heartbeat(status="online")
-            if success:
-                logger.debug("Heartbeat sent successfully")
-            else:
+            if not success:
                 logger.warning("Heartbeat failed (server may be unreachable)")
         except Exception as e:
             logger.error(f"Failed to send heartbeat: {e}")

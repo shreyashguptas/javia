@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 import requests
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +65,9 @@ class UpdateManager:
                     logger.info(f"Update available: {data.get('latest_version')}")
                     return data
                 else:
-                    logger.debug("No updates available")
                     return None
             else:
                 logger.warning(f"Update check failed: {response.status_code}")
-                print(f"Update check failed: {response.status_code}")
                 return None
                 
         except Exception as e:
@@ -102,33 +101,33 @@ class UpdateManager:
         
         try:
             self.update_in_progress = True
-            logger.info("Starting update process...")
-            
+            logger.info(f"Applying update...")
+
             update_info = update_data.get("update_info", {})
-            
+
             update_id = update_info.get("id")
             version = update_info.get("version")
             requires_system_packages = update_info.get("requires_system_packages", False)
             system_packages = update_info.get("system_packages", [])
-            
+
             # Report status: downloading
             self._report_status(update_id, "downloading")
-            
+
             # Download update package
             update_file = self._download_update(update_id, version)
-            
+
             if not update_file:
                 raise Exception("Failed to download update")
-            
+
             # Report status: installing
             self._report_status(update_id, "installing")
-            
+
             # Extract and install update
             self._install_update(update_file, requires_system_packages, system_packages)
-            
+
             # Report status: completed
             self._report_status(update_id, "completed")
-            
+
             logger.info(f"Update {version} completed successfully")
             
             # Restart service after successful update
@@ -158,24 +157,23 @@ class UpdateManager:
             url = f"{self.server_url}/api/v1/updates/{update_id}/download"
             headers = {"X-Device-UUID": self.device_uuid}
             
-            logger.info(f"Downloading update {version}...")
-            
             response = requests.get(url, headers=headers, stream=True, timeout=300)
-            
+
             if response.status_code != 200:
                 logger.error(f"Download failed: {response.status_code}")
                 return None
-            
+
             # Save to temporary file
             temp_file = Path(tempfile.gettempdir()) / f"javia_update_{version}.zip"
-            
+
             with open(temp_file, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-            
+
             file_size = temp_file.stat().st_size
-            logger.info(f"Downloaded {file_size} bytes to {temp_file}")
+            if config.VERBOSE_OUTPUT:
+                logger.info(f"Downloaded {file_size} bytes")
             
             return temp_file
             

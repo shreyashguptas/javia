@@ -48,22 +48,20 @@ class DeviceManager:
                 # Load existing UUID
                 with open(DEVICE_UUID_FILE, 'r') as f:
                     self.device_uuid = f.read().strip()
-                logger.info(f"Loaded device UUID: {self.device_uuid}")
-                print(f"Loaded device UUID: {self.device_uuid}")
+                print(f"Device UUID: {self.device_uuid}")
             else:
                 # Generate new UUID7
                 self.device_uuid = str(uuid7())
-                
+
                 # Save to file
                 DEVICE_UUID_FILE.parent.mkdir(parents=True, exist_ok=True)
                 with open(DEVICE_UUID_FILE, 'w') as f:
                     f.write(self.device_uuid)
-                
+
                 # Secure the file
                 os.chmod(DEVICE_UUID_FILE, 0o600)
-                
-                logger.info(f"Generated new device UUID: {self.device_uuid}")
-                print(f"Generated new device UUID: {self.device_uuid}")
+
+                print(f"Device UUID: {self.device_uuid}")
         except Exception as e:
             logger.error(f"Failed to load/generate device UUID: {e}")
             print(f"Failed to load/generate device UUID: {e}")

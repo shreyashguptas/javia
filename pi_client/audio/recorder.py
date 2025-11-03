@@ -73,7 +73,8 @@ def get_audio_device_index(audio):
     
     try:
         device_count = audio.get_device_count()
-        logger.info(f"[AUDIO] Scanning {device_count} audio devices...")
+        if config.VERBOSE_OUTPUT:
+            logger.info(f"[AUDIO] Scanning {device_count} audio devices...")
     except Exception as e:
         logger.error(f"[ERROR] Could not get device count: {e}")
         return None
@@ -85,7 +86,8 @@ def get_audio_device_index(audio):
             device_name = info.get('name', '').lower()
             max_input = info.get('maxInputChannels', 0)
             
-            logger.info(f"[AUDIO] Device {i}: {info.get('name', 'Unknown')} (inputs: {max_input})")
+            if config.VERBOSE_OUTPUT:
+                logger.info(f"[AUDIO] Device {i}: {info.get('name', 'Unknown')} (inputs: {max_input})")
             
             if max_input > 0 and ('googlevoicehat' in device_name or 
                                   'voicehat' in device_name or
@@ -95,7 +97,8 @@ def get_audio_device_index(audio):
                 logger.info(f"[AUDIO] ✓ Found Voice HAT device at index {i}: {info.get('name')}")
                 break
         except Exception as e:
-            logger.warning(f"[AUDIO] Error checking device {i}: {e}")
+            if config.VERBOSE_OUTPUT:
+                logger.warning(f"[AUDIO] Error checking device {i}: {e}")
             continue
     
     # Second pass: If Voice HAT not found, use default input device
@@ -223,10 +226,10 @@ def record_audio_with_arecord(gpio_manager, beep_generator):
         # Record until button is pressed again
         start_time = time.time()
         while not gpio_manager.button.is_pressed:
-            # Progress indicator every second
+            # Progress indicator every 5 seconds (reduced verbosity)
             elapsed = time.time() - start_time
-            if int(elapsed) > 0 and int(elapsed) % 1 == 0:
-                if int(elapsed * 10) % 10 == 0:  # Only print once per second
+            if int(elapsed) > 0 and int(elapsed) % 5 == 0:
+                if int(elapsed * 10) % 50 == 0:  # Only print once per 5 seconds
                     logger.info(f"[AUDIO] {int(elapsed)}s recorded...")
             time.sleep(0.1)
         
@@ -321,15 +324,16 @@ def record_audio_with_arecord(gpio_manager, beep_generator):
                 audio_data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
                 max_amplitude = np.abs(audio_data).max()
                 avg_amplitude = np.abs(audio_data).mean()
-                
-                logger.info(f"[AUDIO] Signal levels - Max: {max_amplitude}/32768, Avg: {avg_amplitude:.1f}/32768")
-                
-                # Calculate expected amplitude after server-side amplification
-                amplified_max = max_amplitude * config.MICROPHONE_GAIN
-                amplified_percent = (amplified_max / 32768) * 100
-                
-                logger.info(f"[AUDIO] After {config.MICROPHONE_GAIN}x gain on server: ~{amplified_percent:.0f}% of max")
-                
+
+                if config.VERBOSE_OUTPUT:
+                    logger.info(f"[AUDIO] Signal levels - Max: {max_amplitude}/32768, Avg: {avg_amplitude:.1f}/32768")
+
+                    # Calculate expected amplitude after server-side amplification
+                    amplified_max = max_amplitude * config.MICROPHONE_GAIN
+                    amplified_percent = (amplified_max / 32768) * 100
+
+                    logger.info(f"[AUDIO] After {config.MICROPHONE_GAIN}x gain on server: ~{amplified_percent:.0f}% of max")
+
                 if max_amplitude < 100:
                     logger.error("[ERROR] Audio signal is critically weak - microphone might not be working!")
                     logger.error("[ERROR] Check hardware connections:")
@@ -348,7 +352,8 @@ def record_audio_with_arecord(gpio_manager, beep_generator):
                     logger.warning(f"[WARNING] Audio may clip with {config.MICROPHONE_GAIN}x gain!")
                     logger.warning(f"[WARNING] Reduce MICROPHONE_GAIN in config.py or .env file")
         except Exception as diag_error:
-            logger.debug(f"[DEBUG] Could not analyze audio levels: {diag_error}")
+            if config.VERBOSE_OUTPUT:
+                logger.debug(f"[DEBUG] Could not analyze audio levels: {diag_error}")
         
         return True
         
@@ -491,10 +496,11 @@ def record_audio(gpio_manager, beep_generator):
                 data = stream.read(config.CHUNK_SIZE, exception_on_overflow=False)
                 recorder.add_chunk(data)  # Just store, no processing!
                 
-                # Progress indicator every second
-                if recorder.chunk_count % (config.SAMPLE_RATE // config.CHUNK_SIZE) == 0:
+                # Progress indicator every 5 seconds (reduced verbosity)
+                if recorder.chunk_count % (config.SAMPLE_RATE // config.CHUNK_SIZE * 5) == 0:
                     seconds = recorder.chunk_count // (config.SAMPLE_RATE // config.CHUNK_SIZE)
-                    logger.info(f"[AUDIO] {seconds}s recorded...")
+                    if seconds > 0:  # Only log if not 0
+                        logger.info(f"[AUDIO] {seconds}s recorded...")
             except Exception as e:
                 logger.warning(f"[WARNING] Audio buffer issue: {e}")
                 continue

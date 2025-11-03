@@ -46,7 +46,7 @@ FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '50'))
 # Volume Control Settings
 VOLUME_STEP = int(os.getenv('VOLUME_STEP', '5'))  # Volume change per rotary encoder step (%)
 INITIAL_VOLUME = int(os.getenv('INITIAL_VOLUME', '100'))  # Initial volume on startup (%)
-VERBOSE_OUTPUT = os.getenv('VERBOSE_OUTPUT', 'true').lower() == 'true'  # Control verbose logging
+VERBOSE_OUTPUT = os.getenv('VERBOSE_OUTPUT', 'false').lower() == 'true'  # Control verbose logging
 
 # ==================== FILE PATHS ====================
 
