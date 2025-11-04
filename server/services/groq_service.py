@@ -2,7 +2,7 @@
 import time
 import logging
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
 import requests
 from config import settings
 
@@ -453,13 +453,13 @@ def transcribe_audio(audio_file_path: Path) -> str:
         raise TranscriptionError(f"Transcription pipeline failed: {e}")
 
 
-def query_llm(user_text: str, session_id: Optional[str] = None) -> str:
+def query_llm(user_text: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> str:
     """
-    Query Groq LLM for response
+    Query Groq LLM for response with optional conversation history
     
     Args:
         user_text: User's transcribed text
-        session_id: Optional session ID for conversation history
+        conversation_history: Optional list of previous messages in format [{'role': 'user'|'assistant', 'content': '...'}, ...]
         
     Returns:
         LLM response text
@@ -472,8 +472,18 @@ def query_llm(user_text: str, session_id: Optional[str] = None) -> str:
     if not user_text or not user_text.strip():
         raise LLMError("Cannot query LLM with empty text")
     
-    # TODO: Implement session-based conversation history
-    # For now, each request is independent
+    # Build messages array: system prompt + conversation history + new user message
+    messages = [
+        {'role': 'system', 'content': settings.system_prompt}
+    ]
+    
+    # Add conversation history if provided
+    if conversation_history:
+        messages.extend(conversation_history)
+        logger.info(f"Using conversation history with {len(conversation_history)} previous messages")
+    
+    # Add current user message
+    messages.append({'role': 'user', 'content': user_text.strip()})
     
     max_retries = 3
     for attempt in range(max_retries):
@@ -485,10 +495,7 @@ def query_llm(user_text: str, session_id: Optional[str] = None) -> str:
             
             payload = {
                 'model': settings.llm_model,
-                'messages': [
-                    {'role': 'system', 'content': settings.system_prompt},
-                    {'role': 'user', 'content': user_text.strip()}
-                ],
+                'messages': messages,
                 'max_tokens': 1000,
                 'temperature': 0.7
             }

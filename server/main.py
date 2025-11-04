@@ -8,6 +8,7 @@ import uuid
 from urllib.parse import quote
 import numpy as np
 import opuslib
+from uuid import UUID
 
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Form
 from fastapi.responses import FileResponse, JSONResponse
@@ -23,11 +24,18 @@ from models.requests import (
     HealthResponse
 )
 from models.devices import DeviceResponse
+from models.conversations import MessageRole
 from services.groq_service import (
     transcribe_audio,
     query_llm,
     generate_speech,
     GroqServiceError
+)
+from services.conversation_service import (
+    get_or_create_session,
+    get_conversation_history,
+    add_message,
+    ConversationServiceError
 )
 from routers import devices, updates
 
@@ -313,6 +321,13 @@ async def process_audio(
     temp_output_wav_file = None
     temp_output_opus_file = None
     
+    # Initialize path variables to None to avoid NameError in exception handlers
+    temp_input_path = None
+    temp_decompressed_path = None
+    temp_amplified_path = None
+    temp_output_wav_path = None
+    temp_output_opus_path = None
+    
     try:
         # Validate content type (accept both Opus and WAV)
         is_opus = audio.content_type in ["audio/opus", "audio/ogg"]
@@ -384,9 +399,41 @@ async def process_audio(
         logger.info("Step 1: Transcribing audio...")
         transcription = transcribe_audio(audio_path_for_transcription)
         
-        # Step 2: Query LLM
+        # Step 1.5: Get or create conversation session and fetch history
+        conversation_session = None
+        conversation_history_messages = None
+        
+        try:
+            # Parse session_id if provided
+            parsed_session_id = None
+            if session_id:
+                try:
+                    parsed_session_id = UUID(session_id)
+                except ValueError:
+                    logger.warning(f"Invalid session_id format: {session_id}, creating new session")
+            
+            # Get or create session for device
+            conversation_session = get_or_create_session(device.id, parsed_session_id)
+            logger.info(f"Using conversation session: {conversation_session.id}")
+            
+            # Fetch conversation history
+            history = get_conversation_history(conversation_session.id)
+            
+            # Convert history to format expected by query_llm
+            if history.messages:
+                conversation_history_messages = [
+                    {'role': msg.role.value, 'content': msg.content}
+                    for msg in history.messages
+                ]
+                logger.info(f"Loaded {len(history.messages)} previous messages from conversation history")
+            
+        except ConversationServiceError as e:
+            logger.warning(f"Failed to manage conversation session: {e}, continuing without history")
+            conversation_session = None
+        
+        # Step 2: Query LLM with conversation history
         logger.info("Step 2: Querying LLM...")
-        llm_response = query_llm(transcription, session_id)
+        llm_response = query_llm(transcription, conversation_history_messages)
         
         # Step 3: Generate speech (WAV)
         logger.info("Step 3: Generating speech...")
@@ -408,6 +455,9 @@ async def process_audio(
         # URL-encode header values to handle Unicode characters (HTTP headers must be latin-1 compatible)
         logger.info("Processing complete, returning Opus audio file")
         
+        # Store conversation messages in background task (non-blocking)
+        final_session_id = str(conversation_session.id) if conversation_session else None
+        
         return FileResponse(
             path=str(temp_output_opus_path),
             media_type="audio/opus",
@@ -415,22 +465,25 @@ async def process_audio(
             headers={
                 "X-Transcription": quote(transcription, safe=''),
                 "X-LLM-Response": quote(llm_response, safe=''),
-                "X-Session-ID": quote(session_id or "", safe=''),
+                "X-Session-ID": quote(final_session_id or "", safe=''),
             },
             background=BackgroundTask(
-                cleanup_temp_files,
+                cleanup_temp_files_and_store_messages,
                 temp_input_path, 
                 temp_decompressed_path if temp_decompressed_file else None,
                 temp_amplified_path if temp_amplified_file else None, 
                 temp_output_wav_path,
-                temp_output_opus_path
+                temp_output_opus_path,
+                conversation_session,
+                transcription,
+                llm_response
             )
         )
         
     except GroqServiceError as e:
         logger.error(f"Groq service error: {e}")
         # Clean up temp files
-        cleanup_temp_files(
+        cleanup_temp_files_and_store_messages(
             temp_input_path if temp_input_file else None,
             temp_decompressed_path if temp_decompressed_file else None,
             temp_amplified_path if temp_amplified_file else None,
@@ -446,7 +499,7 @@ async def process_audio(
     except HTTPException:
         # Re-raise HTTP exceptions
         # Clean up temp files
-        cleanup_temp_files(
+        cleanup_temp_files_and_store_messages(
             temp_input_path if temp_input_file else None,
             temp_decompressed_path if temp_decompressed_file else None,
             temp_amplified_path if temp_amplified_file else None,
@@ -458,7 +511,7 @@ async def process_audio(
     except Exception as e:
         logger.error(f"Unexpected error: {e}", exc_info=True)
         # Clean up temp files
-        cleanup_temp_files(
+        cleanup_temp_files_and_store_messages(
             temp_input_path if temp_input_file else None,
             temp_decompressed_path if temp_decompressed_file else None,
             temp_amplified_path if temp_amplified_file else None,
@@ -472,15 +525,49 @@ async def process_audio(
         )
 
 
-def cleanup_temp_files(*files: Path):
-    """Clean up temporary files"""
-    for file_path in files:
+def cleanup_temp_files_and_store_messages(
+    temp_input_path,
+    temp_decompressed_path,
+    temp_amplified_path,
+    temp_output_wav_path,
+    temp_output_opus_path,
+    conversation_session=None,
+    transcription: Optional[str] = None,
+    llm_response: Optional[str] = None
+):
+    """
+    Clean up temporary files and store conversation messages in background.
+    
+    Args:
+        temp_input_path: Path to input audio file
+        temp_decompressed_path: Path to decompressed audio file (if Opus)
+        temp_amplified_path: Path to amplified audio file (if gain > 1.0)
+        temp_output_wav_path: Path to output WAV file
+        temp_output_opus_path: Path to output Opus file
+        conversation_session: Optional conversation session to store messages for
+        transcription: User's transcribed text
+        llm_response: AI's response text
+    """
+    # Clean up temp files
+    for file_path in [temp_input_path, temp_decompressed_path, temp_amplified_path, 
+                      temp_output_wav_path, temp_output_opus_path]:
         try:
             if file_path and file_path.exists():
                 file_path.unlink()
                 logger.debug(f"Cleaned up temp file: {file_path}")
         except Exception as e:
             logger.warning(f"Failed to clean up temp file {file_path}: {e}")
+    
+    # Store conversation messages if session exists
+    if conversation_session and transcription and llm_response:
+        try:
+            # Store user message
+            add_message(conversation_session.id, MessageRole.USER, transcription)
+            # Store AI response
+            add_message(conversation_session.id, MessageRole.ASSISTANT, llm_response)
+            logger.debug(f"Stored conversation messages for session {conversation_session.id}")
+        except ConversationServiceError as e:
+            logger.warning(f"Failed to store conversation messages: {e}")
 
 
 if __name__ == "__main__":
