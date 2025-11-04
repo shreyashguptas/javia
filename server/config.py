@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     # Groq API Configuration
     groq_api_key: str
     
+    # OpenAI API Configuration (for embeddings only)
+    openai_api_key: str
+    
     # Server Security
     server_api_key: str
     
@@ -23,6 +26,7 @@ class Settings(BaseSettings):
     llm_model: str = "openai/gpt-oss-20b"
     tts_model: str = "playai-tts"
     tts_voice: str = "Cheyenne-PlayAI"
+    embedding_model: str = "text-embedding-3-small"
     
     # System Prompt
     system_prompt: str = """You are a helpful and intelligent voice assistant. Adapt your response length based on what the question requires:

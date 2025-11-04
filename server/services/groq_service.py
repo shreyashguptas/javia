@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict
 import requests
+from openai import OpenAI
+import tiktoken
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,16 @@ class LLMError(GroqServiceError):
 
 class TTSError(GroqServiceError):
     """Error during text-to-speech generation"""
+    pass
+
+
+class EmbeddingError(GroqServiceError):
+    """Error during text embedding"""
+    pass
+
+
+class SummarizationError(GroqServiceError):
+    """Error during thread summarization"""
     pass
 
 
@@ -644,4 +656,158 @@ def generate_speech(text: str, output_path: Path) -> None:
             raise TTSError(f"Unexpected error: {e}")
     
     raise TTSError("Failed after all retry attempts")
+
+
+def embed_text(text: str) -> List[float]:
+    """
+    Generate embedding for text using OpenAI embeddings API.
+    
+    Args:
+        text: Text to embed
+        
+    Returns:
+        1536-dimensional embedding vector (text-embedding-3-small)
+        
+    Raises:
+        EmbeddingError: If embedding generation fails
+    """
+    logger.info(f"Generating embedding for text: {text[:100]}...")
+    
+    if not text or not text.strip():
+        raise EmbeddingError("Cannot generate embedding from empty text")
+    
+    try:
+        client = OpenAI(api_key=settings.openai_api_key)
+        
+        response = client.embeddings.create(
+            model=settings.embedding_model,
+            input=text.strip()
+        )
+        
+        embedding = response.data[0].embedding
+        
+        logger.debug(f"Generated embedding: {len(embedding)} dimensions")
+        return embedding
+        
+    except Exception as e:
+        logger.error(f"Failed to generate embedding: {e}")
+        raise EmbeddingError(f"Embedding generation failed: {str(e)}")
+
+
+def estimate_tokens(texts: List[str]) -> int:
+    """
+    Estimate token count for a list of texts using tiktoken.
+    
+    Args:
+        texts: List of text strings to estimate tokens for
+        
+    Returns:
+        Estimated total token count
+    """
+    try:
+        # Use cl100k_base encoding (same as GPT-4)
+        encoding = tiktoken.get_encoding("cl100k_base")
+        total_tokens = 0
+        
+        for text in texts:
+            if text:
+                tokens = encoding.encode(text)
+                total_tokens += len(tokens)
+        
+        return total_tokens
+        
+    except Exception as e:
+        logger.warning(f"Token estimation failed, using heuristic: {e}")
+        # Fallback: rough estimate of ~4 characters per token
+        total_chars = sum(len(text) for text in texts if text)
+        return int(total_chars / 4)
+
+
+def summarize_thread(messages: List[Dict[str, str]]) -> str:
+    """
+    Generate a concise summary of conversation thread using Groq LLM.
+    
+    Args:
+        messages: List of messages in format [{'role': 'user'|'assistant', 'content': '...'}, ...]
+        
+    Returns:
+        Concise summary (2-3 sentences, ~200 tokens max)
+        
+    Raises:
+        SummarizationError: If summarization fails
+    """
+    logger.info(f"Summarizing thread with {len(messages)} messages")
+    
+    if not messages:
+        raise SummarizationError("Cannot summarize empty thread")
+    
+    try:
+        # Build conversation for summarization
+        conversation = []
+        for msg in messages:
+            conversation.append({
+                'role': msg.get('role', 'user'),
+                'content': msg.get('content', '')
+            })
+        
+        # Add system prompt for summarization
+        system_prompt = """You are a helpful assistant that creates concise summaries of conversations. 
+Create a 2-3 sentence summary that captures the main topics and context discussed. 
+Focus on key information that would help maintain context for future conversations."""
+        
+        # Build messages array with system prompt
+        groq_messages = [
+            {'role': 'system', 'content': system_prompt},
+            *conversation
+        ]
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {settings.groq_api_key}'
+        }
+        
+        payload = {
+            'model': settings.llm_model,
+            'messages': groq_messages,
+            'max_tokens': 200,  # Enough for comprehensive 2-3 sentence summary while staying concise
+            'temperature': 0.3
+        }
+        
+        logger.info(f"Requesting thread summary from Groq LLM")
+        
+        response = requests.post(
+            GROQ_LLM_URL,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            if 'choices' not in result or len(result['choices']) == 0:
+                raise SummarizationError("Invalid LLM response structure")
+            
+            summary = result['choices'][0]['message']['content'].strip()
+            
+            if not summary:
+                raise SummarizationError("LLM returned empty summary")
+            
+            logger.info(f"Generated summary: {summary[:100]}...")
+            return summary
+            
+        else:
+            error_msg = f"API error {response.status_code}: {response.text}"
+            logger.error(error_msg)
+            raise SummarizationError(error_msg)
+        
+    except requests.exceptions.Timeout:
+        raise SummarizationError("Request timeout")
+    except requests.exceptions.ConnectionError as e:
+        raise SummarizationError(f"Connection error: {e}")
+    except Exception as e:
+        if isinstance(e, SummarizationError):
+            raise
+        logger.error(f"Failed to summarize thread: {e}")
+        raise SummarizationError(f"Summarization failed: {str(e)}")
 

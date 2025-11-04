@@ -19,6 +19,8 @@ class ConversationSession(BaseModel):
     created_at: datetime
     last_activity_at: datetime
     is_active: bool
+    summary: Optional[str] = None
+    message_count: int = 0
 
 
 class ConversationMessage(BaseModel):
@@ -35,4 +37,13 @@ class ConversationHistory(BaseModel):
     session: ConversationSession
     messages: List[ConversationMessage]
     total_messages: int
+
+
+class ThreadDecision(BaseModel):
+    """Thread resolution decision metadata"""
+    thread_id: UUID
+    decision: str  # "continue" or "new"
+    delta_t_minutes: float
+    similarity_score: Optional[float] = None
+    reason: str
 

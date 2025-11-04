@@ -29,11 +29,13 @@ from services.groq_service import (
     transcribe_audio,
     query_llm,
     generate_speech,
-    GroqServiceError
+    embed_text,
+    GroqServiceError,
+    EmbeddingError
 )
 from services.conversation_service import (
-    get_or_create_session,
-    get_conversation_history,
+    resolve_thread,
+    build_context,
     add_message,
     ConversationServiceError
 )
@@ -399,8 +401,8 @@ async def process_audio(
         logger.info("Step 1: Transcribing audio...")
         transcription = transcribe_audio(audio_path_for_transcription)
         
-        # Step 1.5: Get or create conversation session and fetch history
-        conversation_session = None
+        # Step 1.5: Resolve thread and build context using dynamic threading
+        conversation_thread_id = None
         conversation_history_messages = None
         
         try:
@@ -412,24 +414,33 @@ async def process_audio(
                 except ValueError:
                     logger.warning(f"Invalid session_id format: {session_id}, creating new session")
             
-            # Get or create session for device
-            conversation_session = get_or_create_session(device.id, parsed_session_id)
-            logger.info(f"Using conversation session: {conversation_session.id}")
+            # Generate embedding for user text
+            try:
+                user_embedding = embed_text(transcription)
+            except EmbeddingError as e:
+                logger.warning(f"Failed to generate embedding: {e}, continuing without similarity check")
+                # Use zero vector as fallback (will only use time-based policy)
+                user_embedding = [0.0] * 1536
             
-            # Fetch conversation history
-            history = get_conversation_history(conversation_session.id)
+            # Resolve thread using dynamic policy
+            thread_decision = resolve_thread(device.id, parsed_session_id, transcription, user_embedding)
+            conversation_thread_id = thread_decision.thread_id
             
-            # Convert history to format expected by query_llm
-            if history.messages:
-                conversation_history_messages = [
-                    {'role': msg.role.value, 'content': msg.content}
-                    for msg in history.messages
-                ]
-                logger.info(f"Loaded {len(history.messages)} previous messages from conversation history")
+            logger.info(
+                f"Thread resolution: {thread_decision.decision} - "
+                f"thread_id={conversation_thread_id}, "
+                f"delta_t={thread_decision.delta_t_minutes:.1f}min, "
+                f"similarity={thread_decision.similarity_score:.3f if thread_decision.similarity_score else 'N/A'}, "
+                f"reason={thread_decision.reason}"
+            )
+            
+            # Build context from thread
+            conversation_history_messages = build_context(conversation_thread_id)
+            logger.info(f"Loaded context with {len(conversation_history_messages)} messages")
             
         except ConversationServiceError as e:
-            logger.warning(f"Failed to manage conversation session: {e}, continuing without history")
-            conversation_session = None
+            logger.warning(f"Failed to manage conversation thread: {e}, continuing without history")
+            conversation_thread_id = None
         
         # Step 2: Query LLM with conversation history
         logger.info("Step 2: Querying LLM...")
@@ -456,7 +467,7 @@ async def process_audio(
         logger.info("Processing complete, returning Opus audio file")
         
         # Store conversation messages in background task (non-blocking)
-        final_session_id = str(conversation_session.id) if conversation_session else None
+        final_session_id = str(conversation_thread_id) if conversation_thread_id else None
         
         return FileResponse(
             path=str(temp_output_opus_path),
@@ -474,7 +485,7 @@ async def process_audio(
                 temp_amplified_path if temp_amplified_file else None, 
                 temp_output_wav_path,
                 temp_output_opus_path,
-                conversation_session,
+                conversation_thread_id,
                 transcription,
                 llm_response
             )
@@ -531,7 +542,7 @@ def cleanup_temp_files_and_store_messages(
     temp_amplified_path,
     temp_output_wav_path,
     temp_output_opus_path,
-    conversation_session=None,
+    conversation_thread_id=None,
     transcription: Optional[str] = None,
     llm_response: Optional[str] = None
 ):
@@ -544,7 +555,7 @@ def cleanup_temp_files_and_store_messages(
         temp_amplified_path: Path to amplified audio file (if gain > 1.0)
         temp_output_wav_path: Path to output WAV file
         temp_output_opus_path: Path to output Opus file
-        conversation_session: Optional conversation session to store messages for
+        conversation_thread_id: Optional conversation thread UUID to store messages for
         transcription: User's transcribed text
         llm_response: AI's response text
     """
@@ -558,14 +569,14 @@ def cleanup_temp_files_and_store_messages(
         except Exception as e:
             logger.warning(f"Failed to clean up temp file {file_path}: {e}")
     
-    # Store conversation messages if session exists
-    if conversation_session and transcription and llm_response:
+    # Store conversation messages if thread exists
+    if conversation_thread_id and transcription and llm_response:
         try:
             # Store user message
-            add_message(conversation_session.id, MessageRole.USER, transcription)
+            add_message(conversation_thread_id, MessageRole.USER, transcription)
             # Store AI response
-            add_message(conversation_session.id, MessageRole.ASSISTANT, llm_response)
-            logger.debug(f"Stored conversation messages for session {conversation_session.id}")
+            add_message(conversation_thread_id, MessageRole.ASSISTANT, llm_response)
+            logger.debug(f"Stored conversation messages for thread {conversation_thread_id}")
         except ConversationServiceError as e:
             logger.warning(f"Failed to store conversation messages: {e}")
 
