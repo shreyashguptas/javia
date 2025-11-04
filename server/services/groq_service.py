@@ -892,4 +892,10 @@ Create an updated summary that combines the previous summary with the new conver
                 raise SummarizationError(f"Summarization failed: {str(e)}")
         
         return summary
+        
+    except SummarizationError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to summarize thread: {e}")
+        raise SummarizationError(f"Summarization failed: {str(e)}")
 
