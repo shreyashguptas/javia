@@ -180,11 +180,12 @@ class BeepGenerator:
         except Exception as e:
             logger.error(f"Failed to play beep: {e}")
             self.gpio_manager.disable_amplifier()
-            # Clean up temp file on error
+            # Clean up temp file on error (ignore errors - cleanup is non-critical)
             try:
                 if temp_beep.exists():
                     temp_beep.unlink()
-            except:
+            except (OSError, PermissionError):
+                # File cleanup failed - non-critical, continue
                 pass
     
     def _scale_wav_file(self, input_file, output_file, volume_percent):
@@ -275,12 +276,14 @@ class BeepGenerator:
                 try:
                     stream.stop_stream()
                     stream.close()
-                except:
+                except (OSError, AttributeError):
+                    # Stream cleanup failed - non-critical, continue
                     pass
             if audio:
                 try:
                     audio.terminate()
-                except:
+                except (OSError, AttributeError):
+                    # Audio cleanup failed - non-critical, continue
                     pass
     
     def play_beep(self, beep_file, description=""):

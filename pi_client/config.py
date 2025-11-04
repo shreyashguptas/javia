@@ -6,6 +6,7 @@ Centralizes all configuration constants and environment variables
 
 import os
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -59,6 +60,9 @@ RESPONSE_FILE = AUDIO_DIR / "response.wav"
 START_BEEP_FILE = AUDIO_DIR / "start_beep.wav"
 STOP_BEEP_FILE = AUDIO_DIR / "stop_beep.wav"
 
+# Session management
+SESSION_FILE = Path(os.path.expanduser("~/.javia/session_id"))
+
 # ==================== GLOBAL STATE ====================
 # Note: These are initialized by the main client and hardware modules
 
@@ -77,4 +81,47 @@ current_volume = INITIAL_VOLUME
 device_manager = None
 activity_tracker = None
 update_manager = None
+
+
+# ==================== SESSION MANAGEMENT HELPERS ====================
+
+def get_session_id() -> Optional[str]:
+    """
+    Read session ID from persistent storage.
+    
+    Returns:
+        Session ID string if found, None otherwise
+    """
+    try:
+        if SESSION_FILE.exists():
+            session_id = SESSION_FILE.read_text().strip()
+            if session_id:
+                return session_id
+    except (OSError, IOError) as e:
+        # Fail silently - session management is non-critical
+        if VERBOSE_OUTPUT:
+            print(f"[DEBUG] Failed to read session ID: {e}")
+    return None
+
+
+def save_session_id(session_id: str) -> bool:
+    """
+    Save session ID to persistent storage.
+    
+    Args:
+        session_id: Session ID string to save
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Ensure directory exists
+        SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SESSION_FILE.write_text(session_id.strip())
+        return True
+    except (OSError, IOError) as e:
+        # Fail silently - session management is non-critical
+        if VERBOSE_OUTPUT:
+            print(f"[DEBUG] Failed to save session ID: {e}")
+        return False
 

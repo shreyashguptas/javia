@@ -150,7 +150,8 @@ def apply_fade_in_out(wav_file, fade_duration_ms=50):
         if temp_file is not None and temp_file.exists():
             try:
                 temp_file.unlink()
-            except:
+            except (OSError, PermissionError):
+                # File cleanup failed - non-critical, continue
                 pass
 
 
@@ -221,6 +222,7 @@ def add_silence_padding(wav_file, padding_ms=150):
         if temp_file is not None and temp_file.exists():
             try:
                 temp_file.unlink()
-            except:
+            except (OSError, PermissionError):
+                # File cleanup failed - non-critical, continue
                 pass
 

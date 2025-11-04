@@ -1,6 +1,6 @@
 """Configuration management for voice assistant server"""
 import os
-from typing import Optional
+from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +37,7 @@ Always use clear, simple language at the appropriate level for the question. Pri
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "info"
+    allowed_origins: Optional[str] = "*"  # Comma-separated list of allowed origins, or "*" for all
     
     # Audio Configuration
     max_audio_size_mb: int = 50  # Allow larger files before compression/chunking
@@ -53,6 +54,15 @@ Always use clear, simple language at the appropriate level for the question. Pri
     def max_audio_size_bytes(self) -> int:
         """Convert MB to bytes"""
         return self.max_audio_size_mb * 1024 * 1024
+    
+    @property
+    def cors_origins(self) -> List[str]:
+        """Parse allowed origins for CORS middleware"""
+        if not self.allowed_origins or self.allowed_origins.strip() == "*":
+            return ["*"]
+        # Split by comma and strip whitespace
+        origins = [origin.strip() for origin in self.allowed_origins.split(",")]
+        return origins
 
 
 # Global settings instance

@@ -97,14 +97,16 @@ class DeviceManager:
                 s.connect(("8.8.8.8", 80))
                 metadata["ip_address"] = s.getsockname()[0]
                 s.close()
-            except Exception:
+            except (OSError, socket.error):
+                # Network configuration unavailable - non-critical, continue
                 pass
             
             # Try to get MAC address
             try:
                 import uuid
                 metadata["mac_address"] = ':'.join(['{:02x}'.format((uuid.getnode() >> elements) & 0xff) for elements in range(0,2*6,2)][::-1])
-            except Exception:
+            except OSError:
+                # MAC address unavailable - non-critical, continue
                 pass
             
             return metadata
@@ -119,7 +121,8 @@ class DeviceManager:
                 for line in f:
                     if line.startswith('Model'):
                         return line.split(':', 1)[1].strip()
-        except Exception:
+        except (IOError, FileNotFoundError):
+            # Hardware info unavailable - non-critical, return default
             pass
         return "Unknown"
     

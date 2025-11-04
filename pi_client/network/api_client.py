@@ -105,13 +105,16 @@ class APIClient:
 
         try:
             session = self._get_http_session()
+            
+            # Load session ID from persistent storage
+            session_id = config.get_session_id()
 
             with open(config.RECORDING_FILE, 'rb') as audio_file:
                 files = {
                     'audio': ('recording.wav', audio_file, 'audio/wav')
                 }
                 data = {
-                    'session_id': None,  # TODO: Implement session management
+                    'session_id': session_id,
                     'microphone_gain': str(config.MICROPHONE_GAIN)  # Server will amplify audio
                 }
 
@@ -139,6 +142,13 @@ class APIClient:
                     # Get metadata from headers (URL-decode to handle Unicode characters)
                     transcription = unquote(response.headers.get('X-Transcription', ''))
                     llm_response = unquote(response.headers.get('X-LLM-Response', ''))
+                    new_session_id = unquote(response.headers.get('X-Session-ID', ''))
+                    
+                    # Update session ID if server returned a new one
+                    if new_session_id and new_session_id != session_id:
+                        if config.save_session_id(new_session_id):
+                            if config.VERBOSE_OUTPUT:
+                                print(f"[DEBUG] Updated session ID: {new_session_id}")
                     
                     print(f"[SUCCESS] Transcription: \"{transcription}\"")
                     print(f"[SUCCESS] LLM Response: \"{llm_response}\"")

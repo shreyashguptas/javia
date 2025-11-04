@@ -169,19 +169,22 @@ class I2SPlayer(AudioPlayer):
                 try:
                     process.terminate()
                     process.wait(timeout=1)
-                except:
+                except (subprocess.TimeoutExpired, ProcessLookupError):
+                    # Process didn't terminate, try force kill
                     try:
                         process.kill()
-                    except:
+                    except ProcessLookupError:
+                        # Process already gone, ignore
                         pass
             
-            # Clean up temp files
+            # Clean up temp files (ignore errors - cleanup is non-critical)
             try:
                 if temp_processed_file and temp_processed_file.exists():
                     temp_processed_file.unlink()
                 if 'volume_scaled_file' in locals() and volume_scaled_file.exists():
                     volume_scaled_file.unlink()
-            except:
+            except (OSError, PermissionError):
+                # File cleanup failed - non-critical, continue
                 pass
             
             self._is_playing = False
@@ -314,25 +317,28 @@ class I2SPlayer(AudioPlayer):
             logger.debug(f"{traceback.format_exc()}")
             self.gpio_manager.disable_amplifier()
             
-            # Clean up
+            # Clean up (ignore errors - cleanup is non-critical)
             try:
                 if stream is not None:
                     stream.stop_stream()
                     stream.close()
-            except:
+            except (OSError, AttributeError):
+                # Stream cleanup failed - non-critical, continue
                 pass
             
             try:
                 if audio is not None:
                     audio.terminate()
-            except:
+            except (OSError, AttributeError):
+                # Audio cleanup failed - non-critical, continue
                 pass
             
-            # Clean up temp file
+            # Clean up temp file (ignore errors - cleanup is non-critical)
             if temp_processed_file and temp_processed_file.exists():
                 try:
                     temp_processed_file.unlink()
-                except:
+                except OSError:
+                    # File cleanup failed - non-critical, continue
                     pass
             
             self._is_playing = False

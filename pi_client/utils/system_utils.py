@@ -26,7 +26,8 @@ def suppress_alsa_errors():
     try:
         asound = cdll.LoadLibrary('libasound.so.2')
         asound.snd_lib_error_set_handler(c_error_handler)
-    except:
+    except (OSError, AttributeError):
+        # ALSA library not available - non-critical, continue without error suppression
         pass
 
 
