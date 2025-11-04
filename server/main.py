@@ -430,7 +430,7 @@ async def process_audio(
                 f"Thread resolution: {thread_decision.decision} - "
                 f"thread_id={conversation_thread_id}, "
                 f"delta_t={thread_decision.delta_t_minutes:.1f}min, "
-                f"similarity={thread_decision.similarity_score:.3f if thread_decision.similarity_score else 'N/A'}, "
+                f"similarity={f'{thread_decision.similarity_score:.3f}' if thread_decision.similarity_score is not None else 'N/A'}, "
                 f"reason={thread_decision.reason}"
             )
             
