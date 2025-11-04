@@ -173,6 +173,19 @@ if [ "$IS_FRESH_INSTALL" = true ]; then
     done
     
     echo ""
+    # Require OPENAI_API_KEY
+    while true; do
+        echo "Enter your OPENAI_API_KEY (required for embeddings and summarization):"
+        read -p "OPENAI_API_KEY: " OPENAI_KEY_INPUT
+        if [ -n "$OPENAI_KEY_INPUT" ]; then
+            break
+        else
+            echo "❌ OPENAI_API_KEY cannot be empty. Please enter a valid API key."
+            echo ""
+        fi
+    done
+    
+    echo ""
     echo "Generating SERVER_API_KEY using UUID7..."
     # Install uuid6 package (provides uuid7 support) if needed
     pip install -q uuid6 > /dev/null 2>&1 || true
@@ -257,6 +270,7 @@ import re
 
 env_file = '.env'
 groq_key = 'NOT_SET'
+openai_key = 'NOT_SET'
 server_key = 'NOT_SET'
 supabase_url = 'NOT_SET'
 supabase_key = 'NOT_SET'
@@ -270,6 +284,8 @@ try:
             if line and not line.startswith('#'):
                 if line.startswith('GROQ_API_KEY='):
                     groq_key = line.split('=', 1)[1].strip()
+                elif line.startswith('OPENAI_API_KEY='):
+                    openai_key = line.split('=', 1)[1].strip()
                 elif line.startswith('SERVER_API_KEY='):
                     server_key = line.split('=', 1)[1].strip()
                 elif line.startswith('SUPABASE_URL='):
@@ -281,6 +297,7 @@ try:
                 elif line.startswith('ALLOWED_ORIGINS='):
                     allowed_origins = line.split('=', 1)[1].strip()
     print(f"GROQ_KEY={groq_key}")
+    print(f"OPENAI_KEY={openai_key}")
     print(f"SERVER_KEY={server_key}")
     print(f"SUPABASE_URL={supabase_url}")
     print(f"SUPABASE_KEY={supabase_key}")
@@ -288,6 +305,7 @@ try:
     print(f"ALLOWED_ORIGINS={allowed_origins}")
 except Exception as e:
     print(f"GROQ_KEY=NOT_SET")
+    print(f"OPENAI_KEY=NOT_SET")
     print(f"SERVER_KEY=NOT_SET")
     print(f"SUPABASE_URL=NOT_SET")
     print(f"SUPABASE_KEY=NOT_SET")
@@ -298,6 +316,7 @@ EOF
     
     # Parse the output
     CURRENT_GROQ_KEY=$(echo "$CURRENT_VALUES" | grep "^GROQ_KEY=" | cut -d'=' -f2)
+    CURRENT_OPENAI_KEY=$(echo "$CURRENT_VALUES" | grep "^OPENAI_KEY=" | cut -d'=' -f2)
     CURRENT_SERVER_KEY=$(echo "$CURRENT_VALUES" | grep "^SERVER_KEY=" | cut -d'=' -f2)
     CURRENT_SUPABASE_URL=$(echo "$CURRENT_VALUES" | grep "^SUPABASE_URL=" | cut -d'=' -f2)
     CURRENT_SUPABASE_KEY=$(echo "$CURRENT_VALUES" | grep "^SUPABASE_KEY=" | cut -d'=' -f2)
@@ -320,6 +339,21 @@ EOF
         echo "✓ Keeping existing GROQ_API_KEY"
     else
         echo "✓ Will update GROQ_API_KEY"
+    fi
+    
+    echo ""
+    echo "OPENAI_API_KEY"
+    echo "------------"
+    echo "Current value: ${CURRENT_OPENAI_KEY:0:20}... (hidden)"
+    echo ""
+    echo "Enter new OPENAI_API_KEY (or press Enter to keep current):"
+    read -p "OPENAI_API_KEY: " OPENAI_KEY_INPUT
+    
+    if [ -z "$OPENAI_KEY_INPUT" ]; then
+        OPENAI_KEY_INPUT="$CURRENT_OPENAI_KEY"
+        echo "✓ Keeping existing OPENAI_API_KEY"
+    else
+        echo "✓ Will update OPENAI_API_KEY"
     fi
     
     echo ""
@@ -454,11 +488,12 @@ EOF
 fi
 
 # Update .env file with the values
-GROQ_KEY_INPUT="$GROQ_KEY_INPUT" SERVER_KEY_INPUT="$SERVER_KEY_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" SUPABASE_SERVICE_KEY_INPUT="$SUPABASE_SERVICE_KEY_INPUT" ALLOWED_ORIGINS_INPUT="$ALLOWED_ORIGINS_INPUT" python3 << 'EOF'
+GROQ_KEY_INPUT="$GROQ_KEY_INPUT" OPENAI_KEY_INPUT="$OPENAI_KEY_INPUT" SERVER_KEY_INPUT="$SERVER_KEY_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" SUPABASE_SERVICE_KEY_INPUT="$SUPABASE_SERVICE_KEY_INPUT" ALLOWED_ORIGINS_INPUT="$ALLOWED_ORIGINS_INPUT" python3 << 'EOF'
 import os
 import re
 
 groq_key = os.environ.get('GROQ_KEY_INPUT', '').strip()
+openai_key = os.environ.get('OPENAI_KEY_INPUT', '').strip()
 server_key = os.environ.get('SERVER_KEY_INPUT', '').strip()
 supabase_url = os.environ.get('SUPABASE_URL_INPUT', '').strip()
 supabase_key = os.environ.get('SUPABASE_KEY_INPUT', '').strip()
@@ -472,6 +507,15 @@ with open('.env', 'r') as f:
 if groq_key and groq_key != 'NOT_SET':
     content = re.sub(r'GROQ_API_KEY=.*', f'GROQ_API_KEY={groq_key}', content)
     print("✓ Updated GROQ_API_KEY")
+
+# Replace OPENAI_API_KEY
+if openai_key and openai_key != 'NOT_SET':
+    if 'OPENAI_API_KEY=' in content:
+        content = re.sub(r'OPENAI_API_KEY=.*', f'OPENAI_API_KEY={openai_key}', content)
+    else:
+        # Add after GROQ_API_KEY line
+        content = re.sub(r'(GROQ_API_KEY=.*\n)', f'\\1OPENAI_API_KEY={openai_key}\n', content)
+    print("✓ Updated OPENAI_API_KEY")
 
 # Replace SERVER_API_KEY
 if server_key and server_key != 'NOT_SET':
