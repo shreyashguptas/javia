@@ -1,5 +1,6 @@
 """Conversation service for managing sessions and message history"""
 import logging
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Tuple
 from uuid import UUID
@@ -66,60 +67,6 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     except Exception as e:
         logger.warning(f"Cosine similarity calculation failed: {e}")
         return 0.0
-
-
-def generate_message_embedding(thread_id: UUID, num_messages: int = 4) -> Optional[List[float]]:
-    """
-    Generate embedding from recent messages when summary doesn't exist.
-    
-    This is a fallback strategy for similarity checks when threads don't have
-    summaries yet. It concatenates recent messages and generates an embedding.
-    
-    Args:
-        thread_id: Thread UUID
-        num_messages: Number of recent messages to use (default 4)
-        
-    Returns:
-        Embedding vector (1536 dimensions) or None if no messages or error
-    """
-    try:
-        supabase = get_supabase_admin_client()
-        
-        # Get recent messages
-        messages_result = supabase.table("conversation_messages").select("*").eq(
-            "session_id", thread_id
-        ).order("created_at", desc=True).limit(num_messages).execute()
-        
-        if not messages_result.data:
-            return None
-        
-        # Concatenate message content (most recent first)
-        messages = [ConversationMessage(**msg) for msg in messages_result.data]
-        # Reverse to get chronological order
-        messages.reverse()
-        
-        # Build text from messages
-        message_texts = []
-        for msg in messages:
-            role_label = "User" if msg.role == MessageRole.USER else "Assistant"
-            message_texts.append(f"{role_label}: {msg.content}")
-        
-        combined_text = " ".join(message_texts)
-        
-        if not combined_text.strip():
-            return None
-        
-        # Generate embedding
-        embedding = embed_text(combined_text)
-        logger.debug(f"Generated message-based embedding for thread {thread_id} from {len(messages)} messages")
-        return embedding
-        
-    except EmbeddingError as e:
-        logger.warning(f"Failed to generate message embedding for thread {thread_id}: {e}")
-        return None
-    except Exception as e:
-        logger.warning(f"Error generating message embedding: {e}")
-        return None
 
 
 def _build_system_message(summary: Optional[str], has_messages: bool) -> Tuple[Optional[Dict[str, str]], int]:
@@ -199,6 +146,8 @@ def resolve_thread(
     Policy:
     - Continue thread if (Δt ≤ HARD_TIMEOUT) OR (similarity ≥ SIMILARITY_THRESHOLD)
     - Start new thread if (Δt > HARD_TIMEOUT AND similarity < SIMILARITY_THRESHOLD)
+    - Similarity check uses summary_embedding when available (best quality)
+    - If no summary_embedding exists, uses time-based policy only (no similarity check)
     
     Args:
         device_id: Device UUID
@@ -234,29 +183,37 @@ def resolve_thread(
                 
                 delta_t = (now - last_activity).total_seconds() / 60.0
                 
-                # Check similarity - use summary embedding if available, fallback to message embedding
+                # Check similarity - use summary embedding if available
+                # If no summary_embedding exists, use time-based policy only (no similarity check)
                 similarity = None
                 similarity_method = None
                 
                 if session_data.get("summary_embedding"):
                     try:
                         thread_embedding = session_data["summary_embedding"]
+                        # Handle case where Supabase returns vector as string or list
+                        if isinstance(thread_embedding, str):
+                            # Parse string representation: "[0.1,0.2,0.3]"
+                            thread_embedding = json.loads(thread_embedding)
+                        elif not isinstance(thread_embedding, list):
+                            raise ValueError(f"Unexpected embedding type: {type(thread_embedding)}")
+                        
                         similarity = cosine_similarity(user_embedding, thread_embedding)
                         similarity_method = "summary"
+                        logger.debug(
+                            f"Thread {optional_session_id}: Using summary embedding for similarity check: {similarity:.3f}"
+                        )
                     except Exception as e:
-                        logger.warning(f"Similarity calculation failed: {e}")
+                        logger.warning(
+                            f"Similarity calculation failed for thread {optional_session_id}: {e}"
+                        )
                 else:
-                    # Fallback: generate embedding from recent messages
-                    try:
-                        message_embedding = generate_message_embedding(optional_session_id, num_messages=4)
-                        if message_embedding:
-                            similarity = cosine_similarity(user_embedding, message_embedding)
-                            similarity_method = "messages"
-                            logger.debug(f"Used message-based similarity for thread {optional_session_id}: {similarity:.3f}")
-                    except Exception as e:
-                        logger.warning(f"Failed to generate message embedding for similarity: {e}")
+                    logger.debug(
+                        f"Thread {optional_session_id}: No summary_embedding available, "
+                        f"using time-based policy only (delta_t={delta_t:.1f}min)"
+                    )
                 
-                # Apply policy
+                # Apply policy: Continue if (Δt ≤ HARD_TIMEOUT) OR (similarity ≥ SIMILARITY_THRESHOLD)
                 if delta_t <= HARD_TIMEOUT_MINUTES or (similarity and similarity >= SIMILARITY_THRESHOLD):
                     # Continue thread
                     reason = (
@@ -308,29 +265,35 @@ def resolve_thread(
             
             delta_t = (now - last_activity).total_seconds() / 60.0
             
-            # Check similarity - use summary embedding if available, fallback to message embedding
+            # Check similarity - use summary embedding if available
+            # If no summary_embedding exists, use time-based policy only (no similarity check)
             similarity = None
             similarity_method = None
             
             if session_data.get("summary_embedding"):
                 try:
                     thread_embedding = session_data["summary_embedding"]
+                    # Handle case where Supabase returns vector as string or list
+                    if isinstance(thread_embedding, str):
+                        # Parse string representation: "[0.1,0.2,0.3]"
+                        thread_embedding = json.loads(thread_embedding)
+                    elif not isinstance(thread_embedding, list):
+                        raise ValueError(f"Unexpected embedding type: {type(thread_embedding)}")
+                    
                     similarity = cosine_similarity(user_embedding, thread_embedding)
                     similarity_method = "summary"
+                    logger.debug(
+                        f"Thread {session_id}: Using summary embedding for similarity check: {similarity:.3f}"
+                    )
                 except Exception as e:
-                    logger.warning(f"Similarity calculation failed: {e}")
+                    logger.warning(f"Similarity calculation failed for thread {session_id}: {e}")
             else:
-                # Fallback: generate embedding from recent messages
-                try:
-                    message_embedding = generate_message_embedding(session_id, num_messages=4)
-                    if message_embedding:
-                        similarity = cosine_similarity(user_embedding, message_embedding)
-                        similarity_method = "messages"
-                        logger.debug(f"Used message-based similarity for thread {session_id}: {similarity:.3f}")
-                except Exception as e:
-                    logger.warning(f"Failed to generate message embedding for similarity: {e}")
+                logger.debug(
+                    f"Thread {session_id}: No summary_embedding available, "
+                    f"using time-based policy only (delta_t={delta_t:.1f}min)"
+                )
             
-            # Apply policy
+            # Apply policy: Continue if (Δt ≤ HARD_TIMEOUT) OR (similarity ≥ SIMILARITY_THRESHOLD)
             if delta_t <= HARD_TIMEOUT_MINUTES or (similarity and similarity >= SIMILARITY_THRESHOLD):
                 # Continue thread
                 reason = (
@@ -481,30 +444,112 @@ def update_thread_summary(thread_id: UUID, messages: List[Dict[str, str]]) -> No
     Raises:
         ConversationServiceError: If summary update fails
     """
+    logger.info(f"Starting summary update for thread {thread_id} with {len(messages)} messages")
+    
     try:
         # Generate summary
+        logger.info(f"Generating summary for thread {thread_id}...")
         summary = summarize_thread(messages)
+        logger.info(f"Summary generated successfully for thread {thread_id}: {summary[:100]}...")
         
         # Generate embedding for summary
+        logger.info(f"Generating embedding for summary of thread {thread_id}...")
         summary_embedding = embed_text(summary)
+        logger.info(f"Embedding generated successfully for thread {thread_id}: {len(summary_embedding)} dimensions")
         
         # Update database
+        # Try passing array directly first (Supabase Python client should handle this)
         supabase = get_supabase_admin_client()
-        supabase.table("conversation_sessions").update({
-            "summary": summary,
-            "summary_embedding": summary_embedding
-        }).eq("id", thread_id).execute()
         
-        logger.info(f"Updated summary for thread {thread_id}: {summary[:100]}...")
+        logger.info(f"Attempting to update database for thread {thread_id}...")
+        logger.debug(f"Summary length: {len(summary)} chars, Embedding dimensions: {len(summary_embedding)}")
+        
+        try:
+            # Try direct update with array (should work according to Supabase docs)
+            update_data = {
+                "summary": summary,
+                "summary_embedding": summary_embedding  # Pass as list/array
+            }
+            
+            result = supabase.table("conversation_sessions").update(update_data).eq("id", str(thread_id)).execute()
+            logger.info(f"Database update call completed for thread {thread_id}")
+            
+            # Verify the update succeeded
+            logger.info(f"Verifying update for thread {thread_id}...")
+            verify_result = supabase.table("conversation_sessions").select(
+                "summary", "summary_embedding"
+            ).eq("id", str(thread_id)).execute()
+            
+            if verify_result.data:
+                has_summary = verify_result.data[0].get("summary") is not None
+                has_embedding = verify_result.data[0].get("summary_embedding") is not None
+                
+                logger.info(
+                    f"Verification result for thread {thread_id}: "
+                    f"summary={has_summary}, embedding={has_embedding}"
+                )
+                
+                if has_summary and has_embedding:
+                    logger.info(f"Successfully updated and verified summary and embedding for thread {thread_id}")
+                else:
+                    logger.error(
+                        f"Update completed but verification failed for thread {thread_id}: "
+                        f"summary={has_summary}, embedding={has_embedding}"
+                    )
+                    # Try alternative format: string representation
+                    logger.info(f"Attempting alternative string format for embedding...")
+                    embedding_str = '[' + ','.join(map(str, summary_embedding)) + ']'
+                    
+                    retry_data = {
+                        "summary": summary,
+                        "summary_embedding": embedding_str
+                    }
+                    
+                    retry_result = supabase.table("conversation_sessions").update(retry_data).eq(
+                        "id", str(thread_id)
+                    ).execute()
+                    
+                    # Verify again
+                    verify_retry = supabase.table("conversation_sessions").select(
+                        "summary", "summary_embedding"
+                    ).eq("id", str(thread_id)).execute()
+                    
+                    if verify_retry.data:
+                        has_summary_retry = verify_retry.data[0].get("summary") is not None
+                        has_embedding_retry = verify_retry.data[0].get("summary_embedding") is not None
+                        
+                        if has_summary_retry and has_embedding_retry:
+                            logger.info(f"Successfully updated using string format for thread {thread_id}")
+                        else:
+                            raise ConversationServiceError(
+                                f"Both update methods failed: summary={has_summary_retry}, "
+                                f"embedding={has_embedding_retry}"
+                            )
+                    else:
+                        raise ConversationServiceError("Failed to verify retry update")
+            else:
+                logger.error(f"Failed to verify update for thread {thread_id}: no data returned")
+                raise ConversationServiceError("Failed to verify summary update")
+                
+        except Exception as update_error:
+            logger.error(
+                f"Database update failed for thread {thread_id}: {update_error}",
+                exc_info=True
+            )
+            raise ConversationServiceError(f"Failed to update database: {str(update_error)}")
+        
+        logger.info(f"Completed summary update for thread {thread_id}")
         
     except SummarizationError as e:
-        logger.warning(f"Summarization failed for thread {thread_id}: {e}")
-        # Don't fail completely - just log warning
+        logger.error(f"Summarization failed for thread {thread_id}: {e}", exc_info=True)
+        raise ConversationServiceError(f"Summarization failed: {str(e)}")
     except EmbeddingError as e:
-        logger.warning(f"Embedding generation failed for thread {thread_id}: {e}")
-        # Don't fail completely - just log warning
+        logger.error(f"Embedding generation failed for thread {thread_id}: {e}", exc_info=True)
+        raise ConversationServiceError(f"Embedding generation failed: {str(e)}")
+    except ConversationServiceError:
+        raise
     except Exception as e:
-        logger.error(f"Failed to update thread summary: {e}")
+        logger.error(f"Failed to update thread summary for thread {thread_id}: {e}", exc_info=True)
         raise ConversationServiceError(f"Summary update failed: {str(e)}")
 
 
@@ -600,7 +645,7 @@ def add_message(session_id: UUID, role: MessageRole, content: str) -> Conversati
         
         supabase.table("conversation_sessions").update(update_data).eq("id", session_id).execute()
         
-        logger.debug(f"Added {role.value} message to session {session_id} (count: {new_count})")
+        logger.info(f"Added {role.value} message to session {session_id} (count: {new_count})")
         
         # Fetch messages once for all checks (token count and summarization)
         messages_result = supabase.table("conversation_messages").select("*").eq(
@@ -611,8 +656,18 @@ def add_message(session_id: UUID, role: MessageRole, content: str) -> Conversati
         message_texts = [msg.content for msg in messages]
         token_count = estimate_tokens(message_texts)
         
+        logger.debug(
+            f"Session {session_id}: message_count={new_count}, token_count={token_count}, "
+            f"total_messages={len(messages)}"
+        )
+        
         # Check if summarization needed using centralized helper
         should_summarize, summarize_reason = _should_summarize(new_count, token_count)
+        
+        logger.debug(
+            f"Summarization check for session {session_id}: should_summarize={should_summarize}, "
+            f"reason={summarize_reason}"
+        )
         
         if should_summarize:
             # Log the trigger reason
@@ -629,13 +684,28 @@ def add_message(session_id: UUID, role: MessageRole, content: str) -> Conversati
                 for msg in messages
             ]
             
-            # Update summary (non-blocking, errors handled internally)
+            # Update summary (errors are properly handled and logged in update_thread_summary)
             try:
-                logger.info(f"Updating thread summary (reason: {summarize_reason}, messages: {len(messages_for_summary)})")
+                logger.info(
+                    f"Calling update_thread_summary for session {session_id} "
+                    f"(reason: {summarize_reason}, messages: {len(messages_for_summary)}, "
+                    f"tokens: {token_count})"
+                )
                 update_thread_summary(session_id, messages_for_summary)
-                logger.info(f"Successfully updated summary for thread {session_id}")
+                logger.info(f"Successfully completed summary update for thread {session_id}")
+            except ConversationServiceError as e:
+                logger.error(
+                    f"Summary update failed for thread {session_id} (reason: {summarize_reason}): {e}",
+                    exc_info=True
+                )
+                # Don't raise - allow message to be stored even if summary fails
             except Exception as e:
-                logger.warning(f"Failed to update summary for thread {session_id} (reason: {summarize_reason}): {e}")
+                logger.error(
+                    f"Unexpected error during summary update for thread {session_id} "
+                    f"(reason: {summarize_reason}): {e}",
+                    exc_info=True
+                )
+                # Don't raise - allow message to be stored even if summary fails
         
         return ConversationMessage(**message_data)
         
