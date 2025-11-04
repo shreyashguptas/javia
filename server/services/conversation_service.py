@@ -29,7 +29,7 @@ HARD_TIMEOUT_MINUTES = 90  # Maximum time gap before forcing new thread
 SIMILARITY_THRESHOLD = 0.75  # Minimum cosine similarity to continue thread
 TOKEN_BUDGET = 4000  # Maximum tokens for context
 SUMMARY_TRIGGER_TOKENS = 3000  # Trigger summarization when approaching budget
-SUMMARY_TRIGGER_MESSAGES = 10  # Trigger summarization after N messages (periodic refresh)
+SUMMARY_TRIGGER_MESSAGES = 4  # Trigger summarization after N messages (periodic refresh)
 SUMMARY_MIN_MESSAGES = 2  # Generate summary after first Q&A pair
 
 
