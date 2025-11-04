@@ -723,14 +723,15 @@ def estimate_tokens(texts: List[str]) -> int:
         return int(total_chars / 4)
 
 
-def summarize_thread(messages: List[Dict[str, str]]) -> str:
+def summarize_thread(messages: List[Dict[str, str]], existing_summary: Optional[str] = None) -> str:
     """
     Generate a concise summary of conversation thread using Groq LLM.
     
-    Uses different prompts for initial summaries (2 messages) vs incremental summaries.
+    Uses different prompts for initial summaries (no existing summary) vs incremental summaries.
     
     Args:
         messages: List of messages in format [{'role': 'user'|'assistant', 'content': '...'}, ...]
+        existing_summary: Optional existing summary to update (for incremental summaries)
         
     Returns:
         Concise summary (2-3 sentences, ~200 tokens max)
@@ -753,7 +754,7 @@ def summarize_thread(messages: List[Dict[str, str]]) -> str:
             })
         
         # Use different prompts for initial vs incremental summaries
-        is_initial_summary = len(messages) <= 2
+        is_initial_summary = existing_summary is None
         
         if is_initial_summary:
             # Initial summary prompt - focused on capturing the key topic/question
@@ -765,10 +766,17 @@ Create a clear, focused summary (1-2 sentences) that captures:
 This summary will be used to help maintain context for future related questions."""
         else:
             # Incremental summary prompt - update existing context
-            system_prompt = """You are a helpful assistant that creates concise summaries of conversations. 
-Create a 2-3 sentence summary that captures the main topics and context discussed. 
-Focus on key information that would help maintain context for future conversations.
-Include any important facts, decisions, or ongoing topics."""
+            system_prompt = f"""You are a helpful assistant that creates concise summaries of conversations. 
+
+Previous summary: {existing_summary}
+
+Update this summary to include new information from the conversation below. Your updated summary must:
+1. Include ALL topics discussed (both from the previous summary and new topics)
+2. Be 2-3 sentences long
+3. Capture key information that would help maintain context for future conversations
+4. Include important facts, decisions, or ongoing topics
+
+Create an updated summary that combines the previous summary with the new conversation content."""
         
         # Build messages array with system prompt
         groq_messages = [
@@ -781,48 +789,107 @@ Include any important facts, decisions, or ongoing topics."""
             'Authorization': f'Bearer {settings.groq_api_key}'
         }
         
-        payload = {
-            'model': settings.llm_model,
-            'messages': groq_messages,
-            'max_tokens': 200,  # Enough for comprehensive 2-3 sentence summary while staying concise
-            'temperature': 0.3
-        }
+        # Base payload configuration
+        base_max_tokens = 200
+        base_temperature = 0.3
         
-        logger.info(f"Requesting thread summary from Groq LLM (initial={is_initial_summary}, messages={len(messages)})")
+        # Retry logic for empty summaries
+        max_retries = 2
+        retry_count = 0
+        summary = None
         
-        response = requests.post(
-            GROQ_LLM_URL,
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
+        while retry_count <= max_retries and not summary:
+            # Modify payload based on retry attempt
+            if retry_count == 0:
+                # First attempt: use base configuration
+                max_tokens = base_max_tokens
+                temperature = base_temperature
+                retry_prompt = system_prompt
+            elif retry_count == 1:
+                # First retry: increase tokens and add explicit instruction
+                max_tokens = 300
+                temperature = base_temperature
+                retry_prompt = system_prompt + "\n\nCRITICAL: You MUST provide a summary. Do not return empty."
+                logger.warning(f"Empty summary received, retrying (attempt {retry_count}/{max_retries}) with increased tokens...")
+            else:
+                # Second retry: further increase tokens and temperature
+                max_tokens = 400
+                temperature = 0.5
+                retry_prompt = system_prompt + "\n\nCRITICAL: You MUST return a summary. Summarize all topics discussed. Do not return empty."
+                logger.warning(f"Empty summary received, retrying (attempt {retry_count}/{max_retries}) with increased tokens and temperature...")
+            
+            payload = {
+                'model': settings.llm_model,
+                'messages': [
+                    {'role': 'system', 'content': retry_prompt},
+                    *conversation
+                ],
+                'max_tokens': max_tokens,
+                'temperature': temperature
+            }
+            
+            logger.info(f"Requesting thread summary from Groq LLM (initial={is_initial_summary}, messages={len(messages)}, attempt={retry_count + 1})")
+            
+            try:
+                response = requests.post(
+                    GROQ_LLM_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    if 'choices' not in result or len(result['choices']) == 0:
+                        raise SummarizationError("Invalid LLM response structure")
+                    
+                    summary = result['choices'][0]['message']['content'].strip()
+                    
+                    if not summary:
+                        # Empty summary - will retry if attempts remain
+                        if retry_count < max_retries:
+                            retry_count += 1
+                            continue
+                        else:
+                            # All retries exhausted
+                            last_response = result.get('choices', [{}])[0].get('message', {}).get('content', 'N/A')[:100]
+                            raise SummarizationError(
+                                f"LLM returned empty summary after {retry_count} retries. "
+                                f"Last response: {last_response}"
+                            )
+                    else:
+                        # Success - break out of retry loop
+                        logger.info(f"Generated summary ({'initial' if is_initial_summary else 'incremental'}) on attempt {retry_count + 1}: {summary[:100]}...")
+                        break
+                        
+                else:
+                    error_msg = f"API error {response.status_code}: {response.text}"
+                    logger.error(error_msg)
+                    raise SummarizationError(error_msg)
+                    
+            except requests.exceptions.Timeout:
+                if retry_count < max_retries:
+                    retry_count += 1
+                    logger.warning(f"Request timeout, retrying (attempt {retry_count}/{max_retries})...")
+                    time.sleep(1)  # Brief delay before retry
+                    continue
+                else:
+                    raise SummarizationError("Request timeout after retries")
+            except requests.exceptions.ConnectionError as e:
+                if retry_count < max_retries:
+                    retry_count += 1
+                    logger.warning(f"Connection error, retrying (attempt {retry_count}/{max_retries})...")
+                    time.sleep(1)  # Brief delay before retry
+                    continue
+                else:
+                    raise SummarizationError(f"Connection error: {e}")
+            except SummarizationError:
+                # Re-raise summarization errors (they're already handled above)
+                raise
+            except Exception as e:
+                logger.error(f"Unexpected error during summarization attempt {retry_count + 1}: {e}")
+                raise SummarizationError(f"Summarization failed: {str(e)}")
         
-        if response.status_code == 200:
-            result = response.json()
-            
-            if 'choices' not in result or len(result['choices']) == 0:
-                raise SummarizationError("Invalid LLM response structure")
-            
-            summary = result['choices'][0]['message']['content'].strip()
-            
-            if not summary:
-                raise SummarizationError("LLM returned empty summary")
-            
-            logger.info(f"Generated summary ({'initial' if is_initial_summary else 'incremental'}): {summary[:100]}...")
-            return summary
-            
-        else:
-            error_msg = f"API error {response.status_code}: {response.text}"
-            logger.error(error_msg)
-            raise SummarizationError(error_msg)
-        
-    except requests.exceptions.Timeout:
-        raise SummarizationError("Request timeout")
-    except requests.exceptions.ConnectionError as e:
-        raise SummarizationError(f"Connection error: {e}")
-    except Exception as e:
-        if isinstance(e, SummarizationError):
-            raise
-        logger.error(f"Failed to summarize thread: {e}")
-        raise SummarizationError(f"Summarization failed: {str(e)}")
+        return summary
 

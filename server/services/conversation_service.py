@@ -446,111 +446,143 @@ def update_thread_summary(thread_id: UUID, messages: List[Dict[str, str]]) -> No
     """
     logger.info(f"Starting summary update for thread {thread_id} with {len(messages)} messages")
     
+    # Fetch existing summary for incremental updates
+    supabase = get_supabase_admin_client()
+    existing_summary_result = supabase.table("conversation_sessions").select(
+        "summary"
+    ).eq("id", str(thread_id)).execute()
+    
+    existing_summary = None
+    if existing_summary_result.data:
+        existing_summary = existing_summary_result.data[0].get("summary")
+        
+    is_initial = existing_summary is None
+    logger.info(
+        f"Summary update type: {'initial' if is_initial else 'incremental'} "
+        f"for thread {thread_id} (existing_summary={'present' if existing_summary else 'none'})"
+    )
+    
     try:
         # Generate summary
         logger.info(f"Generating summary for thread {thread_id}...")
-        summary = summarize_thread(messages)
+        summary = summarize_thread(messages, existing_summary=existing_summary)
         logger.info(f"Summary generated successfully for thread {thread_id}: {summary[:100]}...")
+    except SummarizationError as e:
+        logger.error(f"Summarization failed for thread {thread_id}: {e}", exc_info=True)
         
-        # Generate embedding for summary
+        # Fallback strategy: keep existing summary if available
+        if existing_summary:
+            logger.warning(
+                f"Summary update failed for thread {thread_id}, "
+                f"keeping existing summary. Error: {str(e)}"
+            )
+            # Don't raise - allow system to continue with old summary
+            # The summary and embedding remain unchanged in database
+            return
+        else:
+            # No existing summary - extract fallback from first messages
+            logger.warning(
+                f"Summary update failed for thread {thread_id} with no existing summary. "
+                f"Attempting fallback extraction. Error: {str(e)}"
+            )
+            # Extract key topics from first few messages as fallback
+            if messages and len(messages) >= 2:
+                fallback_summary = f"User asked about: {messages[0].get('content', '')[:100]}..."
+                logger.info(f"Using fallback summary for thread {thread_id}: {fallback_summary[:100]}...")
+                summary = fallback_summary
+                # Continue with embedding generation below
+            else:
+                # No fallback possible - raise error
+                raise ConversationServiceError(f"Summarization failed with no fallback: {str(e)}")
+    
+    # Generate embedding for summary (works for both successful summaries and fallback)
+    try:
         logger.info(f"Generating embedding for summary of thread {thread_id}...")
         summary_embedding = embed_text(summary)
         logger.info(f"Embedding generated successfully for thread {thread_id}: {len(summary_embedding)} dimensions")
-        
-        # Update database
-        # Try passing array directly first (Supabase Python client should handle this)
-        supabase = get_supabase_admin_client()
-        
-        logger.info(f"Attempting to update database for thread {thread_id}...")
-        logger.debug(f"Summary length: {len(summary)} chars, Embedding dimensions: {len(summary_embedding)}")
-        
-        try:
-            # Try direct update with array (should work according to Supabase docs)
-            update_data = {
-                "summary": summary,
-                "summary_embedding": summary_embedding  # Pass as list/array
-            }
-            
-            result = supabase.table("conversation_sessions").update(update_data).eq("id", str(thread_id)).execute()
-            logger.info(f"Database update call completed for thread {thread_id}")
-            
-            # Verify the update succeeded
-            logger.info(f"Verifying update for thread {thread_id}...")
-            verify_result = supabase.table("conversation_sessions").select(
-                "summary", "summary_embedding"
-            ).eq("id", str(thread_id)).execute()
-            
-            if verify_result.data:
-                has_summary = verify_result.data[0].get("summary") is not None
-                has_embedding = verify_result.data[0].get("summary_embedding") is not None
-                
-                logger.info(
-                    f"Verification result for thread {thread_id}: "
-                    f"summary={has_summary}, embedding={has_embedding}"
-                )
-                
-                if has_summary and has_embedding:
-                    logger.info(f"Successfully updated and verified summary and embedding for thread {thread_id}")
-                else:
-                    logger.error(
-                        f"Update completed but verification failed for thread {thread_id}: "
-                        f"summary={has_summary}, embedding={has_embedding}"
-                    )
-                    # Try alternative format: string representation
-                    logger.info(f"Attempting alternative string format for embedding...")
-                    embedding_str = '[' + ','.join(map(str, summary_embedding)) + ']'
-                    
-                    retry_data = {
-                        "summary": summary,
-                        "summary_embedding": embedding_str
-                    }
-                    
-                    retry_result = supabase.table("conversation_sessions").update(retry_data).eq(
-                        "id", str(thread_id)
-                    ).execute()
-                    
-                    # Verify again
-                    verify_retry = supabase.table("conversation_sessions").select(
-                        "summary", "summary_embedding"
-                    ).eq("id", str(thread_id)).execute()
-                    
-                    if verify_retry.data:
-                        has_summary_retry = verify_retry.data[0].get("summary") is not None
-                        has_embedding_retry = verify_retry.data[0].get("summary_embedding") is not None
-                        
-                        if has_summary_retry and has_embedding_retry:
-                            logger.info(f"Successfully updated using string format for thread {thread_id}")
-                        else:
-                            raise ConversationServiceError(
-                                f"Both update methods failed: summary={has_summary_retry}, "
-                                f"embedding={has_embedding_retry}"
-                            )
-                    else:
-                        raise ConversationServiceError("Failed to verify retry update")
-            else:
-                logger.error(f"Failed to verify update for thread {thread_id}: no data returned")
-                raise ConversationServiceError("Failed to verify summary update")
-                
-        except Exception as update_error:
-            logger.error(
-                f"Database update failed for thread {thread_id}: {update_error}",
-                exc_info=True
-            )
-            raise ConversationServiceError(f"Failed to update database: {str(update_error)}")
-        
-        logger.info(f"Completed summary update for thread {thread_id}")
-        
-    except SummarizationError as e:
-        logger.error(f"Summarization failed for thread {thread_id}: {e}", exc_info=True)
-        raise ConversationServiceError(f"Summarization failed: {str(e)}")
     except EmbeddingError as e:
         logger.error(f"Embedding generation failed for thread {thread_id}: {e}", exc_info=True)
         raise ConversationServiceError(f"Embedding generation failed: {str(e)}")
-    except ConversationServiceError:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to update thread summary for thread {thread_id}: {e}", exc_info=True)
-        raise ConversationServiceError(f"Summary update failed: {str(e)}")
+    
+    # Update database
+    try:
+        logger.info(f"Attempting to update database for thread {thread_id}...")
+        logger.debug(f"Summary length: {len(summary)} chars, Embedding dimensions: {len(summary_embedding)}")
+        
+        # Try direct update with array (should work according to Supabase docs)
+        update_data = {
+            "summary": summary,
+            "summary_embedding": summary_embedding  # Pass as list/array
+        }
+        
+        result = supabase.table("conversation_sessions").update(update_data).eq("id", str(thread_id)).execute()
+        logger.info(f"Database update call completed for thread {thread_id}")
+        
+        # Verify the update succeeded
+        logger.info(f"Verifying update for thread {thread_id}...")
+        verify_result = supabase.table("conversation_sessions").select(
+            "summary", "summary_embedding"
+        ).eq("id", str(thread_id)).execute()
+        
+        if verify_result.data:
+            has_summary = verify_result.data[0].get("summary") is not None
+            has_embedding = verify_result.data[0].get("summary_embedding") is not None
+            
+            logger.info(
+                f"Verification result for thread {thread_id}: "
+                f"summary={has_summary}, embedding={has_embedding}"
+            )
+            
+            if has_summary and has_embedding:
+                logger.info(f"Successfully updated and verified summary and embedding for thread {thread_id}")
+            else:
+                logger.error(
+                    f"Update completed but verification failed for thread {thread_id}: "
+                    f"summary={has_summary}, embedding={has_embedding}"
+                )
+                # Try alternative format: string representation
+                logger.info(f"Attempting alternative string format for embedding...")
+                embedding_str = '[' + ','.join(map(str, summary_embedding)) + ']'
+                
+                retry_data = {
+                    "summary": summary,
+                    "summary_embedding": embedding_str
+                }
+                
+                retry_result = supabase.table("conversation_sessions").update(retry_data).eq(
+                    "id", str(thread_id)
+                ).execute()
+                
+                # Verify again
+                verify_retry = supabase.table("conversation_sessions").select(
+                    "summary", "summary_embedding"
+                ).eq("id", str(thread_id)).execute()
+                
+                if verify_retry.data:
+                    has_summary_retry = verify_retry.data[0].get("summary") is not None
+                    has_embedding_retry = verify_retry.data[0].get("summary_embedding") is not None
+                    
+                    if has_summary_retry and has_embedding_retry:
+                        logger.info(f"Successfully updated using string format for thread {thread_id}")
+                    else:
+                        raise ConversationServiceError(
+                            f"Both update methods failed: summary={has_summary_retry}, "
+                            f"embedding={has_embedding_retry}"
+                        )
+                else:
+                    raise ConversationServiceError("Failed to verify retry update")
+        else:
+            logger.error(f"Failed to verify update for thread {thread_id}: no data returned")
+            raise ConversationServiceError("Failed to verify summary update")
+            
+    except Exception as update_error:
+        logger.error(
+            f"Database update failed for thread {thread_id}: {update_error}",
+            exc_info=True
+        )
+        raise ConversationServiceError(f"Failed to update database: {str(update_error)}")
+    
+    logger.info(f"Completed summary update for thread {thread_id}")
 
 
 def get_conversation_history(session_id: UUID) -> ConversationHistory:
