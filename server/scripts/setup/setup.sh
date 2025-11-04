@@ -100,17 +100,50 @@ echo ""
 # ==================== STEP 5: COPY/UPDATE FILES ====================
 echo "[5/10] Copying latest server files..."
 
-# Backup .env if it exists
+# Backup .env if it exists (with automatic cleanup of old backups)
 ENV_BACKUP=""
+BACKUP_DIR="$INSTALL_DIR/.env.backups"
 if [ -f "$INSTALL_DIR/.env" ]; then
-    ENV_BACKUP="/tmp/javia_server_env_backup_$$"
+    # Create backup directory if it doesn't exist
+    mkdir -p "$BACKUP_DIR"
+    chmod 700 "$BACKUP_DIR"
+    
+    # Generate timestamped backup filename
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    ENV_BACKUP="$BACKUP_DIR/.env.backup.$TIMESTAMP"
+    
+    # Keep only the 2 most recent backups - delete older ones
+    if [ -d "$BACKUP_DIR" ]; then
+        # Count existing backups
+        BACKUP_COUNT=$(find "$BACKUP_DIR" -name ".env.backup.*" -type f 2>/dev/null | wc -l)
+        
+        if [ "$BACKUP_COUNT" -ge 2 ]; then
+            # Delete oldest backups, keeping only the most recent 1 (we'll add the new one to make 2 total)
+            # Sort by modification time (newest first) and keep only the first one
+            find "$BACKUP_DIR" -name ".env.backup.*" -type f -print0 2>/dev/null | \
+                xargs -0 ls -t 2>/dev/null | tail -n +2 | xargs rm -f 2>/dev/null || true
+            echo "✓ Cleaned up old backups (keeping 2 most recent)"
+        fi
+    fi
+    
+    # Create the new backup
     cp "$INSTALL_DIR/.env" "$ENV_BACKUP"
-    echo "✓ Backed up existing .env file"
+    chmod 600 "$ENV_BACKUP"
+    echo "✓ Backed up existing .env file to: $(basename "$ENV_BACKUP")"
 fi
 
-# Remove old files but preserve venv and .env
+# Clean up old backups in /tmp/ from previous script versions (optional cleanup)
+if [ -d "/tmp" ]; then
+    OLD_BACKUP_COUNT=$(find /tmp -maxdepth 1 -name "javia_server_env_backup_*" -type f 2>/dev/null | wc -l)
+    if [ "$OLD_BACKUP_COUNT" -gt 0 ]; then
+        find /tmp -maxdepth 1 -name "javia_server_env_backup_*" -type f -delete 2>/dev/null || true
+        echo "✓ Cleaned up $OLD_BACKUP_COUNT old backup(s) from /tmp/"
+    fi
+fi
+
+# Remove old files but preserve venv, .env, and .env.backups
 if [ -d "$INSTALL_DIR" ]; then
-    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name 'venv' ! -name '.env' -exec rm -rf {} + 2>/dev/null || true
+    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name 'venv' ! -name '.env' ! -name '.env.backups' -exec rm -rf {} + 2>/dev/null || true
 fi
 
 # Copy all files from server directory
