@@ -220,6 +220,30 @@ if [ "$IS_FRESH_INSTALL" = true ]; then
         echo "⊘ Skipped OTA update configuration (can be added later)"
     fi
     
+    echo ""
+    echo "==================================="
+    echo "CORS Configuration (ALLOWED_ORIGINS)"
+    echo "==================================="
+    echo ""
+    echo "This controls which origins can make CORS requests to your API."
+    echo "Use '*' to allow all origins (less secure, not recommended for production)."
+    echo "For production, specify your actual domains (comma-separated, no spaces)."
+    echo ""
+    echo "Examples:"
+    echo "  - Single origin: https://myapp.com"
+    echo "  - Multiple origins: https://myapp.com,https://www.myapp.com,https://admin.myapp.com"
+    echo "  - Allow all: *"
+    echo ""
+    echo "Enter your ALLOWED_ORIGINS (press Enter to use default '*'):"
+    read -p "ALLOWED_ORIGINS: " ALLOWED_ORIGINS_INPUT
+    
+    if [ -z "$ALLOWED_ORIGINS_INPUT" ]; then
+        ALLOWED_ORIGINS_INPUT="*"
+        echo "✓ Using default value: *"
+    else
+        echo "✓ Will set ALLOWED_ORIGINS to: $ALLOWED_ORIGINS_INPUT"
+    fi
+    
 else
     # UPDATE - Show current values and allow keeping or changing
     echo ""
@@ -237,6 +261,7 @@ server_key = 'NOT_SET'
 supabase_url = 'NOT_SET'
 supabase_key = 'NOT_SET'
 supabase_service_key = 'NOT_SET'
+allowed_origins = 'NOT_SET'
 
 try:
     with open(env_file, 'r') as f:
@@ -253,17 +278,21 @@ try:
                     supabase_key = line.split('=', 1)[1].strip()
                 elif line.startswith('SUPABASE_SERVICE_KEY='):
                     supabase_service_key = line.split('=', 1)[1].strip()
+                elif line.startswith('ALLOWED_ORIGINS='):
+                    allowed_origins = line.split('=', 1)[1].strip()
     print(f"GROQ_KEY={groq_key}")
     print(f"SERVER_KEY={server_key}")
     print(f"SUPABASE_URL={supabase_url}")
     print(f"SUPABASE_KEY={supabase_key}")
     print(f"SUPABASE_SERVICE_KEY={supabase_service_key}")
+    print(f"ALLOWED_ORIGINS={allowed_origins}")
 except Exception as e:
     print(f"GROQ_KEY=NOT_SET")
     print(f"SERVER_KEY=NOT_SET")
     print(f"SUPABASE_URL=NOT_SET")
     print(f"SUPABASE_KEY=NOT_SET")
     print(f"SUPABASE_SERVICE_KEY=NOT_SET")
+    print(f"ALLOWED_ORIGINS=NOT_SET")
 EOF
 )
     
@@ -273,6 +302,7 @@ EOF
     CURRENT_SUPABASE_URL=$(echo "$CURRENT_VALUES" | grep "^SUPABASE_URL=" | cut -d'=' -f2)
     CURRENT_SUPABASE_KEY=$(echo "$CURRENT_VALUES" | grep "^SUPABASE_KEY=" | cut -d'=' -f2)
     CURRENT_SUPABASE_SERVICE_KEY=$(echo "$CURRENT_VALUES" | grep "^SUPABASE_SERVICE_KEY=" | cut -d'=' -f2)
+    CURRENT_ALLOWED_ORIGINS=$(echo "$CURRENT_VALUES" | grep "^ALLOWED_ORIGINS=" | cut -d'=' -f2)
     
     echo "==================================="
     echo "Current Configuration"
@@ -385,10 +415,46 @@ EOF
     else
         echo "✓ Will update SUPABASE_SERVICE_KEY"
     fi
+    
+    echo ""
+    echo "==================================="
+    echo "CORS Configuration (ALLOWED_ORIGINS)"
+    echo "==================================="
+    echo ""
+    echo "This controls which origins can make CORS requests to your API."
+    echo "Use '*' to allow all origins (less secure, not recommended for production)."
+    echo "For production, specify your actual domains (comma-separated, no spaces)."
+    echo ""
+    echo "Examples:"
+    echo "  - Single origin: https://myapp.com"
+    echo "  - Multiple origins: https://myapp.com,https://www.myapp.com,https://admin.myapp.com"
+    echo "  - Allow all: *"
+    echo ""
+    if [ "$CURRENT_ALLOWED_ORIGINS" != "NOT_SET" ] && [ "$CURRENT_ALLOWED_ORIGINS" != "*" ]; then
+        echo "Current value: $CURRENT_ALLOWED_ORIGINS"
+    elif [ "$CURRENT_ALLOWED_ORIGINS" = "*" ]; then
+        echo "Current value: * (all origins allowed)"
+    else
+        echo "Current value: Not set (will default to *)"
+    fi
+    echo ""
+    read -p "ALLOWED_ORIGINS (press Enter to keep current): " ALLOWED_ORIGINS_INPUT
+    
+    if [ -z "$ALLOWED_ORIGINS_INPUT" ]; then
+        if [ "$CURRENT_ALLOWED_ORIGINS" != "NOT_SET" ]; then
+            ALLOWED_ORIGINS_INPUT="$CURRENT_ALLOWED_ORIGINS"
+            echo "✓ Keeping existing ALLOWED_ORIGINS"
+        else
+            ALLOWED_ORIGINS_INPUT="*"
+            echo "✓ Using default value: *"
+        fi
+    else
+        echo "✓ Will update ALLOWED_ORIGINS"
+    fi
 fi
 
 # Update .env file with the values
-GROQ_KEY_INPUT="$GROQ_KEY_INPUT" SERVER_KEY_INPUT="$SERVER_KEY_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" SUPABASE_SERVICE_KEY_INPUT="$SUPABASE_SERVICE_KEY_INPUT" python3 << 'EOF'
+GROQ_KEY_INPUT="$GROQ_KEY_INPUT" SERVER_KEY_INPUT="$SERVER_KEY_INPUT" SUPABASE_URL_INPUT="$SUPABASE_URL_INPUT" SUPABASE_KEY_INPUT="$SUPABASE_KEY_INPUT" SUPABASE_SERVICE_KEY_INPUT="$SUPABASE_SERVICE_KEY_INPUT" ALLOWED_ORIGINS_INPUT="$ALLOWED_ORIGINS_INPUT" python3 << 'EOF'
 import os
 import re
 
@@ -397,6 +463,7 @@ server_key = os.environ.get('SERVER_KEY_INPUT', '').strip()
 supabase_url = os.environ.get('SUPABASE_URL_INPUT', '').strip()
 supabase_key = os.environ.get('SUPABASE_KEY_INPUT', '').strip()
 supabase_service_key = os.environ.get('SUPABASE_SERVICE_KEY_INPUT', '').strip()
+allowed_origins = os.environ.get('ALLOWED_ORIGINS_INPUT', '').strip()
 
 with open('.env', 'r') as f:
     content = f.read()
@@ -437,6 +504,19 @@ if supabase_service_key and supabase_service_key != 'NOT_SET':
         # Add after SUPABASE_KEY line
         content = re.sub(r'(SUPABASE_KEY=.*\n)', f'\\1SUPABASE_SERVICE_KEY={supabase_service_key}\n', content)
     print("✓ Updated SUPABASE_SERVICE_KEY")
+
+# Replace ALLOWED_ORIGINS if provided
+if allowed_origins and allowed_origins != 'NOT_SET':
+    if 'ALLOWED_ORIGINS=' in content:
+        content = re.sub(r'ALLOWED_ORIGINS=.*', f'ALLOWED_ORIGINS={allowed_origins}', content)
+    else:
+        # Add after LOG_LEVEL line (before Audio Configuration section)
+        if 'LOG_LEVEL=' in content:
+            content = re.sub(r'(LOG_LEVEL=.*\n)', f'\\1# CORS Configuration: Comma-separated list of allowed origins\n# Use "*" to allow all origins (not recommended for production)\nALLOWED_ORIGINS={allowed_origins}\n', content)
+        else:
+            # Fallback: add after SUPABASE_SERVICE_KEY line
+            content = re.sub(r'(SUPABASE_SERVICE_KEY=.*\n)', f'\\1# CORS Configuration: Comma-separated list of allowed origins\n# Use "*" to allow all origins (not recommended for production)\nALLOWED_ORIGINS={allowed_origins}\n', content)
+    print("✓ Updated ALLOWED_ORIGINS")
 
 with open('.env', 'w') as f:
     f.write(content)
