@@ -287,14 +287,16 @@ Server:
 The system decides whether to continue an existing thread or create a new one using:
 
 1. **Time Gap (Δt)**: Time since last activity in thread
-2. **Topic Similarity**: Cosine similarity between current message and thread summary embedding
+2. **Topic Similarity**: Cosine similarity between current message and thread summary embedding (or message embedding fallback)
 3. **Policy**: Continue if `(Δt ≤ 90 minutes) OR (similarity ≥ 0.75)`, else create new thread
 
 **Constants**:
 - `HARD_TIMEOUT_MINUTES = 90`: Maximum time gap before forcing new thread
 - `SIMILARITY_THRESHOLD = 0.75`: Minimum similarity to continue thread
 - `TOKEN_BUDGET = 4000`: Maximum tokens for LLM context
-- `SUMMARY_TRIGGER_TOKENS = 3500`: Trigger summarization when approaching budget
+- `SUMMARY_TRIGGER_TOKENS = 3000`: Trigger summarization when approaching budget
+- `SUMMARY_TRIGGER_MESSAGES = 10`: Periodic summary refresh interval
+- `SUMMARY_MIN_MESSAGES = 2`: Generate initial summary after first Q&A pair
 
 ### Flow
 
@@ -302,16 +304,23 @@ The system decides whether to continue an existing thread or create a new one us
 2. System generates embedding for user text (OpenAI text-embedding-3-small)
 3. System resolves thread:
    - Checks recent threads (last 90 minutes)
-   - Computes similarity with thread summary embeddings
+   - For each candidate thread:
+     - If has summary_embedding → use for similarity check
+     - Else if has messages → generate embedding from recent messages (fallback)
+   - Computes similarity with thread embedding
    - Applies policy to continue or create new thread
 4. System builds context:
    - Includes thread summary (if available)
+   - Includes context hint if no summary but messages exist
    - Includes recent messages within token budget
    - Trims older messages if needed
 5. LLM receives context + new user message
 6. System stores user and assistant messages
-7. System checks if summarization needed (every 20 messages or at token threshold)
-8. System updates thread summary and embedding if needed
+7. System checks if summarization needed:
+   - If message_count == 2 → generate initial summary (first Q&A pair)
+   - Else if message_count % 10 == 0 → update summary (periodic refresh)
+   - Else if tokens >= 3000 → update summary (approaching budget)
+8. System updates thread summary and embedding
 
 ### Database Schema
 
@@ -335,14 +344,19 @@ The system decides whether to continue an existing thread or create a new one us
 ### Summarization
 
 Threads are automatically summarized when:
-- Message count reaches multiple of 20
-- Estimated token count exceeds 3500 tokens
+- **Message count == 2**: Generate initial summary after first Q&A pair (CRITICAL for similarity checks)
+- **Message count % 10 == 0**: Periodic summary refresh to keep summaries current
+- **Estimated token count >= 3000**: Summary refresh when approaching token budget
 
 Summarization:
-- Uses OpenAI GPT-4o-mini to generate 2-3 sentence summary
+- Uses Groq LLM to generate summaries
+- Initial summaries (2 messages): Focused 1-2 sentence summary capturing main topic/question
+- Incremental summaries: 2-3 sentence summary updating existing context
 - Stores summary in `conversation_sessions.summary`
 - Generates embedding for summary and stores in `summary_embedding`
 - Used for topic similarity detection in future thread resolution
+
+**Fallback Strategy**: If a thread has messages but no summary embedding, the system generates an embedding from recent messages (up to 4 messages) for similarity checks.
 
 ### Context Building
 
@@ -350,9 +364,10 @@ When building context for LLM:
 1. System retrieves thread summary (if available)
 2. System retrieves recent messages ordered by `created_at`
 3. System estimates tokens for all messages
-4. If under budget: includes all messages
-5. If over budget: trims to most recent messages that fit
-6. Summary is prepended as system message for context
+4. If summary exists: prepends summary as system message
+5. If no summary but messages exist: adds context hint system message
+6. If under budget: includes all messages
+7. If over budget: trims to most recent messages that fit (reserving tokens for system message if needed)
 
 ### Benefits
 

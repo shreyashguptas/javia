@@ -727,6 +727,8 @@ def summarize_thread(messages: List[Dict[str, str]]) -> str:
     """
     Generate a concise summary of conversation thread using Groq LLM.
     
+    Uses different prompts for initial summaries (2 messages) vs incremental summaries.
+    
     Args:
         messages: List of messages in format [{'role': 'user'|'assistant', 'content': '...'}, ...]
         
@@ -750,10 +752,23 @@ def summarize_thread(messages: List[Dict[str, str]]) -> str:
                 'content': msg.get('content', '')
             })
         
-        # Add system prompt for summarization
-        system_prompt = """You are a helpful assistant that creates concise summaries of conversations. 
+        # Use different prompts for initial vs incremental summaries
+        is_initial_summary = len(messages) <= 2
+        
+        if is_initial_summary:
+            # Initial summary prompt - focused on capturing the key topic/question
+            system_prompt = """You are a helpful assistant that creates concise summaries of conversations. 
+This is the beginning of a conversation with only 1-2 exchanges.
+Create a clear, focused summary (1-2 sentences) that captures:
+1. The main topic or question being discussed
+2. Any key entities, facts, or context mentioned
+This summary will be used to help maintain context for future related questions."""
+        else:
+            # Incremental summary prompt - update existing context
+            system_prompt = """You are a helpful assistant that creates concise summaries of conversations. 
 Create a 2-3 sentence summary that captures the main topics and context discussed. 
-Focus on key information that would help maintain context for future conversations."""
+Focus on key information that would help maintain context for future conversations.
+Include any important facts, decisions, or ongoing topics."""
         
         # Build messages array with system prompt
         groq_messages = [
@@ -773,7 +788,7 @@ Focus on key information that would help maintain context for future conversatio
             'temperature': 0.3
         }
         
-        logger.info(f"Requesting thread summary from Groq LLM")
+        logger.info(f"Requesting thread summary from Groq LLM (initial={is_initial_summary}, messages={len(messages)})")
         
         response = requests.post(
             GROQ_LLM_URL,
@@ -793,7 +808,7 @@ Focus on key information that would help maintain context for future conversatio
             if not summary:
                 raise SummarizationError("LLM returned empty summary")
             
-            logger.info(f"Generated summary: {summary[:100]}...")
+            logger.info(f"Generated summary ({'initial' if is_initial_summary else 'incremental'}): {summary[:100]}...")
             return summary
             
         else:
