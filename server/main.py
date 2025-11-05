@@ -73,10 +73,10 @@ app.include_router(updates.router)
 
 def amplify_audio_file(input_path: Path, output_path: Path, gain: float = 2.0):
     """
-    Amplify audio file on the server (offloads processing from Pi Zero 2 W).
+    Amplify audio file on the server (offloads processing from Raspberry Pi).
     
     PERFORMANCE BENEFIT:
-    - Server CPU is much more powerful than Pi Zero 2 W
+    - Server CPU is much more powerful than Raspberry Pi
     - Frees Pi for instant audio capture without processing
     - Amplification takes <1ms on server vs 50-100ms on Pi
     
@@ -201,7 +201,7 @@ def decompress_opus_to_wav(opus_path: Path, wav_path: Path):
         raise
 
 
-def compress_wav_to_opus(wav_path: Path, opus_path: Path, bitrate: int = 96000):
+def compress_wav_to_opus(wav_path: Path, opus_path: Path, bitrate: int = 64000):
     """
     Compress WAV file to Opus for efficient response transfer.
     
@@ -213,7 +213,7 @@ def compress_wav_to_opus(wav_path: Path, opus_path: Path, bitrate: int = 96000):
     Args:
         wav_path: Path to input WAV file
         opus_path: Path to output Opus file
-        bitrate: Bitrate in bits/second (default 96000)
+        bitrate: Bitrate in bits/second (default 64000)
     """
     try:
         logger.debug(f"Compressing WAV to Opus: {wav_path}")

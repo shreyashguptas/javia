@@ -521,19 +521,20 @@ Total: 3-11 seconds
 
 ### Audio Compression
 
-**Implementation**: Opus codec at 96kbps for bidirectional compression
+**Implementation**: Opus codec at 64kbps for bidirectional compression
 
 **Benefits**:
 - **90% file size reduction**: 5MB WAV → 500KB Opus
 - **10x faster uploads**: 2s → 0.2s on typical home network
 - **10x faster downloads**: 1s → 0.1s for TTS responses
-- **No quality loss**: 96kbps Opus maintains excellent speech quality
+- **No quality loss**: 64kbps Opus maintains excellent speech quality
 - **Low CPU overhead**: ~10ms encoding, ~5ms decoding on Pi 5 (even faster than Pi Zero)
 
 **Format Details**:
-- Bitrate: 96kbps (optimal for voice)
+- Bitrate: 64kbps (optimal for voice)
 - Sample Rate: 48kHz (matches hardware)
 - Channels: Mono
+  - Note: While hardware supports stereo recording (dual INMP441 microphones), audio is converted to mono during Opus compression for optimal voice quality and smaller file sizes.
 - Application: VOIP mode (optimized for speech)
 - Complexity: 10 (maximum quality)
 
