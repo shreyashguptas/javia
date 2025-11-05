@@ -123,7 +123,7 @@ def _should_summarize(message_count: int, token_count: Optional[int] = None) -> 
     if message_count == SUMMARY_MIN_MESSAGES:
         return True, "initial_summary"
     
-    # Periodic summary refresh (every 10 messages)
+    # Periodic summary refresh (every 4 messages)
     if message_count % SUMMARY_TRIGGER_MESSAGES == 0:
         return True, "periodic_refresh"
     

@@ -10,7 +10,7 @@ The `create_update.sh` script automates the process of:
 3. Uploading the package to the server
 4. Registering the update in the database
 
-All registered devices will automatically check for and install the update according to the update type (scheduled or urgent).
+All registered devices will automatically check for and install the update immediately when detected (before processing each query).
 
 ## Prerequisites
 
@@ -55,20 +55,12 @@ The interactive mode will guide you through:
 - Clear, descriptive text about what's included
 - Examples provided for guidance
 
-**Step 4 (or 3): Update Type**
-- **Option 1: Scheduled Update** (default)
-  - Devices update at 2 AM local time
-  - Best for feature updates and improvements
-- **Option 2: Urgent Update**
-  - Devices update after 1 hour of inactivity
-  - Best for critical security patches and urgent fixes
-
-**Step 5 (or 4): System Packages** (optional)
+**Step 4 (or 3): System Packages** (optional)
 - Comma-separated list of apt packages
 - Common package suggestions provided
 - Can be skipped if no system packages needed
 
-**Step 6 (or 5): Confirmation**
+**Step 5 (or 4): Confirmation**
 - Review all details before creating the update
 - Cancel or proceed
 
@@ -77,7 +69,7 @@ The interactive mode will guide you through:
 You can also provide all arguments directly:
 
 ```bash
-./create_update.sh <version> <description> [update_type] [system_packages]
+./create_update.sh <version> <description> [system_packages]
 ```
 
 #### Arguments
@@ -86,32 +78,9 @@ You can also provide all arguments directly:
 |----------|----------|-------------|---------|
 | `version` | Yes | Version string (e.g., `v1.2.3`) | - |
 | `description` | Yes | Human-readable update description | - |
-| `update_type` | No | Update distribution type: `scheduled` or `urgent` | `scheduled` |
 | `system_packages` | No | Comma-separated list of apt packages to install | - |
 
-## Update Types
-
-### Scheduled Updates (Default)
-- **Installation Time**: 2 AM local time (device timezone)
-- **Check Frequency**: Daily
-- **Use Case**: Feature updates, improvements, non-critical bug fixes
-- **Impact**: Non-disruptive to normal usage
-- **Best For**: 
-  - New features and enhancements
-  - Performance improvements
-  - Minor bug fixes
-  - Documentation updates
-
-### Urgent Updates
-- **Installation Time**: After 1 hour of inactivity
-- **Check Frequency**: Every 5 minutes
-- **Use Case**: Critical security patches, urgent bug fixes
-- **Impact**: Prioritizes update installation
-- **Best For**:
-  - Security vulnerabilities
-  - Critical system bugs
-  - Data corruption fixes
-  - Service disruptions
+**Note**: Updates are applied immediately when devices detect them (before processing each query). The `update_type` parameter has been removed as all updates are now immediate.
 
 ## Examples
 
@@ -125,29 +94,28 @@ cd /opt/javia/scripts/create_update
 Follow the prompts to enter:
 - Version (e.g., `v1.2.3`)
 - Description (e.g., `"Bug fixes and performance improvements"`)
-- Update type (choose 1 for scheduled, 2 for urgent)
 - System packages (optional, e.g., `libopus0,python3-pyaudio`)
 
-### Basic Update (Scheduled) - Command Line
+### Basic Update - Command Line
 
 ```bash
 ./create_update.sh v1.2.3 "Bug fixes and performance improvements"
 ```
 
-This creates a scheduled update that devices will install at 2 AM local time.
+This creates an update that all registered devices will receive immediately (before processing their next query).
 
-### Urgent Security Patch - Command Line
+### Security Patch - Command Line
 
 ```bash
-./create_update.sh v1.2.4 "Critical security fix" urgent
+./create_update.sh v1.2.4 "Critical security fix"
 ```
 
-This creates an urgent update that devices will install after 1 hour of inactivity.
+This creates an update that all registered devices will receive immediately.
 
 ### Update with System Packages - Command Line
 
 ```bash
-./create_update.sh v1.3.0 "Audio improvements with new codec" scheduled "libopus0,libopus-dev"
+./create_update.sh v1.3.0 "Audio improvements with new codec" "libopus0,libopus-dev"
 ```
 
 This installs additional system packages before applying the update.
@@ -155,7 +123,7 @@ This installs additional system packages before applying the update.
 ### Complex Update - Command Line
 
 ```bash
-./create_update.sh v2.0.0 "Major update with new features and dependencies" urgent "python3-numpy,python3-scipy,libatlas-base-dev"
+./create_update.sh v2.0.0 "Major update with new features and dependencies" "python3-numpy,python3-scipy,libatlas-base-dev"
 ```
 
 ## Git-Based Packaging (Production Mode)
@@ -518,13 +486,12 @@ If an update causes issues, you can create a rollback update by deploying a prev
 # Interactive mode
 ./create_update.sh
 # Enter previous stable version (e.g., v1.2.2)
-# Set as urgent update for faster rollback
 
 # Or command-line mode
-./create_update.sh v1.2.2 "Rollback to stable version" urgent
+./create_update.sh v1.2.2 "Rollback to stable version"
 ```
 
-Devices will install the "older" version, effectively rolling back the changes.
+Devices will install the "older" version immediately, effectively rolling back the changes.
 
 ## Version Management Best Practices
 
@@ -547,16 +514,18 @@ Follow [Semantic Versioning 2.0.0](https://semver.org/):
 - Performance improvements
 - Security patches
 
-### Update Type Guidelines
+### Update Guidelines
 
-| Change Type | Severity | Update Type | Example |
-|-------------|----------|-------------|---------|
-| Security fix | Critical | Urgent | `v1.2.4 "Critical security patch" urgent` |
-| Major bug | High | Urgent | `v1.2.5 "Fix audio crash" urgent` |
-| Data corruption | Critical | Urgent | `v1.2.6 "Fix data loss bug" urgent` |
-| New feature | Medium | Scheduled | `v1.3.0 "Add weather support" scheduled` |
-| Bug fix | Low | Scheduled | `v1.2.7 "Fix typo in logs" scheduled` |
-| Performance | Medium | Scheduled | `v1.2.8 "Optimize memory usage" scheduled` |
+| Change Type | Severity | Example |
+|-------------|----------|---------|
+| Security fix | Critical | `v1.2.4 "Critical security patch"` |
+| Major bug | High | `v1.2.5 "Fix audio crash"` |
+| Data corruption | Critical | `v1.2.6 "Fix data loss bug"` |
+| New feature | Medium | `v1.3.0 "Add weather support"` |
+| Bug fix | Low | `v1.2.7 "Fix typo in logs"` |
+| Performance | Medium | `v1.2.8 "Optimize memory usage"` |
+
+**Note**: All updates are applied immediately when devices detect them (before processing each query). There is no distinction between "scheduled" and "urgent" updates - all updates are immediate.
 
 ## Testing Updates
 
@@ -594,12 +563,10 @@ Test the package creation without uploading:
 2. **Test updates locally first** on a test Pi device before production deployment
 3. **Use semantic versioning** (vX.Y.Z) consistently
 4. **Write descriptive update notes** for tracking and debugging
-5. **Use scheduled updates** for non-critical changes to avoid disruption
-6. **Reserve urgent updates** for security fixes and critical bugs only
-7. **Keep system packages minimal** to reduce installation time and potential conflicts
-8. **Monitor device status** after deploying updates
-9. **Document breaking changes** in update descriptions
-10. **Maintain a changelog** separate from update descriptions for detailed history
+5. **Monitor device status** after deploying updates
+6. **Keep system packages minimal** to reduce installation time and potential conflicts
+7. **Document breaking changes** in update descriptions
+8. **Maintain a changelog** separate from update descriptions for detailed history
 
 ## System Package Management
 
@@ -656,25 +623,19 @@ You can integrate this script into your CI/CD pipeline:
 ## Quick Reference
 
 ```bash
-# ===================================
 # Interactive mode (recommended)
-# ===================================
 cd /opt/javia/scripts/create_update
 ./create_update.sh
 
-# If pi_client not found locally, you'll be prompted:
-# - Repository URL: https://github.com/username/voice_assistant.git
-# - Branch/Tag: main (or v1.2.3, develop, etc.)
-
 # ===================================
-# Command-line mode (legacy)
+# Command-line mode
 # ===================================
-./create_update.sh <version> <description> [update_type] [system_packages]
+./create_update.sh <version> <description> [system_packages]
 
 # Examples
 ./create_update.sh v1.2.3 "Bug fixes"
-./create_update.sh v1.2.4 "Security patch" urgent
-./create_update.sh v1.3.0 "New features" scheduled "libopus0"
+./create_update.sh v1.2.4 "Security patch"
+./create_update.sh v1.3.0 "New features" "libopus0"
 
 # ===================================
 # Git Setup (for production)

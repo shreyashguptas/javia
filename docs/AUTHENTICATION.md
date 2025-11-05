@@ -56,7 +56,7 @@ async def heartbeat_endpoint(
 **Purpose**: Authenticates server admins for management operations.
 
 **How it works**:
-- API key is stored in server's `.env` file (`API_KEY` variable)
+- API key is stored in server's `.env` file (`SERVER_API_KEY` variable)
 - Admin scripts send API key in `X-API-Key` header
 - Server validates key against configured value
 
@@ -72,7 +72,7 @@ async def heartbeat_endpoint(
 ```bash
 # Admin script
 curl -X POST "$SERVER_URL/api/v1/devices/register" \
-  -H "X-API-Key: $API_KEY" \
+  -H "X-API-Key: $SERVER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{...}'
 ```
@@ -211,7 +211,7 @@ cat ~/.javia_device_uuid
 psql -d javia -c "SELECT * FROM devices WHERE device_uuid = '<uuid>';"
 
 # Verify API key (on server)
-grep API_KEY /opt/javia/server/.env
+grep SERVER_API_KEY /opt/javia/.env
 ```
 
 ### Error: 403 Forbidden
@@ -313,7 +313,7 @@ Expected: 200 OK with device info
 ```bash
 # Test register endpoint (admin only)
 curl -X POST "http://server:8000/api/v1/devices/register" \
-  -H "X-API-Key: $API_KEY" \
+  -H "X-API-Key: $SERVER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "device_uuid": "test-uuid-123",

@@ -469,8 +469,8 @@ Set the following values:
 # Required: Your server URL (with https://)
 SERVER_URL=https://yourdomain.com
 
-# Required: Must match SERVER_API_KEY from server
-CLIENT_API_KEY=your_secure_random_key_here
+# Device timezone (required for scheduled operations)
+DEVICE_TIMEZONE=America/Los_Angeles
 
 # Hardware configuration
 BUTTON_PIN=17
@@ -482,7 +482,7 @@ MICROPHONE_GAIN=2.0
 FADE_DURATION_MS=50
 ```
 
-**Important**: The `CLIENT_API_KEY` must exactly match the `SERVER_API_KEY` you set on the server!
+**Note**: Pi clients use device UUID authentication (`X-Device-UUID` header), not API keys. The device UUID is automatically generated and stored in `~/.javia_device_uuid` when the client first runs. You must register this UUID on the server using the `register_device.sh` script before the device can connect.
 
 ### Step 5: Secure the Configuration
 
@@ -490,7 +490,7 @@ FADE_DURATION_MS=50
 chmod 600 ~/javia_client/.env
 ```
 
-This ensures only your user can read the API key.
+This ensures only your user can read the configuration file.
 
 ### Step 6: Test Client Manually
 

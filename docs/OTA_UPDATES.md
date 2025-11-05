@@ -19,7 +19,6 @@ The OTA update system allows you to remotely update all your Raspberry Pi voice 
 
 - **Automatic Device Registration**: Pi clients auto-register with UUID7 identifiers on first boot
 - **Device Heartbeat**: Pi clients ping server every 5 minutes to report online status
-- **Automatic Offline Detection**: Devices marked offline if no heartbeat for 10 minutes
 - **Immediate Updates**: All devices get updates immediately when available
 - **Mandatory Update Checks**: Devices check for updates before processing each query
 - **Real-time Tracking**: Monitor update status for all devices via Supabase
@@ -41,7 +40,7 @@ The OTA update system allows you to remotely update all your Raspberry Pi voice 
 
 - Every 5 minutes, Pi clients send heartbeat to server
 - Updates `last_seen` timestamp and `current_version` in database
-- Server automatically marks devices as "offline" if no heartbeat for 10 minutes
+- Server updates device status based on heartbeat activity
 
 ### Update Detection
 
@@ -59,7 +58,6 @@ This ensures devices are always up-to-date before processing queries, preventing
    - Create a project at [supabase.com](https://supabase.com)
    - Database migrations are applied automatically
    - Create storage bucket: "update-packages" (private)
-   - Offline detection function runs automatically
 
 2. **Server Configuration** (`server/.env`):
    ```bash
