@@ -180,7 +180,7 @@ Process audio through the complete pipeline.
 - `400`: Bad request (invalid file, wrong format)
 - `401`: Unauthorized (missing API key)
 - `403`: Forbidden (invalid API key)
-- `413`: Request too large (file exceeds 25MB)
+- `413`: Request too large (file exceeds 50MB)
 - `422`: Validation error
 - `500`: Internal server error
 
@@ -245,8 +245,8 @@ Process audio through the complete pipeline.
 
 ### File Validation
 
-- **Size limit**: 25MB maximum
-- **Content-Type**: Must be `audio/wav`
+- **Size limit**: 50MB maximum
+- **Content-Type**: Must be `audio/opus` (preferred) or `audio/wav`
 - **File structure**: Validated as WAV format
 - **Minimum size**: 100 bytes
 
@@ -296,7 +296,7 @@ The system decides whether to continue an existing thread or create a new one us
 - `SIMILARITY_THRESHOLD = 0.75`: Minimum similarity to continue thread
 - `TOKEN_BUDGET = 4000`: Maximum tokens for LLM context
 - `SUMMARY_TRIGGER_TOKENS = 3000`: Trigger summarization when approaching budget
-- `SUMMARY_TRIGGER_MESSAGES = 10`: Periodic summary refresh interval
+- `SUMMARY_TRIGGER_MESSAGES = 4`: Periodic summary refresh interval
 - `SUMMARY_MIN_MESSAGES = 2`: Generate initial summary after first Q&A pair
 
 ### Flow
@@ -319,7 +319,7 @@ The system decides whether to continue an existing thread or create a new one us
 6. System stores user and assistant messages
 7. System checks if summarization needed:
    - If message_count == 2 → generate initial summary (first Q&A pair)
-   - Else if message_count % 10 == 0 → update summary (periodic refresh)
+   - Else if message_count % 4 == 0 → update summary (periodic refresh)
    - Else if tokens >= 3000 → update summary (approaching budget)
 8. System updates thread summary and embedding
 
@@ -346,7 +346,7 @@ The system decides whether to continue an existing thread or create a new one us
 
 Threads are automatically summarized when:
 - **Message count == 2**: Generate initial summary after first Q&A pair (CRITICAL for similarity checks)
-- **Message count % 10 == 0**: Periodic summary refresh to keep summaries current
+- **Message count % 4 == 0**: Periodic summary refresh to keep summaries current
 - **Estimated token count >= 3000**: Summary refresh when approaching token budget
 
 Summarization:

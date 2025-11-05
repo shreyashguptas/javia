@@ -79,7 +79,7 @@ Process audio through complete pipeline: transcription → LLM → TTS.
   X-Device-UUID: your_device_uuid_here
   ```
 - **Form Data**:
-  - `audio` (file): Audio file (**Opus preferred**, WAV accepted; max 25MB)
+  - `audio` (file): Audio file (**Opus preferred**, WAV accepted; max 50MB)
   - `session_id` (optional, string): Session identifier for conversation history
   - `microphone_gain` (optional, string): Gain multiplier (default "1.0", e.g., "2.0" for 2x amplification)
 
@@ -210,8 +210,8 @@ Retry-After: 60
 - Cloudflare DDoS protection
 
 **File Validation**:
-- Content-Type must be `audio/wav`
-- Size: 100 bytes minimum, 25MB maximum
+- Content-Type must be `audio/opus` (preferred) or `audio/wav`
+- Size: 100 bytes minimum, 50MB maximum
 - File structure validated as WAV format
 
 ---
@@ -270,7 +270,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 **Input:**
 - Format: WAV audio file
 - Sample Rate: 48000 Hz (mono)
-- Max Size: 25 MB
+- Max Size: 50 MB
 
 **Output:**
 - Text transcription
@@ -278,7 +278,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 
 **Code Reference:**
 ```python
-# See javia.py lines 299-387
+# See server/services/groq_service.py:transcribe_single_chunk()
 def transcribe_audio():
     # Validates file size
     # Handles retries on timeout/rate limit
@@ -295,17 +295,22 @@ def transcribe_audio():
 
 **System Prompt:**
 ```
-"You are a helpful voice assistant that gives concise, factual answers. 
-Keep responses brief and conversational, under 3 sentences."
+"You are a helpful and intelligent voice assistant. Adapt your response length based on what the question requires:
+
+- For simple, straightforward questions with direct answers (like math, facts, definitions), be concise and clear - usually 1-2 sentences.
+- For questions that ask "how", "why", or require explanation, context, or multiple steps, provide thorough and helpful answers with appropriate detail.
+- For open-ended or complex topics, give comprehensive responses that fully address the question.
+
+Always use clear, simple language at the appropriate level for the question. Prioritize being helpful and informative over being brief. Your goal is to give the right amount of information - not too little, not too much."
 ```
 
 **Configuration:**
-- Max Tokens: 150
+- Max Tokens: 512
 - Temperature: 0.7 (balanced creativity)
 
 **Code Reference:**
 ```python
-# See javia.py lines 391-510
+# See server/services/groq_service.py:query_llm()
 def query_llm(user_text):
     # Input validation
     # Retry logic
@@ -332,7 +337,7 @@ def query_llm(user_text):
 
 **Code Reference:**
 ```python
-# See javia.py lines 514-620
+# See server/services/groq_service.py:generate_speech()
 def generate_speech(text):
     # Text length validation (max 4096 chars)
     # Streaming download
@@ -379,7 +384,7 @@ The code includes comprehensive error handling:
 - Connection error detection
 
 **2. Validation**
-- File size checks (100 bytes min, 25MB max)
+- File size checks (100 bytes min, 50MB max)
 - Empty response detection
 - API response structure validation
 - Text length limits (4096 chars for TTS)
@@ -418,19 +423,19 @@ Solution: Code detects and reports, check API status
 ## Customization
 
 ### Change System Prompt
-Edit `javia.py` line 57:
+Edit `server/config.py` system_prompt setting or set SYSTEM_PROMPT environment variable:
 ```python
 SYSTEM_PROMPT = "Your custom prompt here"
 ```
 
 ### Change Response Length
-Edit `javia.py` line 411:
+Edit `server/config.py` llm_max_tokens setting or set LLM_MAX_TOKENS environment variable:
 ```python
-'max_tokens': 150,  # Increase for longer responses
+'max_tokens': 512,  # Increase for longer responses
 ```
 
 ### Change Models
-Edit `javia.py` or use environment variables:
+Use environment variables in `.env` file:
 ```env
 WHISPER_MODEL=whisper-large-v3
 LLM_MODEL=llama-3.1-70b-versatile
@@ -439,8 +444,10 @@ TTS_VOICE=Cheyenne-PlayAI
 ```
 
 ### Change Temperature
-Edit `javia.py` line 412:
+Temperature is fixed at 0.7 in server/services/groq_service.py:512:
 ```python
+# Temperature is fixed at 0.7 in the code
+# To change it, modify server/services/groq_service.py line 512
 'temperature': 0.7,  # 0.0 = deterministic, 1.0 = creative
 ```
 
@@ -502,7 +509,7 @@ curl -X POST \
   -d '{
     "model": "openai/gpt-oss-20b",
     "messages": [{"role": "user", "content": "Hello"}],
-    "max_tokens": 150
+    "max_tokens": 512
   }' \
   https://api.groq.com/openai/v1/chat/completions
 ```
