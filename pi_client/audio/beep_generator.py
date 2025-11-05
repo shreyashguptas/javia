@@ -11,7 +11,7 @@ import logging
 import numpy as np
 import config
 from utils.system_utils import apply_volume_to_audio
-from audio.hardware_detect import is_googlevoicehat, get_alsa_device_name
+from audio.hardware_detect import get_alsa_device_name
 
 logger = logging.getLogger(__name__)
 
@@ -133,11 +133,8 @@ class BeepGenerator:
         """
         Play a short beep sound with volume control.
         
-        STRATEGY:
-        - For googlevoicehat: Use aplay (no PyAudio = no segfaults)
-        - For other hardware: Use PyAudio (better control)
-        - Volume scaling: Pre-scale WAV file before playback
-        - Synchronous playback: Wait for completion (beeps are short)
+        Uses aplay for reliable playback (no segfaults, no library conflicts).
+        Volume scaling is applied by pre-scaling the WAV file before playback.
         
         Args:
             beep_file: Path to beep WAV file
@@ -158,11 +155,8 @@ class BeepGenerator:
             self.gpio_manager.enable_amplifier()
             time.sleep(0.02)  # Stabilization time
             
-            # Play beep using appropriate method
-            if is_googlevoicehat():
-                self._play_with_aplay(temp_beep)
-            else:
-                self._play_with_pyaudio(temp_beep)
+            # Play beep using aplay (reliable ALSA tool)
+            self._play_with_aplay(temp_beep)
             
             # Wait for beep to complete
             time.sleep(0.05)
@@ -211,7 +205,7 @@ class BeepGenerator:
     
     def _play_with_aplay(self, wav_file):
         """
-        Play WAV file using aplay (for googlevoicehat).
+        Play WAV file using aplay (reliable ALSA tool).
         
         Args:
             wav_file: Path to WAV file
@@ -230,61 +224,6 @@ class BeepGenerator:
             logger.error(f"aplay failed: {e}")
         except Exception as e:
             logger.error(f"Beep playback error: {e}")
-    
-    def _play_with_pyaudio(self, wav_file):
-        """
-        Play WAV file using PyAudio (for non-googlevoicehat hardware).
-        
-        Args:
-            wav_file: Path to WAV file
-        """
-        import pyaudio
-        
-        audio = None
-        stream = None
-        
-        try:
-            # Read WAV file
-            with wave.open(str(wav_file), 'rb') as wf:
-                channels = wf.getnchannels()
-                sample_width = wf.getsampwidth()
-                sample_rate = wf.getframerate()
-                audio_data = wf.readframes(wf.getnframes())
-            
-            # Initialize PyAudio
-            audio = pyaudio.PyAudio()
-            
-            # Open output stream
-            stream = audio.open(
-                format=audio.get_format_from_width(sample_width),
-                channels=channels,
-                rate=sample_rate,
-                output=True
-            )
-            
-            # Play audio
-            stream.write(audio_data)
-            
-            # Clean up
-            stream.stop_stream()
-            stream.close()
-            audio.terminate()
-            
-        except Exception as e:
-            logger.error(f"PyAudio playback error: {e}")
-            if stream:
-                try:
-                    stream.stop_stream()
-                    stream.close()
-                except (OSError, AttributeError):
-                    # Stream cleanup failed - non-critical, continue
-                    pass
-            if audio:
-                try:
-                    audio.terminate()
-                except (OSError, AttributeError):
-                    # Audio cleanup failed - non-critical, continue
-                    pass
     
     def play_beep(self, beep_file, description=""):
         """Play beep synchronously (wrapper for compatibility)"""

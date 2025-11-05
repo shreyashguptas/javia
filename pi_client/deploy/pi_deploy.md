@@ -75,7 +75,7 @@ bash pi_client/deploy/setup.sh
 ```
 
 The script will:
-- ✅ Install system dependencies (PyAudio, gpiozero, etc.)
+- ✅ Install system dependencies (gpiozero, numpy, etc.)
 - ✅ Create Python virtual environment
 - ✅ Copy client files to `~/javia_client`
 - ✅ Prompt for SERVER_URL and DEVICE_TIMEZONE (first time only)

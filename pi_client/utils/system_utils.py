@@ -13,7 +13,7 @@ from ctypes import *
 def suppress_alsa_errors():
     """
     Suppress ALSA error messages that clutter the console.
-    Must be called before importing pyaudio.
+    Must be called before any ALSA operations.
     """
     ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
     

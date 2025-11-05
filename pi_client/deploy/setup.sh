@@ -44,7 +44,7 @@ echo "[1/8] Checking system dependencies..."
 
 # Check if packages are already installed to avoid unnecessary updates
 PACKAGES_TO_INSTALL=""
-for pkg in python3-pyaudio python3-gpiozero python3-requests python3-numpy python3-pip libopus0 libopus-dev; do
+for pkg in python3-gpiozero python3-requests python3-numpy python3-pip libopus0 libopus-dev; do
     if ! dpkg -l | grep -q "^ii  $pkg "; then
         PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL $pkg"
     fi
@@ -119,8 +119,8 @@ echo ""
 # ==================== STEP 5: VIRTUAL ENVIRONMENT ====================
 echo "[5/8] Setting up Python virtual environment..."
 
-# Strategy: Use --system-site-packages for hardware libs (pyaudio, gpiozero, numpy)
-# but force-install OTA dependencies to venv for isolation
+# Strategy: Use --system-site-packages for hardware libs (gpiozero, numpy)
+# but force-install OTA dependencies and pyalsaaudio to venv for isolation
 if [ -d "$VENV_DIR" ]; then
     echo "✓ Virtual environment exists, checking configuration..."
     
@@ -150,7 +150,7 @@ echo "This ensures clean, isolated package installations..."
 
 # Install other dependencies normally (can use system packages where available)
 echo "Installing remaining dependencies..."
-"$VENV_DIR/bin/pip" install --no-cache-dir requests python-dotenv opuslib numpy
+"$VENV_DIR/bin/pip" install --no-cache-dir requests python-dotenv opuslib numpy pyalsaaudio
 
 # Clear any Python bytecode cache to ensure clean imports
 echo "Clearing Python cache..."
@@ -170,13 +170,19 @@ declare -A DEPS_STATUS
 declare -A DEPS_LOCATION
 
 # All dependencies we need to check (both venv and system)
-DEPS_TO_CHECK="uuid6 supabase pytz realtime requests dotenv opuslib numpy pyaudio gpiozero"
+DEPS_TO_CHECK="uuid6 supabase pytz realtime requests dotenv opuslib numpy pyalsaaudio gpiozero"
 
 for dep in $DEPS_TO_CHECK; do
-    if "$VENV_DIR/bin/python3" -c "import $dep" 2>/dev/null; then
+    import_name="$dep"
+    case "$dep" in
+        "python-dotenv") import_name="dotenv" ;;
+        "pyalsaaudio") import_name="alsaaudio" ;;
+    esac
+    
+    if "$VENV_DIR/bin/python3" -c "import $import_name" 2>/dev/null; then
         DEPS_STATUS[$dep]="✓"
         # Check if it's from system or venv
-        location=$("$VENV_DIR/bin/python3" -c "import $dep; import os; print('venv' if '$VENV_DIR' in os.path.dirname($dep.__file__) else 'system')" 2>/dev/null)
+        location=$("$VENV_DIR/bin/python3" -c "import $import_name; import os; print('venv' if '$VENV_DIR' in os.path.dirname($import_name.__file__) else 'system')" 2>/dev/null)
         DEPS_LOCATION[$dep]=$location
     else
         DEPS_STATUS[$dep]="✗"
@@ -229,6 +235,7 @@ if [ "$ALL_OK" = false ]; then
             import_name="$dep"
             case "$dep" in
                 "python-dotenv") import_name="dotenv" ;;
+                "pyalsaaudio") import_name="alsaaudio" ;;
             esac
             
             if ! "$VENV_DIR/bin/python3" -c "import $import_name" 2>/dev/null; then

@@ -87,9 +87,6 @@ SESSION_FILE = Path(os.path.expanduser("~/.javia/session_id"))
 # ==================== GLOBAL STATE ====================
 # Note: These are initialized by the main client and hardware modules
 
-# Performance optimizations: Caching
-_CACHED_AUDIO_DEVICE_INDEX = None
-
 # Telemetry: timestamps for latency spans (set by recorder/api client)
 LAST_RECORD_END_TS = None  # time.time() when recording fully stops and file saved
 

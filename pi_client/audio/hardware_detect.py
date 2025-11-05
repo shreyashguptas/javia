@@ -22,8 +22,8 @@ def detect_audio_hardware() -> str:
     
     This function determines which audio driver is in use so we can
     route to the appropriate audio methods:
-    - googlevoicehat: Use aplay/arecord (PyAudio is incompatible)
-    - other: Use PyAudio or fallback to aplay/arecord
+    - googlevoicehat: Uses ALSA tools (arecord/aplay) and pyalsaaudio
+    - other: Uses ALSA tools and pyalsaaudio
     
     Returns:
         str: Hardware type - "googlevoicehat" or "other"
@@ -59,11 +59,11 @@ def detect_audio_hardware() -> str:
         if is_voicehat:
             _hardware_type_cache = "googlevoicehat"
             logger.info("[HW DETECT] ✓ Detected googlevoicehat audio hardware")
-            logger.info("[HW DETECT] Will use arecord for recording (PyAudio incompatible)")
+            logger.info("[HW DETECT] Using arecord for recording, pyalsaaudio for playback")
         else:
             _hardware_type_cache = "other"
             logger.info("[HW DETECT] ✓ Detected non-googlevoicehat audio hardware")
-            logger.info("[HW DETECT] Will use PyAudio with arecord fallback")
+            logger.info("[HW DETECT] Using arecord for recording, pyalsaaudio for playback")
         
         return _hardware_type_cache
         
@@ -79,9 +79,8 @@ def is_googlevoicehat() -> bool:
     """
     Check if the system is using googlevoicehat driver.
     
-    The googlevoicehat-soundcard driver has known compatibility issues with PyAudio,
-    causing segmentation faults. This function allows code to detect the driver
-    and use more reliable ALSA tools (aplay/arecord) instead.
+    The googlevoicehat-soundcard driver is detected to determine
+    the correct ALSA device name for audio operations.
     
     Returns:
         bool: True if googlevoicehat is detected, False otherwise
@@ -115,6 +114,43 @@ def get_alsa_device_name() -> str:
     if config.VERBOSE_OUTPUT:
         logger.info(f"[HW DETECT] Using ALSA device: {_device_name_cache}")
     return _device_name_cache
+
+
+def get_pyalsaaudio_device_name() -> Optional[str]:
+    """
+    Get the ALSA device name in pyalsaaudio-compatible format.
+    
+    pyalsaaudio accepts:
+    - None for default device
+    - "hw:X,Y" for card X, device Y
+    - "plughw:X,Y" for card X, device Y with plug conversion
+    
+    Returns:
+        str or None: Device name compatible with pyalsaaudio, or None for default
+    """
+    device_name = get_alsa_device_name()
+    
+    # Extract card and device numbers from device name
+    # Format: "plughw:CARD=sndrpigooglevoi,DEV=0" or "hw:CARD=...,DEV=..."
+    if device_name.startswith("plughw:CARD=") or device_name.startswith("hw:CARD="):
+        # Extract device number
+        if ",DEV=" in device_name:
+            dev_part = device_name.split(",DEV=")[1]
+            try:
+                dev_num = int(dev_part)
+                # For googlevoicehat, card is always 0 (from logs: card 0)
+                # Try plughw first (with format conversion), then hw
+                return f"plughw:0,{dev_num}"
+            except ValueError:
+                pass
+    
+    # For "default" or unrecognized formats, use None (ALSA default)
+    if device_name == "default":
+        return None
+    
+    # If we can't parse it, try None (default device)
+    # This should work if ALSA default is correctly configured
+    return None
 
 
 def reset_cache():

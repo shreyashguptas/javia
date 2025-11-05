@@ -4,12 +4,6 @@ Raspberry Pi Voice Assistant Client
 Records audio, sends to server for processing, plays response
 """
 
-import os
-
-# Suppress JACK server startup attempts (must be set before importing pyaudio)
-os.environ['JACK_NO_START_SERVER'] = '1'
-os.environ['JACK_NO_AUDIO_RESERVATION'] = '1'
-
 import sys
 import time
 import subprocess
