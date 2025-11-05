@@ -342,7 +342,7 @@ def resolve_thread(
         )
         
     except Exception as e:
-        logger.error(f"Failed to resolve thread: {e}")
+        logger.error(f"Failed to resolve thread: {e}", exc_info=True)
         raise ConversationServiceError(f"Thread resolution failed: {str(e)}")
 
 
