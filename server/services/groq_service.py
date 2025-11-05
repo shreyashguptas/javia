@@ -723,6 +723,41 @@ def estimate_tokens(texts: List[str]) -> int:
         return int(total_chars / 4)
 
 
+def _is_summary_truncated(summary: str) -> bool:
+    """
+    Detect if a summary appears to be truncated.
+    
+    Checks for common signs of truncation:
+    - Ends mid-sentence (no punctuation at end)
+    - Ends with incomplete words
+    - Suspiciously short for the content
+    
+    Args:
+        summary: Summary text to check
+        
+    Returns:
+        True if summary appears truncated, False otherwise
+    """
+    if not summary or len(summary.strip()) < 10:
+        return True
+    
+    summary = summary.strip()
+    
+    # Check if ends mid-sentence (no sentence-ending punctuation)
+    # Allow for common endings: . ! ? )
+    if not summary[-1] in '.!?)':
+        # Check if ends mid-word (last word looks incomplete)
+        last_word = summary.split()[-1] if summary.split() else ""
+        # If last word is very short (< 3 chars) and doesn't end with punctuation, might be truncated
+        if len(last_word) < 3 and not last_word[-1] in '.!?)':
+            return True
+        # If ends with lowercase letter followed by no punctuation, likely truncated
+        if summary[-1].islower() and len(summary) > 50:
+            return True
+    
+    return False
+
+
 def summarize_thread(messages: List[Dict[str, str]], existing_summary: Optional[str] = None) -> str:
     """
     Generate a concise summary of conversation thread using Groq LLM.
@@ -734,7 +769,7 @@ def summarize_thread(messages: List[Dict[str, str]], existing_summary: Optional[
         existing_summary: Optional existing summary to update (for incremental summaries)
         
     Returns:
-        Concise summary (2-3 sentences, ~200 tokens max)
+        Complete summary (length varies based on conversation complexity)
         
     Raises:
         SummarizationError: If summarization fails
@@ -763,18 +798,35 @@ This is the beginning of a conversation with only 1-2 exchanges.
 Create a clear, focused summary (1-2 sentences) that captures:
 1. The main topic or question being discussed
 2. Any key entities, facts, or context mentioned
-This summary will be used to help maintain context for future related questions."""
+This summary will be used to help maintain context for future related questions.
+Ensure your summary is complete and does not end mid-sentence."""
         else:
-            # Incremental summary prompt - update existing context
+            # Incremental summary prompt - update existing context with adaptive length guidance
+            # Determine length guidance based on message count
+            num_messages = len(messages)
+            if num_messages <= 8:
+                length_guidance = "2-3 sentences"
+            elif num_messages <= 15:
+                length_guidance = "3-5 sentences"
+            else:
+                length_guidance = "4-7 sentences as needed"
+            
             system_prompt = f"""You are a helpful assistant that creates concise summaries of conversations. 
 
 Previous summary: {existing_summary}
 
 Update this summary to include new information from the conversation below. Your updated summary must:
-1. Include ALL topics discussed (both from the previous summary and new topics)
-2. Be 2-3 sentences long
+1. Include ALL topics discussed (both from the previous summary and new topics) - DO NOT omit any topics
+2. Be {length_guidance} long, adjusting as needed to ensure completeness
 3. Capture key information that would help maintain context for future conversations
 4. Include important facts, decisions, or ongoing topics
+
+CRITICAL REQUIREMENTS:
+- Include ALL topics, even if there are many unrelated topics
+- DO NOT truncate or omit topics - completeness is more important than brevity
+- If the conversation covers multiple unrelated topics, your summary may be longer to ensure all topics are included
+- Ensure your summary is complete and does not end mid-sentence
+- Make sure every topic discussed in the conversation is mentioned in your summary
 
 Create an updated summary that combines the previous summary with the new conversation content."""
         
@@ -790,7 +842,20 @@ Create an updated summary that combines the previous summary with the new conver
         }
         
         # Base payload configuration
-        base_max_tokens = 200
+        # Use generous token limits as safety nets, not constraints
+        # Limits are high enough to handle any reasonable summary length
+        # Prompt quality drives appropriate length, not token limits
+        if is_initial_summary:
+            base_max_tokens = 500  # Safety limit for initial summaries (prompt asks for 1-2 sentences)
+        else:
+            # Adaptive token limits based on conversation length
+            num_messages = len(messages)
+            if num_messages <= 8:
+                base_max_tokens = 1000  # Safety limit for typical conversations
+            elif num_messages <= 15:
+                base_max_tokens = 1500  # Safety limit for longer conversations
+            else:
+                base_max_tokens = 2000  # Safety limit for very long conversations with many topics
         base_temperature = 0.3
         
         # Retry logic for empty summaries
@@ -807,16 +872,16 @@ Create an updated summary that combines the previous summary with the new conver
                 retry_prompt = system_prompt
             elif retry_count == 1:
                 # First retry: increase tokens and add explicit instruction
-                max_tokens = 300
+                max_tokens = base_max_tokens + 500  # Add 500 tokens for retry
                 temperature = base_temperature
-                retry_prompt = system_prompt + "\n\nCRITICAL: You MUST provide a summary. Do not return empty."
-                logger.warning(f"Empty summary received, retrying (attempt {retry_count}/{max_retries}) with increased tokens...")
+                retry_prompt = system_prompt + "\n\nCRITICAL: You MUST provide a complete, untruncated summary. Include ALL topics. Do not return empty or cut off mid-sentence."
+                logger.warning(f"Empty or truncated summary received, retrying (attempt {retry_count}/{max_retries}) with increased tokens...")
             else:
                 # Second retry: further increase tokens and temperature
-                max_tokens = 400
+                max_tokens = base_max_tokens + 1000  # Add 1000 tokens for final retry
                 temperature = 0.5
-                retry_prompt = system_prompt + "\n\nCRITICAL: You MUST return a summary. Summarize all topics discussed. Do not return empty."
-                logger.warning(f"Empty summary received, retrying (attempt {retry_count}/{max_retries}) with increased tokens and temperature...")
+                retry_prompt = system_prompt + "\n\nCRITICAL: You MUST return a complete, untruncated summary covering ALL topics discussed. Do not return empty or cut off mid-sentence. Completeness is absolutely essential."
+                logger.warning(f"Empty or truncated summary received, retrying (attempt {retry_count}/{max_retries}) with increased tokens and temperature...")
             
             payload = {
                 'model': settings.llm_model,
@@ -859,8 +924,27 @@ Create an updated summary that combines the previous summary with the new conver
                                 f"Last response: {last_response}"
                             )
                     else:
+                        # Check if summary appears truncated
+                        if _is_summary_truncated(summary):
+                            logger.warning(
+                                f"Summary appears truncated (ends with: '{summary[-20:]}'). "
+                                f"Attempting retry with higher token limit..."
+                            )
+                            if retry_count < max_retries:
+                                retry_count += 1
+                                summary = None
+                                continue
+                            else:
+                                # Log warning but proceed with truncated summary
+                                logger.warning(
+                                    f"Summary appears truncated but retries exhausted. "
+                                    f"Summary length: {len(summary)} chars. "
+                                    f"This may indicate the token limit was too low."
+                                )
+                        
                         # Success - break out of retry loop
                         logger.info(f"Generated summary ({'initial' if is_initial_summary else 'incremental'}) on attempt {retry_count + 1}: {summary[:100]}...")
+                        logger.debug(f"Full summary length: {len(summary)} characters, {len(summary.split())} words")
                         break
                         
                 else:
