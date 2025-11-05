@@ -45,13 +45,13 @@ class I2SPlayer(AudioPlayer):
         Play audio through I2S amplifier with volume control.
         
         STRATEGY:
-        - For googlevoicehat: Use aplay (no PyAudio = no segfaults)
-        - For other hardware: Use PyAudio (real-time volume control)
-        - Button interrupt: Terminate aplay process or stop PyAudio stream
+        - Try PyAudio first for all hardware (real-time volume control)
+        - Fallback to aplay only if PyAudio initialization fails
+        - Button interrupt: Stop PyAudio stream or terminate aplay process
         
         VOLUME CONTROL:
-        - googlevoicehat: Pre-scale audio file to target volume
-        - PyAudio: Real-time volume scaling per chunk
+        - PyAudio: Real-time volume scaling per chunk (volume changes take effect immediately)
+        - aplay: Pre-scale audio file to target volume (volume changes only affect next playback)
         
         Args:
             audio_file_path: Path to WAV file to play
@@ -63,15 +63,30 @@ class I2SPlayer(AudioPlayer):
             logger.error("Response file not found")
             return False
         
-        # Route to appropriate playback method
-        if is_googlevoicehat():
-            return self._play_with_aplay(audio_file_path)
-        else:
+        # Try PyAudio first for real-time volume control
+        # PyAudio supports real-time volume changes during playback for all hardware
+        try:
             return self._play_with_pyaudio(audio_file_path)
+        except Exception as e:
+            # PyAudio failed - fallback to aplay
+            logger.warning(f"PyAudio playback failed: {e}")
+            logger.info("Falling back to aplay (real-time volume changes won't work during playback)")
+            
+            # Only use aplay fallback for googlevoicehat hardware
+            if is_googlevoicehat():
+                return self._play_with_aplay(audio_file_path)
+            else:
+                # Non-googlevoicehat hardware should use PyAudio
+                logger.error("PyAudio failed and hardware is not googlevoicehat - playback failed")
+                return False
     
     def _play_with_aplay(self, audio_file_path: Path) -> bool:
         """
-        Play audio using aplay (for googlevoicehat).
+        Play audio using aplay (fallback method for googlevoicehat).
+        
+        NOTE: Real-time volume changes during playback don't work with this method.
+        Volume is pre-scaled at the start of playback. Volume changes only affect
+        the next playback, not the current one.
         
         Args:
             audio_file_path: Path to WAV file to play
@@ -193,9 +208,11 @@ class I2SPlayer(AudioPlayer):
     
     def _play_with_pyaudio(self, audio_file_path: Path) -> bool:
         """
-        Play audio using PyAudio (for non-googlevoicehat hardware).
+        Play audio using PyAudio with real-time volume control.
         
-        Real-time volume control during playback.
+        This method is tried first for all hardware types because it supports
+        real-time volume changes during playback. Volume is read per chunk,
+        so rotating the encoder immediately affects the audio output.
         
         Args:
             audio_file_path: Path to WAV file to play

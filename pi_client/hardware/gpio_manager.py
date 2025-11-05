@@ -31,7 +31,8 @@ class GPIOManager:
         """
         self.activity_tracker = activity_tracker
         self.beep_generator = beep_generator
-        self.current_volume = config.INITIAL_VOLUME
+        # Load volume from persistent storage (defaults to 50% on first boot)
+        self.current_volume = config.load_volume()
         
         # Initialize GPIO objects
         self.button = None
@@ -95,6 +96,9 @@ class GPIOManager:
                 
                 # Update global config
                 config.current_volume = self.current_volume
+                
+                # Save volume to persistent storage
+                config.save_volume(self.current_volume)
                 
                 # Show volume change
                 print(f"[VOLUME] {'↑' if volume_change > 0 else '↓'} {old_volume}% → {self.current_volume}%")

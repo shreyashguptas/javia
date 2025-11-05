@@ -52,8 +52,11 @@ OPUS_BITRATE = int(os.getenv('OPUS_BITRATE', '64000'))  # 64kbps
 
 # Volume Control Settings
 VOLUME_STEP = int(os.getenv('VOLUME_STEP', '5'))  # Volume change per rotary encoder step (%)
-INITIAL_VOLUME = int(os.getenv('INITIAL_VOLUME', '100'))  # Initial volume on startup (%)
+INITIAL_VOLUME = int(os.getenv('INITIAL_VOLUME', '50'))  # Default volume on first boot (50%)
 VERBOSE_OUTPUT = os.getenv('VERBOSE_OUTPUT', 'false').lower() == 'true'  # Control verbose logging
+
+# Volume persistence file
+VOLUME_FILE = Path(os.path.expanduser("~/.javia/volume"))
 
 # ==================== FILE PATHS ====================
 
@@ -144,5 +147,63 @@ def save_session_id(session_id: str) -> bool:
         # Fail silently - session management is non-critical
         if VERBOSE_OUTPUT:
             print(f"[DEBUG] Failed to save session ID: {e}")
+        return False
+
+
+# ==================== VOLUME PERSISTENCE HELPERS ====================
+
+def load_volume() -> int:
+    """
+    Load volume from persistent storage.
+    
+    Returns:
+        Volume level (0-100). Returns 50% if file doesn't exist (first boot).
+    """
+    try:
+        if VOLUME_FILE.exists():
+            volume_str = VOLUME_FILE.read_text().strip()
+            volume = int(volume_str)
+            # Clamp to valid range
+            volume = max(0, min(100, volume))
+            if VERBOSE_OUTPUT:
+                print(f"[VOLUME] Loaded persisted volume: {volume}%")
+            return volume
+    except (OSError, IOError, ValueError) as e:
+        # Fail silently - use default volume
+        if VERBOSE_OUTPUT:
+            print(f"[DEBUG] Failed to load volume: {e}")
+    
+    # First boot - return 50% as default (regardless of INITIAL_VOLUME env var)
+    return 50
+
+
+def save_volume(volume: int) -> bool:
+    """
+    Save volume to persistent storage.
+    
+    Args:
+        volume: Volume level (0-100) to save
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Ensure directory exists
+        VOLUME_FILE.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Clamp to valid range
+        volume = max(0, min(100, volume))
+        
+        # Save volume
+        VOLUME_FILE.write_text(str(volume))
+        
+        # Secure the file (read/write by owner only)
+        os.chmod(VOLUME_FILE, 0o600)
+        
+        return True
+    except (OSError, IOError) as e:
+        # Fail silently - volume persistence is non-critical
+        if VERBOSE_OUTPUT:
+            print(f"[DEBUG] Failed to save volume: {e}")
         return False
 
