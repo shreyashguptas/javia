@@ -78,7 +78,7 @@ The script will:
 - ✅ Install system dependencies (PyAudio, gpiozero, etc.)
 - ✅ Create Python virtual environment
 - ✅ Copy client files to `~/javia_client`
-- ✅ Prompt for SERVER_URL and CLIENT_API_KEY (first time only)
+- ✅ Prompt for SERVER_URL and DEVICE_TIMEZONE (first time only)
 - ✅ Validate configuration
 - ✅ Create systemd service (Pi 5 compatible)
 - ✅ Add user to `audio` and `gpio` groups (required for hardware access)
@@ -256,20 +256,21 @@ When you run `setup.sh` on an already-configured system, it will:
 2. Ask if you want to keep it or enter new values
 3. For updates, just choose option 1 to keep existing config
 
-**To find your SERVER_API_KEY on the server:**
-```bash
-ssh user@your-server-ip
-sudo cat /opt/javia/.env | grep SERVER_API_KEY
-```
+**Device Registration:**
+Pi clients use device UUID authentication, not API keys. After running the setup script, you'll see your device UUID displayed. Register this UUID on the server:
 
-The CLIENT_API_KEY on the Pi must match the SERVER_API_KEY on the server.
+```bash
+# On the server
+cd /opt/javia/scripts/register_device
+sudo ./register_device.sh <device-uuid-from-pi>
+```
 
 ## 🔒 Security Notes
 
-- ✅ `.env` file contains SERVER_URL and API key
+- ✅ `.env` file contains SERVER_URL and device configuration
 - ✅ File permissions set to 600 (owner read/write only)
 - ✅ Service runs as your user (not root)
-- ✅ API keys never committed to git
+- ✅ Device UUIDs stored securely, never committed to git
 
 ## 🔧 Troubleshooting Common Issues
 

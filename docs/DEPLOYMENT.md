@@ -890,7 +890,10 @@ ping yourdomain.com
 curl https://yourdomain.com/health
 ```
 
-Check API key is correct in `.env`.
+Verify that the device UUID is registered on the server:
+```bash
+curl -H "X-API-Key: YOUR_API_KEY" https://yourdomain.com/api/v1/devices/
+```
 
 #### Recording Not Working
 

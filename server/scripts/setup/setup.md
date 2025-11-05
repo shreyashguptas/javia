@@ -373,16 +373,18 @@ sudo userdel voiceassistant
 2. **Service User**: The service runs as `voiceassistant` user (not root) for security
 3. **Nginx**: Acts as a reverse proxy and handles HTTPS termination via Cloudflare
 4. **Cloudflare**: Provides DDoS protection and hides your server IP
-5. **Authentication**: All API requests require `CLIENT_API_KEY` header matching `SERVER_API_KEY`
+5. **Authentication**: 
+   - Device endpoints require `X-Device-UUID` header (device UUID authentication)
+   - Admin endpoints require `X-API-Key` header matching `SERVER_API_KEY`
 
 ## Next Steps
 
 After server deployment:
 
-1. ✅ Save your `SERVER_API_KEY` - you'll need it for the Pi client
+1. ✅ Save your `SERVER_API_KEY` - you'll need it for admin operations
 2. ✅ Test the health endpoint: `curl https://yourdomain.com/health`
 3. ✅ Set up your Raspberry Pi client using the Pi client setup guide
-4. ✅ Configure the Pi client with your server URL and API key
+4. ✅ Register the device on the server using register_device.sh script
 
 ## Support
 

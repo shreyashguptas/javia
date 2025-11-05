@@ -369,9 +369,9 @@ if response.status_code == 429:
 ```
 
 **Code:** See retry loops in:
-- `transcribe_audio()` line 334
-- `query_llm()` line 419
-- `generate_speech()` line 544
+- `transcribe_audio()` function in `server/services/groq_service.py`
+- `query_llm()` function in `server/services/groq_service.py`
+- `generate_speech()` function in `server/services/groq_service.py`
 
 ## Error Handling
 

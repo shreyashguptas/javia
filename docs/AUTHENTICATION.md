@@ -130,7 +130,7 @@ device_uuid = str(uuid7())  # Generate time-sortable UUID
 
 On the server, admin runs:
 ```bash
-cd /opt/javia/server/scripts/register_device
+cd /opt/javia/scripts/register_device
 sudo ./register_device.sh <device-uuid>
 ```
 
@@ -226,7 +226,7 @@ grep SERVER_API_KEY /opt/javia/.env
 **Solutions**:
 ```bash
 # Register device (on server)
-cd /opt/javia/server/scripts/register_device
+cd /opt/javia/scripts/register_device
 sudo ./register_device.sh <device-uuid>
 
 # Check device status (on server)

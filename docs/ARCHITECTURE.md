@@ -136,9 +136,20 @@ The voice assistant has been architected as a client-server system to optimize p
 
 ### Authentication
 
-Pi device requests use device UUID authentication.
+The voice assistant uses a dual authentication system:
 
-**Header**: `X-Device-UUID: <device-uuid>`
+**Device UUID Authentication** (Pi Clients):
+- Pi device requests use device UUID authentication via `X-Device-UUID` header
+- Each device has a unique UUID that must be registered on the server
+- Used for device-initiated operations (audio processing, heartbeats, update checks)
+
+**API Key Authentication** (Admin Operations):
+- Admin endpoints use API key authentication via `X-API-Key` header
+- Used for server management operations (device registration, update creation, device listing)
+- Not shared with Pi clients
+
+**Header**: `X-Device-UUID: <device-uuid>` (for device endpoints)
+**Header**: `X-API-Key: <admin-api-key>` (for admin endpoints)
 
 ### Endpoints
 

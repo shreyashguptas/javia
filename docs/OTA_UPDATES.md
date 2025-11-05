@@ -361,11 +361,15 @@ Follow semantic versioning (vX.Y.Z):
 - `POST /api/v1/updates/{id}/status` - Report update status
 - `GET /api/v1/updates/` - List all updates
 
-All endpoints require `X-API-Key` header for authentication.
+**Authentication**:
+- Device endpoints (`/{uuid}/updates/check`, `/{id}/download`, `/{id}/status`) require `X-Device-UUID` header
+- Admin endpoints (`/create`, `/`) require `X-API-Key` header
 
 ## Security Considerations
 
-1. **API Authentication**: All endpoints require valid API key
+1. **API Authentication**: 
+   - Device endpoints use device UUID authentication (`X-Device-UUID` header)
+   - Admin endpoints use API key authentication (`X-API-Key` header)
 2. **Supabase RLS**: Row-level security policies prevent unauthorized access
 3. **Private Storage**: Update packages stored in private Supabase bucket
 4. **Service Role Key**: Keep `SUPABASE_SERVICE_KEY` secure (server-side only)
