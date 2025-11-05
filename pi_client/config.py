@@ -41,6 +41,12 @@ CHANNELS = 2  # Stereo: 2x INMP441 microphones (L/R channels)
 CHUNK_SIZE = 512  # Reduced from 1024 for lower latency (5.3ms vs 10.6ms per chunk)
 MICROPHONE_GAIN = float(os.getenv('MICROPHONE_GAIN', '1.0'))  # No gain needed - INMP441 outputs 70-80% signal naturally
 FADE_DURATION_MS = int(os.getenv('FADE_DURATION_MS', '0'))  # Disabled by default for performance
+SILENCE_PADDING_MS = int(os.getenv('SILENCE_PADDING_MS', '0'))  # 0ms default
+
+# Opus upload settings
+OPUS_TARGET_SAMPLE_RATE = int(os.getenv('OPUS_TARGET_SAMPLE_RATE', '24000'))  # 24kHz optimized for speech
+OPUS_TARGET_CHANNELS = 1  # mono
+OPUS_BITRATE = int(os.getenv('OPUS_BITRATE', '64000'))  # 64kbps
 
 # ==================== VOLUME CONFIGURATION ====================
 
@@ -52,7 +58,19 @@ VERBOSE_OUTPUT = os.getenv('VERBOSE_OUTPUT', 'false').lower() == 'true'  # Contr
 # ==================== FILE PATHS ====================
 
 # Audio Directory and File Paths
-AUDIO_DIR = Path(os.path.expanduser("~/javia/audio"))
+# Prefer RAM-backed storage for low-latency temp files
+_RAM_DIR = Path("/dev/shm/javia")
+_HOME_DIR = Path(os.path.expanduser("~/javia/audio"))
+if _RAM_DIR.parent.exists():
+    try:
+        _RAM_DIR.mkdir(parents=True, exist_ok=True)
+        AUDIO_DIR = _RAM_DIR
+    except Exception:
+        AUDIO_DIR = _HOME_DIR
+        AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+else:
+    AUDIO_DIR = _HOME_DIR
+    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 RECORDING_FILE = AUDIO_DIR / "recording.wav"
 RECORDING_OPUS_FILE = AUDIO_DIR / "recording.opus"
 RESPONSE_OPUS_FILE = AUDIO_DIR / "response.opus"
@@ -68,6 +86,9 @@ SESSION_FILE = Path(os.path.expanduser("~/.javia/session_id"))
 
 # Performance optimizations: Caching
 _CACHED_AUDIO_DEVICE_INDEX = None
+
+# Telemetry: timestamps for latency spans (set by recorder/api client)
+LAST_RECORD_END_TS = None  # time.time() when recording fully stops and file saved
 
 # GPIO objects (initialized in hardware.gpio_manager)
 button = None

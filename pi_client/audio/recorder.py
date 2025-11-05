@@ -315,6 +315,11 @@ def record_audio_with_arecord(gpio_manager, beep_generator):
             logger.info(f"[AUDIO] ✓ Recording looks good ({duration:.1f}s, {file_size:,} bytes)")
         
         logger.info(f"[AUDIO] Saved: {config.RECORDING_FILE}")
+        # Mark recording end timestamp for telemetry
+        try:
+            config.LAST_RECORD_END_TS = time.time()
+        except Exception:
+            pass
         
         # Additional diagnostic: Check if file contains mostly silence
         try:
@@ -557,6 +562,11 @@ def record_audio(gpio_manager, beep_generator):
             logger.warning(f"[WARNING] Recording file is very small ({file_size} bytes)")
         
         logger.info(f"[AUDIO] Saved: {config.RECORDING_FILE} ({file_size} bytes)")
+        # Mark recording end timestamp for telemetry
+        try:
+            config.LAST_RECORD_END_TS = time.time()
+        except Exception:
+            pass
         return True
         
     except Exception as e:

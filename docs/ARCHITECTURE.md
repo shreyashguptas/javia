@@ -136,9 +136,9 @@ The voice assistant has been architected as a client-server system to optimize p
 
 ### Authentication
 
-All API requests (except `/health`) require authentication via API key.
+Pi device requests use device UUID authentication.
 
-**Header**: `X-API-Key: <your-api-key>`
+**Header**: `X-Device-UUID: <device-uuid>`
 
 ### Endpoints
 
@@ -161,18 +161,19 @@ Process audio through the complete pipeline.
 **Request**:
 - **Content-Type**: `multipart/form-data`
 - **Headers**: 
-  - `X-API-Key`: Authentication key
+  - `X-Device-UUID`: Device authentication
 - **Form Data**:
-  - `audio`: Audio file (WAV format, max 25MB)
+  - `audio`: Audio file (Opus preferred; WAV accepted)
   - `session_id`: Optional session identifier (string)
 
 **Response**:
-- **Content-Type**: `audio/wav`
+- **Content-Type**: `audio/opus` (streaming)
 - **Headers**:
   - `X-Transcription`: Transcribed text
   - `X-LLM-Response`: LLM response text
   - `X-Session-ID`: Session ID (if provided)
-- **Body**: Audio file (WAV format)
+  - `X-Stage-Transcribe-ms`, `X-Stage-LLM-ms`, `X-Stage-TTS-ms`, `X-Stage-Total-ms`
+- **Body**: Streaming Opus audio (custom length-prefixed container, not Ogg Opus)
 
 **Status Codes**:
 - `200`: Success
@@ -192,7 +193,7 @@ Process audio through the complete pipeline.
 3. **Pi applies gain** to recorded audio
 4. **Pi saves audio** as WAV file
 5. **Pi sends HTTPS request** to server:
-   - Includes `X-API-Key` header
+   - Includes `X-Device-UUID` header
    - Uploads audio file
    - Optionally includes session ID
 6. **Cloudflare processes** request:

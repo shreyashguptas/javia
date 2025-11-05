@@ -6,13 +6,14 @@ Handles compression and decompression of audio files using Opus codec
 
 import wave
 import opuslib
+import numpy as np
 import logging
 import config
 
 logger = logging.getLogger(__name__)
 
 
-def compress_to_opus(wav_path, opus_path, bitrate=96000):
+def compress_to_opus(wav_path, opus_path, bitrate=None):
     """
     Compress WAV file to Opus format for efficient network transfer.
     
@@ -32,7 +33,8 @@ def compress_to_opus(wav_path, opus_path, bitrate=96000):
     """
     try:
         if config.VERBOSE_OUTPUT:
-            logger.info(f"[OPUS] Compressing audio to Opus format ({bitrate//1000}kbps)...")
+            _effective_bitrate = bitrate or getattr(config, 'OPUS_BITRATE', 64000)
+            logger.info(f"[OPUS] Compressing audio to Opus format ({_effective_bitrate//1000}kbps)...")
         
         # Read WAV file
         with wave.open(str(wav_path), 'rb') as wf:
@@ -43,29 +45,83 @@ def compress_to_opus(wav_path, opus_path, bitrate=96000):
             pcm_data = wf.readframes(n_frames)
         
         # Validate format
-        if sample_rate != config.SAMPLE_RATE:
-            raise ValueError(f"Expected sample rate {config.SAMPLE_RATE}, got {sample_rate}")
-        if channels != config.CHANNELS:
-            raise ValueError(f"Expected {config.CHANNELS} channel(s), got {channels}")
         if sample_width != 2:  # 16-bit
             raise ValueError(f"Expected 16-bit audio, got {sample_width*8}-bit")
         
-        # Create Opus encoder
-        encoder = opuslib.Encoder(sample_rate, channels, opuslib.APPLICATION_VOIP)
-        encoder.bitrate = bitrate
+        # Convert bytes to numpy int16
+        pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
+        # Reshape to (n_frames, channels)
+        pcm_array = pcm_array.reshape(-1, channels)
+        
+        # Downmix to mono if needed
+        if channels > 1:
+            pcm_mono = pcm_array.mean(axis=1).astype(np.int16)
+        else:
+            pcm_mono = pcm_array[:, 0]
+        
+        # Resample by integer decimation from 48kHz to 24kHz if applicable (with simple anti-aliasing)
+        target_sr = getattr(config, 'OPUS_TARGET_SAMPLE_RATE', 24000)
+        if sample_rate == 48000 and target_sr == 24000:
+            # Apply simple low-pass filter before decimation to reduce aliasing
+            try:
+                filter_size = 5
+                kernel = np.ones(filter_size, dtype=np.float32) / float(filter_size)
+                pcm_filtered = np.convolve(pcm_mono.astype(np.float32), kernel, mode='same')
+                pcm_resampled = pcm_filtered[::2].astype(np.int16)
+            except Exception:
+                pcm_resampled = pcm_mono[::2]
+            enc_sample_rate = 24000
+        else:
+            # Fallback: keep original sample rate
+            pcm_resampled = pcm_mono
+            enc_sample_rate = sample_rate
+
+        # Validate Opus-compatible sample rate, resample to 24kHz if needed
+        VALID_OPUS_RATES = {8000, 12000, 16000, 24000, 48000}
+        if enc_sample_rate not in VALID_OPUS_RATES:
+            try:
+                if config.VERBOSE_OUTPUT:
+                    logger.warning(f"[OPUS] Sample rate {enc_sample_rate}Hz not Opus-compatible, resampling to 24kHz")
+                target_rate = 24000
+                ratio = target_rate / float(enc_sample_rate)
+                new_length = max(1, int(len(pcm_resampled) * ratio))
+                indices = np.linspace(0, max(1, len(pcm_resampled) - 1), new_length)
+                pcm_resampled = np.interp(indices, np.arange(len(pcm_resampled)), pcm_resampled.astype(np.float32)).astype(np.int16)
+                enc_sample_rate = target_rate
+            except Exception:
+                # If resample fails, keep original but may fail on encode
+                pass
+        
+        # Create Opus encoder (mono)
+        encoder = opuslib.Encoder(enc_sample_rate, 1, opuslib.APPLICATION_VOIP)
+        encoder.bitrate = (bitrate or getattr(config, 'OPUS_BITRATE', 64000))
         encoder.complexity = 10  # Maximum quality (0-10)
         
         # Encode in chunks (Opus frame size must be specific durations)
         # For 48kHz: valid frame sizes are 120, 240, 480, 960, 1920, 2880 samples
-        frame_size = 960  # 20ms at 48kHz (optimal for speech)
-        frame_bytes = frame_size * channels * sample_width
+        # Frame size for 20ms depends on sample rate
+        # 48kHz -> 960, 24kHz -> 480
+        if enc_sample_rate == 48000:
+            frame_size = 960
+        elif enc_sample_rate == 24000:
+            frame_size = 480
+        elif enc_sample_rate == 16000:
+            frame_size = 320
+        elif enc_sample_rate == 12000:
+            frame_size = 240
+        elif enc_sample_rate == 8000:
+            frame_size = 160
+        else:
+            frame_size = max(120, int(0.02 * enc_sample_rate))  # ~20ms
+        frame_bytes = frame_size * 1 * 2  # mono, 16-bit
         
         opus_chunks = []
         offset = 0
         
-        while offset < len(pcm_data):
+        pcm_bytes = pcm_resampled.tobytes()
+        while offset < len(pcm_bytes):
             # Get chunk
-            chunk = pcm_data[offset:offset + frame_bytes]
+            chunk = pcm_bytes[offset:offset + frame_bytes]
             
             # Pad last chunk if necessary
             if len(chunk) < frame_bytes:
@@ -77,12 +133,11 @@ def compress_to_opus(wav_path, opus_path, bitrate=96000):
             
             offset += frame_bytes
         
-        # Write Opus file (simple concatenation with basic OGG container)
-        # For simplicity, we'll use raw Opus packets with length prefixes
+        # Write Opus file in custom simple container (length-prefixed packets)
         with open(opus_path, 'wb') as f:
             # Write header: sample_rate (4 bytes), channels (1 byte), num_packets (4 bytes)
-            f.write(sample_rate.to_bytes(4, 'little'))
-            f.write(channels.to_bytes(1, 'little'))
+            f.write(enc_sample_rate.to_bytes(4, 'little'))
+            f.write((1).to_bytes(1, 'little'))
             f.write(len(opus_chunks).to_bytes(4, 'little'))
             
             # Write each Opus packet with length prefix
@@ -135,6 +190,14 @@ def decompress_from_opus(opus_path, wav_path):
             # Create Opus decoder
             decoder = opuslib.Decoder(sample_rate, channels)
             
+            # Calculate frame size based on sample rate (20ms frames)
+            if sample_rate == 48000:
+                frame_size = 960
+            elif sample_rate == 24000:
+                frame_size = 480
+            else:
+                frame_size = max(120, int(0.02 * sample_rate))  # ~20ms
+            
             # Decode all packets
             pcm_chunks = []
             for i in range(num_packets):
@@ -142,8 +205,8 @@ def decompress_from_opus(opus_path, wav_path):
                 packet_len = int.from_bytes(f.read(2), 'little')
                 packet = f.read(packet_len)
                 
-                # Decode packet (frame size = 960 for 20ms at 48kHz)
-                pcm_data = decoder.decode(packet, 960)
+                # Decode packet with correct frame size for sample rate
+                pcm_data = decoder.decode(packet, frame_size)
                 pcm_chunks.append(pcm_data)
         
         # Combine all PCM data
@@ -174,3 +237,60 @@ def decompress_from_opus(opus_path, wav_path):
             logger.debug(f"{traceback.format_exc()}")
         return False
 
+
+def stream_decompress_from_opus_iter(byte_iter, wav_path):
+    """
+    Stream-decode custom Opus container from an iterator of bytes chunks and write WAV progressively.
+    Expects header then length-prefixed packets.
+    """
+    try:
+        header_needed = 9  # 4 bytes SR, 1 byte ch, 4 bytes num_packets
+        header_buf = bytearray()
+        data_buf = bytearray()
+        sample_rate = None
+        channels = None
+        num_packets = None
+        decoder = None
+        pcm_chunks = []
+        packets_decoded = 0
+        # We'll accumulate and finally write full WAV for simplicity (still overlaps network)
+        for chunk in byte_iter:
+            if not chunk:
+                continue
+            data_buf.extend(chunk)
+            # Parse header first
+            if decoder is None:
+                if len(data_buf) >= header_needed:
+                    sample_rate = int.from_bytes(data_buf[0:4], 'little')
+                    channels = int(data_buf[4])
+                    num_packets = int.from_bytes(data_buf[5:9], 'little')
+                    if channels not in (1, 2):
+                        raise ValueError(f"Invalid channels in Opus header: {channels}")
+                    if sample_rate not in {8000, 12000, 16000, 24000, 48000}:
+                        raise ValueError(f"Invalid sample rate in Opus header: {sample_rate}")
+                    decoder = opuslib.Decoder(sample_rate, channels)
+                    data_buf = data_buf[9:]
+            # Parse packets
+            while decoder is not None and len(data_buf) >= 2:
+                pkt_len = int.from_bytes(data_buf[0:2], 'little')
+                if len(data_buf) < 2 + pkt_len:
+                    break
+                pkt = bytes(data_buf[2:2+pkt_len])
+                data_buf = data_buf[2+pkt_len:]
+                frame_size = 960 if sample_rate == 48000 else 480 if sample_rate == 24000 else max(120, int(0.02*sample_rate))
+                pcm_data = decoder.decode(pkt, frame_size)
+                pcm_chunks.append(pcm_data)
+                packets_decoded += 1
+        # Write WAV
+        if not pcm_chunks or sample_rate is None or channels is None:
+            return False
+        full_pcm = b''.join(pcm_chunks)
+        with wave.open(str(wav_path), 'wb') as wf:
+            wf.setnchannels(channels)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(full_pcm)
+        return True
+    except Exception as e:
+        logger.error(f"Opus stream decompression failed: {e}")
+        return False

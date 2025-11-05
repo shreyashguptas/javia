@@ -79,31 +79,34 @@ Process audio through complete pipeline: transcription → LLM → TTS.
   X-Device-UUID: your_device_uuid_here
   ```
 - **Form Data**:
-  - `audio` (file): Audio file (**Opus or WAV format**, max 25MB)
+  - `audio` (file): Audio file (**Opus preferred**, WAV accepted; max 25MB)
   - `session_id` (optional, string): Session identifier for conversation history
   - `microphone_gain` (optional, string): Gain multiplier (default "1.0", e.g., "2.0" for 2x amplification)
 
 **Supported Audio Formats**:
-- **Opus** (recommended): `audio/opus` - 90% smaller files, 10x faster transfer
-  - Bitrate: 96kbps for excellent voice quality
-  - Sample Rate: 48kHz
+- **Opus** (recommended): `audio/opus` - ~10x smaller, fastest transfer
+  - Bitrate: 48–64 kbps (voice-optimized)
+  - Sample Rate: 24 kHz (server resamples for Groq as needed)
   - Channels: Mono
-- **WAV**: `audio/wav` - Uncompressed format (backward compatibility)
+- **WAV**: `audio/wav` - Legacy fallback
 
-**Response**: `200 OK`
-- **Content-Type**: `audio/opus` (compressed for fast download)
+Note: `audio/opus` here refers to a custom length-prefixed Opus container used by Pi clients, not standard Ogg Opus. Do not send `audio/ogg`.
+
+**Response**: `200 OK` (streaming)
+- **Content-Type**: `audio/opus`
 - **Headers**:
-  - `X-Transcription`: Transcribed text from audio (URL-encoded to support Unicode)
-  - `X-LLM-Response`: LLM response text (URL-encoded to support Unicode)
-  - `X-Session-ID`: Session ID (if provided, URL-encoded)
-- **Body**: Audio file (Opus format) containing TTS response
+  - `X-Transcription`: URL-encoded transcription
+  - `X-LLM-Response`: URL-encoded LLM response
+  - `X-Session-ID`: URL-encoded session id (if any)
+  - `X-Stage-Transcribe-ms`, `X-Stage-LLM-ms`, `X-Stage-TTS-ms`, `X-Stage-Total-ms`
+- **Body**: Streaming Opus audio chunks
 
 **Note**: All response headers are URL-encoded to support Unicode characters (e.g., smart quotes, accented characters). Clients should URL-decode these values using `urllib.parse.unquote()` in Python or equivalent in other languages.
 
 **Error Responses**:
 - `400 Bad Request`: Invalid file format, size, corrupted audio, or missing/malformed device UUID
 - `403 Forbidden`: Device not registered or not authorized
-- `413 Request Entity Too Large`: File exceeds 25MB
+- `413 Request Entity Too Large`: File exceeds max size (default 50MB; configurable)
 - `422 Unprocessable Entity`: Validation error
 - `500 Internal Server Error`: Server processing error
 

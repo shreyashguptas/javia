@@ -11,7 +11,7 @@ import opuslib
 from uuid import UUID
 
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Form
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.background import BackgroundTask
 
@@ -135,24 +135,53 @@ def decompress_opus_to_wav(opus_path: Path, wav_path: Path):
         # Read Opus file (custom format with length prefixes)
         with open(opus_path, 'rb') as f:
             # Read header
-            sample_rate = int.from_bytes(f.read(4), 'little')
-            channels = int.from_bytes(f.read(1), 'little')
-            num_packets = int.from_bytes(f.read(4), 'little')
+            header = f.read(9)
+            if len(header) < 9:
+                raise ValueError("Invalid Opus header: too short")
+            sample_rate = int.from_bytes(header[0:4], 'little')
+            channels = int(header[4])
+            num_packets = int.from_bytes(header[5:9], 'little')
             
             logger.debug(f"Opus file: {sample_rate}Hz, {channels}ch, {num_packets} packets")
+
+            # Validate header fields
+            if channels not in (1, 2):
+                raise ValueError(f"Unsupported channel count in Opus header: {channels}")
+            if sample_rate not in {8000, 12000, 16000, 24000, 48000}:
+                raise ValueError(
+                    f"Unsupported Opus sample rate: {sample_rate}. "
+                    "Expected one of 8000,12000,16000,24000,48000."
+                )
+            if num_packets < 0:
+                raise ValueError("Invalid packet count in Opus header")
             
             # Create Opus decoder
             decoder = opuslib.Decoder(sample_rate, channels)
             
             # Decode all packets
+            # Calculate frame size based on sample rate (20ms frames)
+            if sample_rate == 48000:
+                frame_size = 960
+            elif sample_rate == 24000:
+                frame_size = 480
+            else:
+                frame_size = max(120, int(0.02 * sample_rate))  # ~20ms
+            
             pcm_chunks = []
             for _ in range(num_packets):
                 # Read packet length and packet
-                packet_len = int.from_bytes(f.read(2), 'little')
+                len_bytes = f.read(2)
+                if len(len_bytes) < 2:
+                    raise ValueError("Unexpected EOF while reading packet length")
+                packet_len = int.from_bytes(len_bytes, 'little')
+                if packet_len <= 0:
+                    raise ValueError("Invalid packet length in Opus stream")
                 packet = f.read(packet_len)
+                if len(packet) < packet_len:
+                    raise ValueError("Unexpected EOF while reading Opus packet")
                 
-                # Decode packet (frame size = 960 for 20ms at 48kHz)
-                pcm_data = decoder.decode(packet, 960)
+                # Decode packet with correct frame size for sample rate
+                pcm_data = decoder.decode(packet, frame_size)
                 pcm_chunks.append(pcm_data)
         
         # Combine all PCM data
@@ -203,13 +232,51 @@ def compress_wav_to_opus(wav_path: Path, opus_path: Path, bitrate: int = 96000):
         if sample_width != 2:
             raise ValueError(f"Expected 16-bit audio, got {sample_width*8}-bit")
         
+        # Prepare PCM and sample rate for Opus (validate rate is Opus-compatible)
+        VALID_OPUS_RATES = {8000, 12000, 16000, 24000, 48000}
+        if sample_rate not in VALID_OPUS_RATES:
+            # Resample to 24kHz with simple linear interpolation per channel
+            target_rate = 24000
+            try:
+                pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
+                if channels > 1:
+                    pcm_array = pcm_array.reshape(-1, channels)
+                    ratio = target_rate / sample_rate
+                    new_length = int(pcm_array.shape[0] * ratio)
+                    indices = np.linspace(0, pcm_array.shape[0] - 1, new_length)
+                    resampled_channels = []
+                    for ch in range(channels):
+                        resampled = np.interp(indices, np.arange(pcm_array.shape[0]), pcm_array[:, ch]).astype(np.int16)
+                        resampled_channels.append(resampled)
+                    pcm_interleaved = np.vstack(resampled_channels).T.reshape(-1)
+                else:
+                    ratio = target_rate / sample_rate
+                    new_length = int(len(pcm_array) * ratio)
+                    indices = np.linspace(0, len(pcm_array) - 1, new_length)
+                    pcm_interleaved = np.interp(indices, np.arange(len(pcm_array)), pcm_array).astype(np.int16)
+                pcm_data = pcm_interleaved.tobytes()
+                sample_rate = target_rate
+            except Exception as _e:
+                logger.warning(f"Failed to resample from {sample_rate}Hz, proceeding with original rate: {_e}")
+        
         # Create Opus encoder
         encoder = opuslib.Encoder(sample_rate, channels, opuslib.APPLICATION_VOIP)
         encoder.bitrate = bitrate
         encoder.complexity = 10  # Maximum quality
         
-        # Encode in chunks (Opus frame size for 48kHz: 960 samples = 20ms)
-        frame_size = 960  # 20ms at 48kHz
+        # Encode in chunks (20ms frames based on sample rate)
+        if sample_rate == 48000:
+            frame_size = 960
+        elif sample_rate == 24000:
+            frame_size = 480
+        elif sample_rate == 16000:
+            frame_size = 320
+        elif sample_rate == 12000:
+            frame_size = 240
+        elif sample_rate == 8000:
+            frame_size = 160
+        else:
+            frame_size = max(120, int(0.02 * sample_rate))
         frame_bytes = frame_size * channels * sample_width
         
         opus_chunks = []
@@ -272,14 +339,19 @@ async def health_check():
 
 @app.post(
     "/api/v1/process",
-    response_class=FileResponse,
+    response_class=StreamingResponse,
     responses={
         200: {
             "description": "Audio response file",
-            "content": {"audio/wav": {}},
+            "content": {"audio/opus": {}},
             "headers": {
                 "X-Transcription": {"description": "Transcribed text", "schema": {"type": "string"}},
                 "X-LLM-Response": {"description": "LLM response text", "schema": {"type": "string"}},
+                "X-Session-ID": {"description": "Session ID (if provided)", "schema": {"type": "string"}},
+                "X-Stage-Transcribe-ms": {"description": "Transcription stage duration (ms)", "schema": {"type": "string"}},
+                "X-Stage-LLM-ms": {"description": "LLM stage duration (ms)", "schema": {"type": "string"}},
+                "X-Stage-TTS-ms": {"description": "TTS stage duration (ms)", "schema": {"type": "string"}},
+                "X-Stage-Total-ms": {"description": "Total processing time (ms)", "schema": {"type": "string"}},
             }
         },
         400: {"model": ErrorResponse},
@@ -331,15 +403,21 @@ async def process_audio(
     temp_output_opus_path = None
     
     try:
-        # Validate content type (accept both Opus and WAV)
-        is_opus = audio.content_type in ["audio/opus", "audio/ogg"]
+        import time as _t
+        _total_start = _t.time()
+        # Validate content type (accept custom Opus or WAV)
+        is_opus = audio.content_type == "audio/opus"
         is_wav = audio.content_type in ["audio/wav", "audio/wave", "audio/x-wav"]
         
         if not is_opus and not is_wav:
             logger.warning(f"Invalid content type: {audio.content_type}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid content type: {audio.content_type}. Expected audio/opus or audio/wav"
+                detail=(
+                    f"Invalid content type: {audio.content_type}. "
+                    "Expected audio/opus (custom container) or audio/wav. "
+                    "Note: audio/ogg (Ogg Opus) is not supported by this endpoint."
+                )
             )
         
         # Create temporary file for input audio
@@ -399,7 +477,9 @@ async def process_audio(
         
         # Step 1: Transcribe audio
         logger.info("Step 1: Transcribing audio...")
+        _t1 = _t.time()
         transcription = transcribe_audio(audio_path_for_transcription)
+        _transcribe_ms = int((_t.time() - _t1) * 1000)
         
         # Step 1.5: Resolve thread and build context using dynamic threading
         conversation_thread_id = None
@@ -444,15 +524,18 @@ async def process_audio(
         
         # Step 2: Query LLM with conversation history
         logger.info("Step 2: Querying LLM...")
+        _t2 = _t.time()
         llm_response = query_llm(transcription, conversation_history_messages)
+        _llm_ms = int((_t.time() - _t2) * 1000)
         
         # Step 3: Generate speech (WAV)
         logger.info("Step 3: Generating speech...")
         temp_output_wav_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
         temp_output_wav_path = Path(temp_output_wav_file.name)
         temp_output_wav_file.close()
-        
+        _t3 = _t.time()
         generate_speech(llm_response, temp_output_wav_path)
+        _tts_ms = int((_t.time() - _t3) * 1000)
         
         # Step 4: Compress WAV to Opus for efficient transfer
         logger.info("Step 4: Compressing response to Opus...")
@@ -460,7 +543,8 @@ async def process_audio(
         temp_output_opus_path = Path(temp_output_opus_file.name)
         temp_output_opus_file.close()
         
-        compress_wav_to_opus(temp_output_wav_path, temp_output_opus_path, bitrate=96000)
+        compress_wav_to_opus(temp_output_wav_path, temp_output_opus_path, bitrate=settings.opus_bitrate)
+        _total_ms = int((_t.time() - _total_start) * 1000)
         
         # Return Opus audio file with metadata in headers
         # URL-encode header values to handle Unicode characters (HTTP headers must be latin-1 compatible)
@@ -469,15 +553,28 @@ async def process_audio(
         # Store conversation messages in background task (non-blocking)
         final_session_id = str(conversation_thread_id) if conversation_thread_id else None
         
-        return FileResponse(
-            path=str(temp_output_opus_path),
+        def _iter_file_chunks(p: Path, chunk_size: int = 64 * 1024):
+            with open(p, 'rb') as f:
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        headers = {
+            "X-Transcription": quote(transcription, safe=''),
+            "X-LLM-Response": quote(llm_response, safe=''),
+            "X-Session-ID": quote(final_session_id or "", safe=''),
+            "X-Stage-Transcribe-ms": str(_transcribe_ms),
+            "X-Stage-LLM-ms": str(_llm_ms),
+            "X-Stage-TTS-ms": str(_tts_ms),
+            "X-Stage-Total-ms": str(_total_ms),
+        }
+
+        return StreamingResponse(
+            _iter_file_chunks(temp_output_opus_path),
             media_type="audio/opus",
-            filename="response.opus",
-            headers={
-                "X-Transcription": quote(transcription, safe=''),
-                "X-LLM-Response": quote(llm_response, safe=''),
-                "X-Session-ID": quote(final_session_id or "", safe=''),
-            },
+            headers=headers,
             background=BackgroundTask(
                 cleanup_temp_files_and_store_messages,
                 temp_input_path, 

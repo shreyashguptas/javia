@@ -508,7 +508,7 @@ def query_llm(user_text: str, conversation_history: Optional[List[Dict[str, str]
             payload = {
                 'model': settings.llm_model,
                 'messages': messages,
-                'max_tokens': 1000,
+                'max_tokens': settings.llm_max_tokens,
                 'temperature': 0.7
             }
             

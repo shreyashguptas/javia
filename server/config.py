@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     tts_model: str = "playai-tts"
     tts_voice: str = "Cheyenne-PlayAI"
     embedding_model: str = "text-embedding-3-small"
+    llm_max_tokens: int = 512  # generous safety cap; prompt steers brevity
     
     # System Prompt
     system_prompt: str = """You are a helpful and intelligent voice assistant. Adapt your response length based on what the question requires:
@@ -46,6 +47,9 @@ Always use clear, simple language at the appropriate level for the question. Pri
     # Audio Configuration
     max_audio_size_mb: int = 50  # Allow larger files before compression/chunking
     sample_rate: int = 48000
+    # Opus Configuration
+    opus_bitrate: int = 64000  # Default to 64kbps to match client
+    opus_target_sample_rate: int = 24000  # Preferred speech rate for Opus
     
     model_config = SettingsConfigDict(
         env_file=".env",
