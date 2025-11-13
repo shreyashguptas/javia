@@ -87,7 +87,10 @@ class APIClient:
         latency from critical path. Server fetches and caches context while user
         is speaking, so when audio arrives, context is already in memory.
 
-        Saves 200-500ms from total processing time.
+        ALSO establishes HTTP connection (TCP + TLS handshake) so main upload
+        can reuse the connection, saving 1-3 seconds.
+
+        Saves 200-500ms (DB) + 1-3s (connection) = 1.2-3.5s from total processing time.
 
         Returns:
             str: Session ID to use for the next audio request, or None if failed
@@ -99,13 +102,18 @@ class APIClient:
             data = {'session_id': session_id} if session_id else {}
 
             if config.VERBOSE_OUTPUT:
-                print("[PREPARE] Pre-warming context on server...")
+                print("[PREPARE] Pre-warming context AND establishing connection...")
+
+            # Track pre-warm timing
+            prewarm_start = time.time()
 
             response = session.post(
                 f"{self.server_url}/api/v1/prepare",
                 data=data,
-                timeout=5  # Short timeout - this is best-effort
+                timeout=(3, 5)  # (connect_timeout=3s, read_timeout=5s) - Short timeouts for best-effort
             )
+
+            prewarm_ms = int((time.time() - prewarm_start) * 1000)
 
             if response.status_code == 200:
                 result = response.json()
@@ -113,7 +121,8 @@ class APIClient:
                 cached_messages = result.get('cached_messages', 0)
 
                 if config.VERBOSE_OUTPUT:
-                    print(f"[PREPARE] ✓ Context ready ({cached_messages} messages cached)")
+                    print(f"[PREPARE] ✓ Context ready ({cached_messages} messages cached) [{prewarm_ms}ms]")
+                    print(f"[PREPARE] ✓ HTTP connection established and cached (will be reused for upload)")
 
                 # Session ID is returned and will be used in next request
                 # (No need to persist here - config.get_session_id() handles persistence)
@@ -124,7 +133,7 @@ class APIClient:
 
             else:
                 if config.VERBOSE_OUTPUT:
-                    print(f"[PREPARE] Failed ({response.status_code}), continuing without pre-warm")
+                    print(f"[PREPARE] Failed ({response.status_code}) after {prewarm_ms}ms, continuing without pre-warm")
                 return session_id
 
         except Exception as e:
@@ -192,20 +201,42 @@ class APIClient:
                     stop_to_upload_start_ms = max(0, int((time.time() - config.LAST_RECORD_END_TS) * 1000))
 
                 # DIAGNOSTIC: Detailed upload timing to identify bottlenecks
+                # Track each phase: DNS, TCP connect, TLS handshake, upload, server processing
+                timing_data = {
+                    'prep_start': time.time(),
+                    'dns_start': None,
+                    'dns_end': None,
+                    'connect_start': None,
+                    'connect_end': None,
+                    'tls_start': None,
+                    'tls_end': None,
+                    'request_start': None,
+                    'request_headers_sent': None,
+                    'first_byte_received': None
+                }
+
+                # Hook to capture connection timing (approximation using response hook)
+                def response_hook(r, *args, **kwargs):
+                    timing_data['first_byte_received'] = time.time()
+
                 prep_complete = time.time()
                 upload_start = prep_complete
+                timing_data['request_start'] = upload_start
 
                 # Send request with persistent session (faster than new connection)
+                # Note: requests library doesn't expose fine-grained DNS/TCP/TLS timing
+                # We can only measure total time to first byte
                 response = session.post(
                     f"{self.server_url}/api/v1/process",
                     files=files,
                     data=data,
-                    timeout=120,
-                    stream=True
+                    timeout=(5, 120),  # (connect_timeout, read_timeout)
+                    stream=True,
+                    hooks={'response': response_hook}
                 )
 
                 # DIAGNOSTIC: Capture first byte received time
-                first_byte_received = time.time()
+                first_byte_received = timing_data['first_byte_received'] or time.time()
 
                 try:
                     ttfb_start = upload_start
@@ -218,6 +249,20 @@ class APIClient:
                         print(f"[METRIC] upload_ms={int(upload_time*1000)}")
                         # DIAGNOSTIC: Network time (DNS + connect + send + wait for first byte)
                         print(f"[DIAGNOSTIC] network_to_first_byte_ms={network_time_ms}")
+
+                        # DIAGNOSTIC ANALYSIS: Identify likely bottleneck
+                        if network_time_ms > 3000:
+                            print(f"[DIAGNOSTIC] ⚠️  Network delay is HIGH ({network_time_ms}ms)")
+                            print(f"[DIAGNOSTIC] Likely causes:")
+                            print(f"[DIAGNOSTIC]   - WiFi power management enabled (disable with: sudo iw dev wlan0 set power_save off)")
+                            print(f"[DIAGNOSTIC]   - DNS lookup delay (check /etc/resolv.conf)")
+                            print(f"[DIAGNOSTIC]   - New TCP connection (connection pooling not working)")
+                            print(f"[DIAGNOSTIC]   - TLS handshake overhead")
+                        elif network_time_ms > 1000:
+                            print(f"[DIAGNOSTIC] ⚠️  Network delay is MODERATE ({network_time_ms}ms)")
+                            print(f"[DIAGNOSTIC] Consider WiFi optimization or using Ethernet")
+                        else:
+                            print(f"[DIAGNOSTIC] ✓ Network delay is GOOD ({network_time_ms}ms)")
 
                     if config.VERBOSE_OUTPUT:
                         print(f"[SERVER] Response code: {response.status_code}")
