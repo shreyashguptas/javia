@@ -534,7 +534,8 @@ def query_llm(user_text: str, conversation_history: Optional[List[Dict[str, str]
                 'model': settings.llm_model,
                 'messages': messages,
                 'max_tokens': settings.llm_max_tokens,
-                'temperature': 0.7
+                'temperature': 0.7,
+                'reasoning_format': 'hidden'  # Hide reasoning for compound model (prevents massive responses)
             }
             
             logger.info(f"Sending query to LLM (attempt {attempt + 1}/{max_retries})")
@@ -915,7 +916,8 @@ Create an updated summary that combines the previous summary with the new conver
                     *conversation
                 ],
                 'max_tokens': max_tokens,
-                'temperature': temperature
+                'temperature': temperature,
+                'reasoning_format': 'hidden'  # Hide reasoning for compound model
             }
             
             logger.info(f"Requesting thread summary from Groq LLM (initial={is_initial_summary}, messages={len(messages)}, attempt={retry_count + 1})")

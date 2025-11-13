@@ -115,9 +115,9 @@ class APIClient:
                 if config.VERBOSE_OUTPUT:
                     print(f"[PREPARE] ✓ Context ready ({cached_messages} messages cached)")
 
-                # Save session_id for next request
+                # Session ID is returned and will be used in next request
+                # (No need to persist here - config.get_session_id() handles persistence)
                 if new_session_id:
-                    config.set_session_id(new_session_id)
                     return new_session_id
 
                 return session_id
