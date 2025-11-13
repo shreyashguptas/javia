@@ -764,6 +764,96 @@ def generate_speech(text: str, output_path: Path) -> None:
     raise TTSError("Failed after all retry attempts")
 
 
+def generate_speech_streaming(text: str):
+    """
+    Generate speech using Groq TTS API with streaming output.
+    Yields WAV file chunks as they arrive from the API.
+
+    NOTE: This is a synchronous generator (not async) because it uses requests library.
+    Use with asyncio.to_thread() or similar async wrapper if needed.
+
+    Args:
+        text: Text to convert to speech
+
+    Yields:
+        bytes: Chunks of WAV audio data (includes WAV header in first chunk)
+
+    Raises:
+        TTSError: If TTS generation fails
+    """
+    logger.info(f"Generating speech (streaming) for text: {text[:100]}...")
+
+    if not text or not text.strip():
+        raise TTSError("Cannot generate speech from empty text")
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {settings.groq_api_key}'
+            }
+
+            payload = {
+                'model': settings.tts_model,
+                'input': text.strip(),
+                'voice': settings.tts_voice,
+                'response_format': 'wav'
+            }
+
+            logger.info(f"Requesting TTS streaming (attempt {attempt + 1}/{max_retries})")
+
+            response = requests.post(
+                GROQ_TTS_URL,
+                headers=headers,
+                json=payload,
+                timeout=60,
+                stream=True
+            )
+
+            logger.info(f"TTS API response: {response.status_code}")
+
+            if response.status_code == 200:
+                total_bytes = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        total_bytes += len(chunk)
+                        yield chunk
+
+                if total_bytes == 0:
+                    raise TTSError("Received empty audio stream")
+
+                logger.info(f"TTS streaming complete: {total_bytes} bytes")
+                return
+
+            elif response.status_code == 429:
+                logger.warning("Rate limited, waiting before retry...")
+                time.sleep(2 ** attempt)  # Exponential backoff
+                continue
+            else:
+                error_msg = f"API error {response.status_code}: {response.text}"
+                logger.error(error_msg)
+                raise TTSError(error_msg)
+
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                logger.warning(f"Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(1)
+                continue
+            else:
+                raise TTSError("Request timeout after retries")
+
+        except requests.exceptions.ConnectionError as e:
+            raise TTSError(f"Connection error: {e}")
+
+        except Exception as e:
+            if isinstance(e, TTSError):
+                raise
+            raise TTSError(f"Unexpected error: {e}")
+
+    raise TTSError("Failed after all retry attempts")
+
+
 def embed_text(text: str) -> List[float]:
     """
     Generate embedding for text using OpenAI embeddings API.

@@ -328,6 +328,166 @@ def compress_wav_to_opus(wav_path: Path, opus_path: Path, bitrate: int = 64000):
         raise
 
 
+async def stream_wav_to_opus(wav_chunks, bitrate: int = 64000):
+    """
+    Stream WAV audio chunks through Opus encoder, yielding length-prefixed Opus packets.
+
+    This function:
+    1. Parses WAV header to get sample_rate, channels, sample_width
+    2. Buffers PCM data until complete Opus frames are available
+    3. Encodes frames and yields: header (9 bytes) then length-prefixed packets
+
+    Args:
+        wav_chunks: Async iterator of WAV file chunks
+        bitrate: Opus bitrate in bits/second (default 64000)
+
+    Yields:
+        bytes: Opus header (first yield) then length-prefixed Opus packets
+    """
+    try:
+        # State variables
+        buffer = bytearray()
+        header_parsed = False
+        sample_rate = None
+        channels = None
+        sample_width = None
+        encoder = None
+        frame_size = None
+        frame_bytes = None
+        pcm_buffer = bytearray()
+        total_packets = 0
+
+        logger.debug("Starting WAV to Opus streaming conversion")
+
+        # Process chunks
+        async for chunk in wav_chunks:
+            if not chunk:
+                continue
+
+            buffer.extend(chunk)
+
+            # Parse WAV header if not done yet
+            if not header_parsed and len(buffer) >= 44:
+                # WAV format (little-endian):
+                # 0-3: "RIFF"
+                # 4-7: file size - 8
+                # 8-11: "WAVE"
+                # 12-15: "fmt "
+                # 16-19: fmt chunk size (usually 16)
+                # 20-21: audio format (1 = PCM)
+                # 22-23: num channels
+                # 24-27: sample rate
+                # 28-31: byte rate
+                # 32-33: block align
+                # 34-35: bits per sample
+                # 36-39: "data"
+                # 40-43: data size
+
+                if buffer[0:4] != b'RIFF' or buffer[8:12] != b'WAVE':
+                    raise ValueError("Invalid WAV header")
+
+                channels = int.from_bytes(buffer[22:24], 'little')
+                sample_rate = int.from_bytes(buffer[24:28], 'little')
+                sample_width = int.from_bytes(buffer[34:36], 'little') // 8  # Convert bits to bytes
+
+                logger.debug(f"Parsed WAV header: {sample_rate}Hz, {channels}ch, {sample_width*8}-bit")
+
+                # Validate format
+                if sample_width != 2:
+                    raise ValueError(f"Expected 16-bit audio, got {sample_width*8}-bit")
+
+                # Validate/convert sample rate for Opus
+                VALID_OPUS_RATES = {8000, 12000, 16000, 24000, 48000}
+                if sample_rate not in VALID_OPUS_RATES:
+                    logger.warning(f"Sample rate {sample_rate}Hz not Opus-compatible, this may cause issues")
+                    # For streaming, we'll use the rate as-is and hope for the best
+                    # In production, you'd want to resample, but that's complex for streaming
+
+                # Create Opus encoder
+                encoder = opuslib.Encoder(sample_rate, channels, opuslib.APPLICATION_VOIP)
+                encoder.bitrate = bitrate
+                encoder.complexity = 3  # Low complexity for speed
+
+                # Calculate frame size (20ms)
+                if sample_rate == 48000:
+                    frame_size = 960
+                elif sample_rate == 24000:
+                    frame_size = 480
+                elif sample_rate == 16000:
+                    frame_size = 320
+                elif sample_rate == 12000:
+                    frame_size = 240
+                elif sample_rate == 8000:
+                    frame_size = 160
+                else:
+                    frame_size = max(120, int(0.02 * sample_rate))
+
+                frame_bytes = frame_size * channels * sample_width
+
+                logger.debug(f"Opus encoder configured: frame_size={frame_size}, frame_bytes={frame_bytes}")
+
+                # Yield Opus header: sample_rate (4), channels (1), num_packets (4)
+                # Note: we don't know num_packets yet, so we'll write 0 and client will handle it
+                header = (
+                    sample_rate.to_bytes(4, 'little') +
+                    channels.to_bytes(1, 'little') +
+                    (0).to_bytes(4, 'little')  # num_packets unknown for streaming
+                )
+                yield header
+                logger.debug("Sent Opus header (9 bytes)")
+
+                header_parsed = True
+
+                # Find data chunk and skip to PCM data
+                data_pos = buffer.find(b'data')
+                if data_pos != -1:
+                    # Skip past "data" and data size
+                    pcm_start = data_pos + 8
+                    if pcm_start < len(buffer):
+                        pcm_buffer.extend(buffer[pcm_start:])
+                        buffer = bytearray()
+                else:
+                    # Data chunk might be in next chunk, keep buffer
+                    pass
+
+            # Process PCM data if header is parsed
+            elif header_parsed:
+                pcm_buffer.extend(buffer)
+                buffer = bytearray()
+
+                # Encode complete frames
+                while len(pcm_buffer) >= frame_bytes:
+                    frame = bytes(pcm_buffer[:frame_bytes])
+                    pcm_buffer = pcm_buffer[frame_bytes:]
+
+                    # Encode frame
+                    opus_packet = encoder.encode(frame, frame_size)
+                    total_packets += 1
+
+                    # Yield length-prefixed packet
+                    packet_data = len(opus_packet).to_bytes(2, 'little') + opus_packet
+                    yield packet_data
+
+        # Handle remaining PCM data (pad last frame if necessary)
+        if header_parsed and len(pcm_buffer) > 0:
+            if len(pcm_buffer) < frame_bytes:
+                # Pad with zeros
+                pcm_buffer.extend(b'\x00' * (frame_bytes - len(pcm_buffer)))
+
+            frame = bytes(pcm_buffer[:frame_bytes])
+            opus_packet = encoder.encode(frame, frame_size)
+            total_packets += 1
+
+            packet_data = len(opus_packet).to_bytes(2, 'little') + opus_packet
+            yield packet_data
+
+        logger.debug(f"WAV to Opus streaming complete: {total_packets} packets encoded")
+
+    except Exception as e:
+        logger.error(f"Streaming Opus encoding failed: {e}")
+        raise
+
+
 @app.get("/", response_model=HealthResponse)
 async def root():
     """Root endpoint - health check"""
@@ -620,39 +780,41 @@ async def process_audio(
         _t2 = _t.time()
         llm_response = query_llm(transcription, conversation_history_messages)
         _llm_ms = int((_t.time() - _t2) * 1000)
-        
-        # Step 3: Generate speech (WAV)
-        logger.info("Step 3: Generating speech...")
-        temp_output_wav_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-        temp_output_wav_path = Path(temp_output_wav_file.name)
-        temp_output_wav_file.close()
-        _t3 = _t.time()
-        generate_speech(llm_response, temp_output_wav_path)
-        _tts_ms = int((_t.time() - _t3) * 1000)
-        
-        # Step 4: Compress WAV to Opus for efficient transfer
-        logger.info("Step 4: Compressing response to Opus...")
-        temp_output_opus_file = tempfile.NamedTemporaryFile(delete=False, suffix=".opus")
-        temp_output_opus_path = Path(temp_output_opus_file.name)
-        temp_output_opus_file.close()
-        
-        compress_wav_to_opus(temp_output_wav_path, temp_output_opus_path, bitrate=settings.opus_bitrate)
-        _total_ms = int((_t.time() - _total_start) * 1000)
-        
-        # Return Opus audio file with metadata in headers
-        # URL-encode header values to handle Unicode characters (HTTP headers must be latin-1 compatible)
-        logger.info("Processing complete, returning Opus audio file")
-        
+        _t3 = _t.time()  # Start timer for TTS (will stream, no final timing)
+
+        # Step 3 & 4: Stream TTS → Opus encoding (REAL-TIME STREAMING)
+        logger.info("Step 3 & 4: Streaming TTS generation and Opus encoding...")
+        logger.info("⚡ STREAMING MODE: Client will receive audio as it's generated!")
+
         # Store conversation messages in background task (non-blocking)
         final_session_id = str(conversation_thread_id) if conversation_thread_id else None
-        
-        def _iter_file_chunks(p: Path, chunk_size: int = 64 * 1024):
-            with open(p, 'rb') as f:
-                while True:
-                    chunk = f.read(chunk_size)
-                    if not chunk:
-                        break
-                    yield chunk
+
+        # Chain generators: TTS streaming → WAV chunks → Opus packets
+        async def stream_audio_response():
+            """Chain TTS streaming with Opus encoding"""
+            try:
+                # Generate speech chunks from Groq TTS API (synchronous generator)
+                tts_generator = generate_speech_streaming(llm_response)
+
+                # Create async wrapper for synchronous TTS generator
+                async def async_wav_chunks():
+                    """Wrap synchronous TTS generator in async context"""
+                    for chunk in tts_generator:
+                        yield chunk
+
+                # Encode WAV chunks to Opus packets and stream
+                async for opus_packet in stream_wav_to_opus(async_wav_chunks(), bitrate=settings.opus_bitrate):
+                    yield opus_packet
+
+                logger.info("⚡ Streaming TTS and Opus encoding complete!")
+
+            except Exception as e:
+                logger.error(f"Streaming error: {e}")
+                raise
+
+        # Calculate timing (note: TTS time will be 0 since we're streaming)
+        _tts_ms = int((_t.time() - _t3) * 1000)  # Time to START streaming
+        _total_ms = int((_t.time() - _total_start) * 1000)
 
         headers = {
             "X-Transcription": quote(transcription, safe=''),
@@ -660,21 +822,22 @@ async def process_audio(
             "X-Session-ID": quote(final_session_id or "", safe=''),
             "X-Stage-Transcribe-ms": str(_transcribe_ms),
             "X-Stage-LLM-ms": str(_llm_ms),
-            "X-Stage-TTS-ms": str(_tts_ms),
-            "X-Stage-Total-ms": str(_total_ms),
+            "X-Stage-TTS-ms": str(_tts_ms),  # Time to start streaming (not total)
+            "X-Stage-Total-ms": str(_total_ms),  # Time to first byte
+            "X-Streaming": "true",  # Indicate this is a streaming response
         }
 
         return StreamingResponse(
-            _iter_file_chunks(temp_output_opus_path),
+            stream_audio_response(),
             media_type="audio/opus",
             headers=headers,
             background=BackgroundTask(
                 cleanup_temp_files_and_store_messages,
-                temp_input_path, 
+                temp_input_path,
                 temp_decompressed_path if temp_decompressed_file else None,
-                temp_amplified_path if temp_amplified_file else None, 
-                temp_output_wav_path,
-                temp_output_opus_path,
+                temp_amplified_path if temp_amplified_file else None,
+                None,  # No temp WAV file (streaming)
+                None,  # No temp Opus file (streaming)
                 conversation_thread_id,
                 transcription,
                 llm_response
