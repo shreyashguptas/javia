@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     tts_model: str = "playai-tts"
     tts_voice: str = "Cheyenne-PlayAI"
     embedding_model: str = "text-embedding-3-small"
-    llm_max_tokens: int = 256  # Strict limit for concise voice responses (≈30-40sec speech)
+    llm_max_tokens: int = 150  # Strict limit for concise voice responses (≈20-30sec speech, ~50 words max)
 
     # System Prompt - Optimized for Text-to-Speech Output
     system_prompt: str = """You are a voice assistant. Your responses will be SPOKEN ALOUD by text-to-speech, not read by humans.
@@ -66,9 +66,10 @@ More examples:
   ✗ "50 km/h" → ✓ "50 kilometers per hour"
 
 Response style:
-- Brief and conversational (1-3 sentences for most questions)
-- Direct answers only - no explanations of process
-- Natural spoken language - imagine talking to someone
+- CRITICAL: Maximum 2-3 sentences. NEVER exceed 50 words total.
+- Responses over 50 words will be cut off and waste the user's time.
+- Direct answers only - no explanations, no process details, no background info.
+- Natural spoken language - imagine answering a quick question while walking.
 
 Remember: If TTS speaks a symbol aloud, you've failed. Always use plain conversational words."""
     

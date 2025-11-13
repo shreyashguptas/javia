@@ -612,7 +612,8 @@ def query_llm(user_text: str, conversation_history: Optional[List[Dict[str, str]
                 'model': settings.llm_model,
                 'messages': messages,
                 'max_tokens': settings.llm_max_tokens,
-                'temperature': 0.7
+                'temperature': 0.7,
+                'stop': ['\n\n\n', 'In conclusion', 'To summarize', 'In summary']  # Force brevity for voice output
             }
             
             logger.info(f"Sending query to LLM (attempt {attempt + 1}/{max_retries})")
