@@ -541,12 +541,14 @@ async def prepare_context(
         dummy_embedding = [0.0] * 1536
 
         # Resolve thread (time-based only, no embedding needed)
-        thread_decision = resolve_thread(device.id, parsed_session_id, "", dummy_embedding)
+        # BUGFIX: Run in thread pool to avoid blocking async event loop (Supabase performs blocking I/O)
+        import asyncio
+        thread_decision = await asyncio.to_thread(resolve_thread, device.id, parsed_session_id, "", dummy_embedding)
         resolved_session_id = thread_decision.thread_id
 
-        # Fetch and cache context
+        # Fetch and cache context (async, with parallel DB queries)
         logger.info(f"PRE-WARM: Fetching context for device {device.device_uuid}, session {resolved_session_id}")
-        conversation_history = build_context(resolved_session_id)
+        conversation_history = await build_context(resolved_session_id)
 
         # Cache the context
         cache_key = str(device.id)
@@ -712,43 +714,61 @@ async def process_audio(
             audio_path_for_transcription = wav_path_for_processing
         
         # Step 1: Transcribe audio (async, optimized)
+        # PERFORMANCE OPTIMIZATION: Start transcription and thread resolution in parallel
         logger.info("Step 1: Transcribing audio...")
         _t1 = _t.time()
-        transcription = await transcribe_audio(audio_path_for_transcription)
-        _transcribe_ms = int((_t.time() - _t1) * 1000)
-        
+
         # Step 1.5: Resolve thread and build context using dynamic threading
         conversation_thread_id = None
         conversation_history_messages = None
 
         try:
+            # Parse session_id BEFORE cache check for validation
+            parsed_session_id = None
+            if session_id:
+                try:
+                    parsed_session_id = UUID(session_id)
+                except ValueError:
+                    logger.warning(f"Invalid session_id format: {session_id}, creating new session")
+
             # OPTIMIZATION: Check cache first (pre-warmed by /prepare endpoint)
             cache_key = str(device.id)
             cached_data = context_cache.get(cache_key)
+            cache_valid = False
 
             if cached_data and (_t.time() - cached_data['timestamp']) < CONTEXT_CACHE_TTL_SECONDS:
-                # Cache hit! Use pre-warmed context (saves 200-500ms)
-                conversation_thread_id = cached_data['session_id']
-                conversation_history_messages = cached_data['context']
-                logger.info(f"CACHE HIT: Using pre-warmed context with {len(conversation_history_messages)} messages (saved ~300ms)")
+                cached_session_id = cached_data['session_id']
 
-                # Clear cache after use (one-time use)
-                del context_cache[cache_key]
-            else:
-                # Cache miss or expired - fetch from DB (normal flow)
-                if cached_data:
-                    logger.info("CACHE EXPIRED: Fetching fresh context from DB")
-                    del context_cache[cache_key]
+                # BUGFIX: Validate that cached session matches requested session (if specified)
+                # Use cache only if: (1) no specific session requested, OR (2) requested session matches cache
+                if parsed_session_id is None or parsed_session_id == cached_session_id:
+                    # Cache hit! Use pre-warmed context (saves 200-500ms)
+                    # Transcription still needs to complete for LLM, but context is ready
+                    transcription = await transcribe_audio(audio_path_for_transcription)
+                    conversation_thread_id = cached_session_id
+                    conversation_history_messages = cached_data['context']
+                    logger.debug(f"CACHE HIT: Using pre-warmed context with {len(conversation_history_messages)} messages (saved ~300ms)")
+
+                    # PERFORMANCE OPTIMIZATION: Keep cache for multiple uses, refresh timestamp
+                    # This allows subsequent requests within TTL window to benefit from cache
+                    cached_data['timestamp'] = _t.time()
+                    context_cache[cache_key] = cached_data
+                    cache_valid = True
                 else:
-                    logger.info("CACHE MISS: No pre-warmed context available")
+                    # Cache mismatch - client requested different session than cached
+                    logger.info(f"CACHE MISMATCH: Cached session {cached_session_id} != requested {parsed_session_id}, ignoring cache")
+                    del context_cache[cache_key]
+                    cached_data = None
+            elif cached_data:
+                # Cache expired
+                logger.info("CACHE EXPIRED: Fetching fresh context from DB")
+                del context_cache[cache_key]
+                cached_data = None
 
-                # Parse session_id if provided
-                parsed_session_id = None
-                if session_id:
-                    try:
-                        parsed_session_id = UUID(session_id)
-                    except ValueError:
-                        logger.warning(f"Invalid session_id format: {session_id}, creating new session")
+            if not cache_valid:
+                # Cache miss, expired, or mismatch - perform full thread resolution
+                if cached_data is None and parsed_session_id is None:
+                    logger.info("CACHE MISS: No pre-warmed context available")
 
                 # OPTIMIZATION: Skip embedding generation during critical path (saves 1100-1500ms)
                 # Use time-based threading only for now, generate embedding in background
@@ -756,8 +776,18 @@ async def process_audio(
                 logger.info("Skipping embedding generation for speed (using time-based threading only)")
                 user_embedding = [0.0] * 1536  # Zero vector = use time-based policy only
 
-                # Resolve thread using dynamic policy (time-based only without embedding)
-                thread_decision = resolve_thread(device.id, parsed_session_id, transcription, user_embedding)
+                # PERFORMANCE OPTIMIZATION: Run transcription and thread resolution in parallel
+                # Thread resolution uses time-based policy only (doesn't need transcription text)
+                import asyncio
+                transcription_task = asyncio.create_task(transcribe_audio(audio_path_for_transcription))
+
+                # Run thread resolution in thread pool to avoid blocking
+                thread_resolution_task = asyncio.create_task(
+                    asyncio.to_thread(resolve_thread, device.id, parsed_session_id, "", user_embedding)
+                )
+
+                # Wait for both to complete
+                transcription, thread_decision = await asyncio.gather(transcription_task, thread_resolution_task)
                 conversation_thread_id = thread_decision.thread_id
 
                 logger.info(
@@ -768,13 +798,18 @@ async def process_audio(
                     f"reason={thread_decision.reason}"
                 )
 
-                # Build context from thread
-                conversation_history_messages = build_context(conversation_thread_id)
+                # Build context from thread (must happen after thread resolution, async with parallel DB queries)
+                conversation_history_messages = await build_context(conversation_thread_id)
                 logger.info(f"Loaded context with {len(conversation_history_messages)} messages")
-            
+
         except ConversationServiceError as e:
             logger.warning(f"Failed to manage conversation thread: {e}, continuing without history")
             conversation_thread_id = None
+            # Still need transcription for LLM
+            if 'transcription' not in locals():
+                transcription = await transcribe_audio(audio_path_for_transcription)
+
+        _transcribe_ms = int((_t.time() - _t1) * 1000)
         
         # Step 2: Query LLM with conversation history (async, optimized)
         logger.info("Step 2: Querying LLM...")
@@ -794,14 +829,23 @@ async def process_audio(
         async def stream_audio_response():
             """Chain TTS streaming with Opus encoding (async pipeline)"""
             try:
+                # PERFORMANCE DIAGNOSTIC: Track time to first audio chunk
+                first_chunk_time = None
+                chunk_count = 0
+
                 # Generate speech chunks from Groq TTS API (async generator)
                 tts_generator = generate_speech_streaming(llm_response)
 
                 # Encode WAV chunks to Opus packets and stream
                 async for opus_packet in stream_wav_to_opus(tts_generator, bitrate=settings.opus_bitrate):
+                    if first_chunk_time is None:
+                        first_chunk_time = _t.time()
+                        ttfc_ms = int((first_chunk_time - _t3) * 1000)
+                        logger.info(f"⚡ TTFC (Time to First Chunk): {ttfc_ms}ms")
+                    chunk_count += 1
                     yield opus_packet
 
-                logger.info("⚡ Streaming TTS and Opus encoding complete!")
+                logger.info(f"⚡ Streaming complete! Delivered {chunk_count} Opus packets")
 
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
@@ -924,10 +968,13 @@ async def store_conversation_messages(
         llm_response: AI's response text
     """
     try:
-        # Store user message (async)
-        await add_message(conversation_thread_id, MessageRole.USER, transcription)
-        # Store AI response (async)
-        await add_message(conversation_thread_id, MessageRole.ASSISTANT, llm_response)
+        # PERFORMANCE OPTIMIZATION: Store both messages in parallel
+        # User and assistant messages can be stored concurrently
+        import asyncio
+        await asyncio.gather(
+            add_message(conversation_thread_id, MessageRole.USER, transcription),
+            add_message(conversation_thread_id, MessageRole.ASSISTANT, llm_response)
+        )
         logger.debug(f"Stored conversation messages for thread {conversation_thread_id}")
     except ConversationServiceError as e:
         logger.warning(f"Failed to store conversation messages: {e}")

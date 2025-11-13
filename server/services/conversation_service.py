@@ -346,37 +346,48 @@ def resolve_thread(
         raise ConversationServiceError(f"Thread resolution failed: {str(e)}")
 
 
-def build_context(thread_id: UUID, token_budget: int = TOKEN_BUDGET) -> List[Dict[str, str]]:
+async def build_context(thread_id: UUID, token_budget: int = TOKEN_BUDGET) -> List[Dict[str, str]]:
     """
     Build conversation context from thread summary and recent messages.
-    
+
+    PERFORMANCE OPTIMIZATION: Parallelizes session and messages queries for faster context building.
+
     Args:
         thread_id: Thread UUID
         token_budget: Maximum tokens to include
-        
+
     Returns:
         List of messages in format [{'role': 'user'|'assistant', 'content': '...'}, ...]
-        
+
     Raises:
         ConversationServiceError: If context building fails
     """
     try:
         supabase = get_supabase_admin_client()
-        
-        # Get thread summary
-        session_result = supabase.table("conversation_sessions").select(
-            "summary"
-        ).eq("id", thread_id).execute()
-        
+
+        # PERFORMANCE OPTIMIZATION: Run both database queries in parallel
+        # Session summary and messages queries are independent and can be fetched concurrently
+        import asyncio
+
+        async def fetch_summary():
+            """Fetch thread summary"""
+            return await asyncio.to_thread(
+                lambda: supabase.table("conversation_sessions").select("summary").eq("id", thread_id).execute()
+            )
+
+        async def fetch_messages():
+            """Fetch thread messages"""
+            return await asyncio.to_thread(
+                lambda: supabase.table("conversation_messages").select("*").eq("session_id", thread_id).order("created_at", desc=False).execute()
+            )
+
+        # Execute both queries in parallel
+        session_result, messages_result = await asyncio.gather(fetch_summary(), fetch_messages())
+
         summary = None
         if session_result.data and session_result.data[0].get("summary"):
             summary = session_result.data[0]["summary"]
-        
-        # Get recent messages
-        messages_result = supabase.table("conversation_messages").select("*").eq(
-            "session_id", thread_id
-        ).order("created_at", desc=False).execute()
-        
+
         messages = [ConversationMessage(**msg) for msg in messages_result.data]
         
         # Build system message and reserve tokens (single source of truth)
@@ -718,28 +729,34 @@ async def add_message(session_id: UUID, role: MessageRole, content: str) -> Conv
                 for msg in messages
             ]
             
-            # Update summary (errors are properly handled and logged in update_thread_summary)
-            try:
-                logger.info(
-                    f"Calling update_thread_summary for session {session_id} "
-                    f"(reason: {summarize_reason}, messages: {len(messages_for_summary)}, "
-                    f"tokens: {token_count})"
-                )
-                await update_thread_summary(session_id, messages_for_summary)
-                logger.info(f"Successfully completed summary update for thread {session_id}")
-            except ConversationServiceError as e:
-                logger.error(
-                    f"Summary update failed for thread {session_id} (reason: {summarize_reason}): {e}",
-                    exc_info=True
-                )
-                # Don't raise - allow message to be stored even if summary fails
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error during summary update for thread {session_id} "
-                    f"(reason: {summarize_reason}): {e}",
-                    exc_info=True
-                )
-                # Don't raise - allow message to be stored even if summary fails
+            # PERFORMANCE OPTIMIZATION: Update summary in background (non-blocking)
+            # Fire and forget - don't wait for summarization to complete
+            # This prevents blocking message storage (saves 1-3s in background path)
+            logger.info(
+                f"Scheduling background summary update for session {session_id} "
+                f"(reason: {summarize_reason}, messages: {len(messages_for_summary)}, "
+                f"tokens: {token_count})"
+            )
+
+            async def _background_summary_update():
+                """Wrapper to handle errors in background task"""
+                try:
+                    await update_thread_summary(session_id, messages_for_summary)
+                    logger.info(f"Successfully completed background summary update for thread {session_id}")
+                except ConversationServiceError as e:
+                    logger.error(
+                        f"Background summary update failed for thread {session_id} (reason: {summarize_reason}): {e}",
+                        exc_info=True
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Unexpected error during background summary update for thread {session_id} "
+                        f"(reason: {summarize_reason}): {e}",
+                        exc_info=True
+                    )
+
+            import asyncio
+            asyncio.create_task(_background_summary_update())
         
         return ConversationMessage(**message_data)
         

@@ -5,6 +5,7 @@ Handles HTTP communication with the server
 """
 
 import time
+import socket
 import requests
 from urllib.parse import unquote
 from requests.adapters import HTTPAdapter
@@ -27,37 +28,136 @@ class APIClient:
     def __init__(self, device_manager):
         """
         Initialize API client.
-        
+
         Args:
             device_manager: DeviceManager instance for authentication
         """
         self.device_manager = device_manager
         self.server_url = config.SERVER_URL
         self._session = None
+
+        # PERFORMANCE OPTIMIZATION: Pre-resolve DNS to avoid lookup delays
+        # This reduces network latency by caching the resolved IP address
+        self._resolved_host = None
+        self._original_hostname = None
+        self._resolved_url = None
+        try:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(self.server_url)
+            self._original_hostname = parsed.hostname
+            if self._original_hostname:
+                self._resolved_host = socket.gethostbyname(self._original_hostname)
+                # Build URL with IP address instead of hostname
+                parsed_resolved = parsed._replace(netloc=f"{self._resolved_host}:{parsed.port}" if parsed.port else self._resolved_host)
+                self._resolved_url = urlunparse(parsed_resolved)
+                if config.VERBOSE_OUTPUT:
+                    print(f"[DNS] Pre-resolved {self._original_hostname} → {self._resolved_host}")
+        except Exception as e:
+            if config.VERBOSE_OUTPUT:
+                print(f"[DNS] Pre-resolution failed: {e}, will use standard DNS")
+    
+    def _get_request_url_and_headers(self, path: str, extra_headers: dict = None):
+        """
+        Get the URL and headers for a request, using pre-resolved IP if available.
+        
+        Note: For HTTPS, we use the original URL to avoid SSL certificate verification
+        issues (certificates are issued for hostnames, not IPs). For HTTP, we use the
+        pre-resolved IP address to avoid DNS lookup delays.
+        
+        Args:
+            path: API path (e.g., "/api/v1/prepare")
+            extra_headers: Additional headers to include
+            
+        Returns:
+            tuple: (url, headers_dict)
+        """
+        from urllib.parse import urlparse
+        parsed_original = urlparse(self.server_url)
+        is_https = parsed_original.scheme == 'https'
+        
+        # For HTTPS, use original URL to avoid SSL certificate verification issues
+        # (certificates are issued for hostnames, not IP addresses)
+        # For HTTP, use pre-resolved IP to avoid DNS lookup delays
+        if is_https:
+            # HTTPS: Use original URL (SSL cert verification requires hostname)
+            base_url = self.server_url
+            headers = {}
+        elif self._resolved_url:
+            # HTTP: Use pre-resolved IP address (avoids DNS lookup)
+            base_url = self._resolved_url
+            headers = {}
+            # Add Host header with original hostname for virtual hosting
+            if self._original_hostname:
+                headers['Host'] = self._original_hostname
+        else:
+            # Fallback: Use original URL
+            base_url = self.server_url
+            headers = {}
+        
+        url = f"{base_url}{path}"
+        
+        # Merge with any extra headers
+        if extra_headers:
+            headers.update(extra_headers)
+        
+        return url, headers
     
     def _get_http_session(self):
         """
         Get or create persistent HTTP session.
-        
+
         PERFORMANCE OPTIMIZATION:
         - Connection reuse (TCP handshake only once)
         - Keep-alive connections
         - Reduced latency on subsequent requests
-        
+
         AUTHENTICATION:
         - Uses device UUID for authentication (X-Device-UUID header)
         - No shared API keys - each device has unique identifier
         """
+        # PERFORMANCE DIAGNOSTIC: Log session reuse status
+        is_new_session = self._session is None
+
         if self._session is None:
             self._session = requests.Session()
-            
+
+            # PERFORMANCE OPTIMIZATION: Configure TCP keepalive to prevent connection closure
+            # This reduces network latency by maintaining persistent connections
+            try:
+                import urllib3.util.connection
+                original_create_connection = urllib3.util.connection.create_connection
+
+                def create_connection_with_keepalive(address, *args, **kwargs):
+                    """Wrapper to add TCP keepalive socket options"""
+                    conn = original_create_connection(address, *args, **kwargs)
+                    # Enable TCP keepalive
+                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                    # Send keepalive probes after 30s idle (platform-specific)
+                    if hasattr(socket, 'TCP_KEEPIDLE'):
+                        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
+                    # Send probes every 10s
+                    if hasattr(socket, 'TCP_KEEPINTVL'):
+                        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+                    # Close connection after 3 failed probes
+                    if hasattr(socket, 'TCP_KEEPCNT'):
+                        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+                    return conn
+
+                # Apply keepalive to all urllib3 connections
+                urllib3.util.connection.create_connection = create_connection_with_keepalive
+
+                if config.VERBOSE_OUTPUT:
+                    print("[TCP] ✓ TCP keepalive enabled (30s idle, 10s interval, 3 retries)")
+            except Exception as e:
+                print(f"[TCP] Warning: Could not enable TCP keepalive: {e}")
+
             # Get device UUID from device_manager
             if self.device_manager is None:
                 print("[ERROR] Device manager not initialized!")
                 raise RuntimeError("Device manager must be initialized before making requests")
-            
+
             device_uuid = self.device_manager.get_device_uuid()
-            
+
             # Configure for optimal performance with device authentication
             self._session.headers.update({
                 'Connection': 'keep-alive',
@@ -76,7 +176,13 @@ class APIClient:
             adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=20)
             self._session.mount("http://", adapter)
             self._session.mount("https://", adapter)
-        
+
+            if config.VERBOSE_OUTPUT:
+                print("[CONN] New HTTP session created (first request)")
+        else:
+            if config.VERBOSE_OUTPUT:
+                print("[CONN] Reusing existing HTTP session (connection pooling active)")
+
         return self._session
 
     def prepare_context(self):
@@ -107,9 +213,12 @@ class APIClient:
             # Track pre-warm timing
             prewarm_start = time.time()
 
+            # Use pre-resolved IP if available (avoids DNS lookup delay)
+            url, headers = self._get_request_url_and_headers("/api/v1/prepare")
             response = session.post(
-                f"{self.server_url}/api/v1/prepare",
+                url,
                 data=data,
+                headers=headers,
                 timeout=(3, 5)  # (connect_timeout=3s, read_timeout=5s) - Short timeouts for best-effort
             )
 
@@ -124,8 +233,7 @@ class APIClient:
                     print(f"[PREPARE] ✓ Context ready ({cached_messages} messages cached) [{prewarm_ms}ms]")
                     print(f"[PREPARE] ✓ HTTP connection established and cached (will be reused for upload)")
 
-                # Session ID is returned and will be used in next request
-                # (No need to persist here - config.get_session_id() handles persistence)
+                # Session ID is returned and should be saved by caller using config.save_session_id()
                 if new_session_id:
                     return new_session_id
 
@@ -191,9 +299,12 @@ class APIClient:
                     'microphone_gain': str(config.MICROPHONE_GAIN)  # Server will amplify audio
                 }
 
+                # PERFORMANCE: Only log encoding metrics in verbose mode (reduces I/O overhead)
                 if config.VERBOSE_OUTPUT:
-                    print(f"[METRIC] encode_ms={encode_ms}")
-                    print(f"[SERVER] Uploading {opus_size} bytes OPUS (gain: {config.MICROPHONE_GAIN}x on server)...")
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"[METRIC] encode_ms={encode_ms}")
+                    logger.debug(f"[SERVER] Uploading {opus_size} bytes OPUS (gain: {config.MICROPHONE_GAIN}x on server)...")
 
                 # Telemetry timing points
                 stop_to_upload_start_ms = None
@@ -224,12 +335,15 @@ class APIClient:
                 timing_data['request_start'] = upload_start
 
                 # Send request with persistent session (faster than new connection)
+                # Use pre-resolved IP if available (avoids DNS lookup delay)
                 # Note: requests library doesn't expose fine-grained DNS/TCP/TLS timing
                 # We can only measure total time to first byte
+                url, request_headers = self._get_request_url_and_headers("/api/v1/process")
                 response = session.post(
-                    f"{self.server_url}/api/v1/process",
+                    url,
                     files=files,
                     data=data,
+                    headers=request_headers,
                     timeout=(5, 120),  # (connect_timeout, read_timeout)
                     stream=True,
                     hooks={'response': response_hook}

@@ -54,7 +54,31 @@ def setup():
     
     # Optimize system performance first
     optimize_system_performance()
-    
+
+    # PERFORMANCE DIAGNOSTIC: Check WiFi power management status
+    # WiFi power save mode can add 3000ms+ delays to network requests
+    try:
+        result = subprocess.run(['iwconfig'], capture_output=True, text=True, timeout=5)
+        if 'Power Management:on' in result.stdout:
+            logger.warning("\n" + "!"*50)
+            logger.warning("⚠️  WARNING: WiFi power management is ENABLED")
+            logger.warning("⚠️  This may cause 3000ms+ delays in network requests!")
+            logger.warning("⚠️  ")
+            logger.warning("⚠️  To disable temporarily:")
+            logger.warning("⚠️    sudo iw dev wlan0 set power_save off")
+            logger.warning("⚠️  ")
+            logger.warning("⚠️  To make persistent, add to /etc/rc.local:")
+            logger.warning("⚠️    iw dev wlan0 set power_save off")
+            logger.warning("!"*50 + "\n")
+        elif config.VERBOSE_OUTPUT and 'Power Management:off' in result.stdout:
+            logger.info("[WIFI] ✓ WiFi power management is disabled (optimal)")
+    except FileNotFoundError:
+        # iwconfig not available (might be using Ethernet or newer tools)
+        pass
+    except Exception as e:
+        if config.VERBOSE_OUTPUT:
+            logger.debug(f"[WIFI] Could not check power management: {e}")
+
     # Initialize OTA update system
     logger.info("\n[INIT] Initializing OTA update system...")
     
@@ -205,7 +229,9 @@ def main():
             # OPTIMIZATION: Pre-warm context on server (saves 200-500ms from critical path)
             # Call /prepare endpoint to fetch and cache context while user is speaking
             try:
-                api_client.prepare_context()
+                session_id = api_client.prepare_context()
+                if session_id:
+                    config.save_session_id(session_id)
             except Exception as e:
                 logger.warning(f"[PREPARE] Pre-warm failed: {e}, continuing anyway")
 
