@@ -74,7 +74,7 @@ def sanitize_for_tts(text: str) -> str:
     original_text = text
 
     # Remove citations and source references
-    text = re.sub(r'\[?\d+\]?', '', text)  # [1], [2], etc.
+    text = re.sub(r'\[\d+\]', '', text)  # [1], [2], etc. - require both brackets to avoid removing standalone numbers
     text = re.sub(r'\(Source:.*?\)', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\(via.*?\)', '', text, flags=re.IGNORECASE)
 
@@ -123,6 +123,12 @@ def sanitize_for_tts(text: str) -> str:
         logger.info(f"[TTS-SANITIZE] Modified output:")
         logger.info(f"  Before: {original_text[:200]}")
         logger.info(f"  After:  {text[:200]}")
+
+    # Validate that sanitization didn't result in empty text
+    if not text or not text.strip():
+        logger.warning(f"[TTS-SANITIZE] Sanitization resulted in empty text from: {original_text[:100]}")
+        # Return a fallback message instead of empty string
+        return "I'm sorry, I couldn't process that response properly."
 
     return text
 
@@ -654,6 +660,12 @@ async def query_llm(user_text: str, conversation_history: Optional[List[Dict[str
 
             # CRITICAL: Sanitize for TTS to remove markdown and convert symbols
             sanitized_response = sanitize_for_tts(llm_response.strip())
+
+            # Validate sanitized response is not empty (should never happen due to fallback in sanitize_for_tts)
+            if not sanitized_response or not sanitized_response.strip():
+                logger.error(f"Sanitization produced empty text from LLM response: {llm_response[:100]}")
+                raise LLMError("LLM response became empty after sanitization - this should not happen")
+
             return sanitized_response
 
         except Exception as e:

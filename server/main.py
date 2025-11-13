@@ -816,6 +816,15 @@ async def process_audio(
         _t2 = _t.time()
         llm_response = await query_llm(transcription, conversation_history_messages)
         _llm_ms = int((_t.time() - _t2) * 1000)
+
+        # Validate LLM response before attempting TTS (prevents empty text from reaching TTS)
+        if not llm_response or not llm_response.strip():
+            logger.error("LLM returned empty response after processing")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to generate response"
+            )
+
         _t3 = _t.time()  # Start timer for TTS (will stream, no final timing)
 
         # Step 3 & 4: Stream TTS → Opus encoding (REAL-TIME STREAMING)
@@ -890,6 +899,25 @@ async def process_audio(
         )
         
     except GroqServiceError as e:
+        # Check if it's a TTS error specifically
+        from services.groq_service import TTSError
+        if isinstance(e, TTSError):
+            logger.error(f"TTS generation failed: {e}")
+            # Clean up temp files (sync)
+            cleanup_temp_files([
+                temp_input_path if temp_input_file else None,
+                temp_decompressed_path if temp_decompressed_file else None,
+                temp_amplified_path if temp_amplified_file else None,
+                temp_output_wav_path if temp_output_wav_file else None,
+                temp_output_opus_path if temp_output_opus_file else None
+            ])
+
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Text-to-speech generation failed: {str(e)}"
+            )
+
+        # Generic Groq service error
         logger.error(f"Groq service error: {e}")
         # Clean up temp files (sync)
         cleanup_temp_files([
