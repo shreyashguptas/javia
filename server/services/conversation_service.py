@@ -433,43 +433,45 @@ def build_context(thread_id: UUID, token_budget: int = TOKEN_BUDGET) -> List[Dic
         raise ConversationServiceError(f"Context building failed: {str(e)}")
 
 
-def update_thread_summary(thread_id: UUID, messages: List[Dict[str, str]]) -> None:
+async def update_thread_summary(thread_id: UUID, messages: List[Dict[str, str]]) -> None:
     """
-    Update thread summary and embedding based on conversation messages.
-    
+    Update thread summary and embedding based on conversation messages (async).
+
+    OPTIMIZATION: Uses async Groq/OpenAI clients for faster summary and embedding generation.
+
     Args:
         thread_id: Thread UUID
         messages: List of messages to summarize
-        
+
     Raises:
         ConversationServiceError: If summary update fails
     """
     logger.info(f"Starting summary update for thread {thread_id} with {len(messages)} messages")
-    
+
     # Fetch existing summary for incremental updates
     supabase = get_supabase_admin_client()
     existing_summary_result = supabase.table("conversation_sessions").select(
         "summary"
     ).eq("id", str(thread_id)).execute()
-    
+
     existing_summary = None
     if existing_summary_result.data:
         existing_summary = existing_summary_result.data[0].get("summary")
-        
+
     is_initial = existing_summary is None
     logger.info(
         f"Summary update type: {'initial' if is_initial else 'incremental'} "
         f"for thread {thread_id} (existing_summary={'present' if existing_summary else 'none'})"
     )
-    
+
     try:
-        # Generate summary
+        # Generate summary (async)
         logger.info(f"Generating summary for thread {thread_id}...")
-        summary = summarize_thread(messages, existing_summary=existing_summary)
+        summary = await summarize_thread(messages, existing_summary=existing_summary)
         logger.info(f"Summary generated successfully for thread {thread_id}: {summary[:100]}...")
     except SummarizationError as e:
         logger.error(f"Summarization failed for thread {thread_id}: {e}", exc_info=True)
-        
+
         # Fallback strategy: keep existing summary if available
         if existing_summary:
             logger.warning(
@@ -494,11 +496,11 @@ def update_thread_summary(thread_id: UUID, messages: List[Dict[str, str]]) -> No
             else:
                 # No fallback possible - raise error
                 raise ConversationServiceError(f"Summarization failed with no fallback: {str(e)}")
-    
-    # Generate embedding for summary (works for both successful summaries and fallback)
+
+    # Generate embedding for summary (works for both successful summaries and fallback) (async)
     try:
         logger.info(f"Generating embedding for summary of thread {thread_id}...")
-        summary_embedding = embed_text(summary)
+        summary_embedding = await embed_text(summary)
         logger.info(f"Embedding generated successfully for thread {thread_id}: {len(summary_embedding)} dimensions")
     except EmbeddingError as e:
         logger.error(f"Embedding generation failed for thread {thread_id}: {e}", exc_info=True)
@@ -629,7 +631,7 @@ def get_conversation_history(session_id: UUID) -> ConversationHistory:
         raise ConversationServiceError(f"Failed to fetch conversation history: {str(e)}")
 
 
-def add_message(session_id: UUID, role: MessageRole, content: str) -> ConversationMessage:
+async def add_message(session_id: UUID, role: MessageRole, content: str) -> ConversationMessage:
     """
     Add a message to a conversation session.
     
@@ -723,7 +725,7 @@ def add_message(session_id: UUID, role: MessageRole, content: str) -> Conversati
                     f"(reason: {summarize_reason}, messages: {len(messages_for_summary)}, "
                     f"tokens: {token_count})"
                 )
-                update_thread_summary(session_id, messages_for_summary)
+                await update_thread_summary(session_id, messages_for_summary)
                 logger.info(f"Successfully completed summary update for thread {session_id}")
             except ConversationServiceError as e:
                 logger.error(

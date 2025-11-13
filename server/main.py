@@ -711,10 +711,10 @@ async def process_audio(
             # No amplification needed
             audio_path_for_transcription = wav_path_for_processing
         
-        # Step 1: Transcribe audio
+        # Step 1: Transcribe audio (async, optimized)
         logger.info("Step 1: Transcribing audio...")
         _t1 = _t.time()
-        transcription = transcribe_audio(audio_path_for_transcription)
+        transcription = await transcribe_audio(audio_path_for_transcription)
         _transcribe_ms = int((_t.time() - _t1) * 1000)
         
         # Step 1.5: Resolve thread and build context using dynamic threading
@@ -776,10 +776,10 @@ async def process_audio(
             logger.warning(f"Failed to manage conversation thread: {e}, continuing without history")
             conversation_thread_id = None
         
-        # Step 2: Query LLM with conversation history
+        # Step 2: Query LLM with conversation history (async, optimized)
         logger.info("Step 2: Querying LLM...")
         _t2 = _t.time()
-        llm_response = query_llm(transcription, conversation_history_messages)
+        llm_response = await query_llm(transcription, conversation_history_messages)
         _llm_ms = int((_t.time() - _t2) * 1000)
         _t3 = _t.time()  # Start timer for TTS (will stream, no final timing)
 
@@ -790,21 +790,15 @@ async def process_audio(
         # Store conversation messages in background task (non-blocking)
         final_session_id = str(conversation_thread_id) if conversation_thread_id else None
 
-        # Chain generators: TTS streaming → WAV chunks → Opus packets
+        # Chain generators: TTS streaming → WAV chunks → Opus packets (fully async)
         async def stream_audio_response():
-            """Chain TTS streaming with Opus encoding"""
+            """Chain TTS streaming with Opus encoding (async pipeline)"""
             try:
-                # Generate speech chunks from Groq TTS API (synchronous generator)
+                # Generate speech chunks from Groq TTS API (async generator)
                 tts_generator = generate_speech_streaming(llm_response)
 
-                # Create async wrapper for synchronous TTS generator
-                async def async_wav_chunks():
-                    """Wrap synchronous TTS generator in async context"""
-                    for chunk in tts_generator:
-                        yield chunk
-
                 # Encode WAV chunks to Opus packets and stream
-                async for opus_packet in stream_wav_to_opus(async_wav_chunks(), bitrate=settings.opus_bitrate):
+                async for opus_packet in stream_wav_to_opus(tts_generator, bitrate=settings.opus_bitrate):
                     yield opus_packet
 
                 logger.info("⚡ Streaming TTS and Opus encoding complete!")
@@ -828,34 +822,40 @@ async def process_audio(
             "X-Streaming": "true",  # Indicate this is a streaming response
         }
 
+        # Schedule async message storage (non-blocking)
+        if conversation_thread_id and transcription and llm_response:
+            import asyncio
+            asyncio.create_task(
+                store_conversation_messages(conversation_thread_id, transcription, llm_response)
+            )
+
         return StreamingResponse(
             stream_audio_response(),
             media_type="audio/opus",
             headers=headers,
             background=BackgroundTask(
-                cleanup_temp_files_and_store_messages,
-                temp_input_path,
-                temp_decompressed_path if temp_decompressed_file else None,
-                temp_amplified_path if temp_amplified_file else None,
-                None,  # No temp WAV file (streaming)
-                None,  # No temp Opus file (streaming)
-                conversation_thread_id,
-                transcription,
-                llm_response
+                cleanup_temp_files,
+                [
+                    temp_input_path,
+                    temp_decompressed_path if temp_decompressed_file else None,
+                    temp_amplified_path if temp_amplified_file else None,
+                    None,  # No temp WAV file (streaming)
+                    None   # No temp Opus file (streaming)
+                ]
             )
         )
         
     except GroqServiceError as e:
         logger.error(f"Groq service error: {e}")
-        # Clean up temp files
-        cleanup_temp_files_and_store_messages(
+        # Clean up temp files (sync)
+        cleanup_temp_files([
             temp_input_path if temp_input_file else None,
             temp_decompressed_path if temp_decompressed_file else None,
             temp_amplified_path if temp_amplified_file else None,
             temp_output_wav_path if temp_output_wav_file else None,
             temp_output_opus_path if temp_output_opus_file else None
-        )
-        
+        ])
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Service error: {str(e)}"
@@ -863,76 +863,76 @@ async def process_audio(
         
     except HTTPException:
         # Re-raise HTTP exceptions
-        # Clean up temp files
-        cleanup_temp_files_and_store_messages(
+        # Clean up temp files (sync)
+        cleanup_temp_files([
             temp_input_path if temp_input_file else None,
             temp_decompressed_path if temp_decompressed_file else None,
             temp_amplified_path if temp_amplified_file else None,
             temp_output_wav_path if temp_output_wav_file else None,
             temp_output_opus_path if temp_output_opus_file else None
-        )
+        ])
         raise
         
     except Exception as e:
         logger.error(f"Unexpected error: {e}", exc_info=True)
-        # Clean up temp files
-        cleanup_temp_files_and_store_messages(
+        # Clean up temp files (sync)
+        cleanup_temp_files([
             temp_input_path if temp_input_file else None,
             temp_decompressed_path if temp_decompressed_file else None,
             temp_amplified_path if temp_amplified_file else None,
             temp_output_wav_path if temp_output_wav_file else None,
             temp_output_opus_path if temp_output_opus_file else None
-        )
-        
+        ])
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"
         )
 
 
-def cleanup_temp_files_and_store_messages(
-    temp_input_path,
-    temp_decompressed_path,
-    temp_amplified_path,
-    temp_output_wav_path,
-    temp_output_opus_path,
-    conversation_thread_id=None,
-    transcription: Optional[str] = None,
-    llm_response: Optional[str] = None
-):
+def cleanup_temp_files(file_paths: list):
     """
-    Clean up temporary files and store conversation messages in background.
-    
+    Clean up temporary files synchronously.
+
+    Used in both success and error paths. Compatible with FastAPI BackgroundTask.
+
     Args:
-        temp_input_path: Path to input audio file
-        temp_decompressed_path: Path to decompressed audio file (if Opus)
-        temp_amplified_path: Path to amplified audio file (if gain > 1.0)
-        temp_output_wav_path: Path to output WAV file
-        temp_output_opus_path: Path to output Opus file
-        conversation_thread_id: Optional conversation thread UUID to store messages for
-        transcription: User's transcribed text
-        llm_response: AI's response text
+        file_paths: List of Path objects to delete (None values are skipped)
     """
-    # Clean up temp files
-    for file_path in [temp_input_path, temp_decompressed_path, temp_amplified_path, 
-                      temp_output_wav_path, temp_output_opus_path]:
+    for file_path in file_paths:
         try:
             if file_path and file_path.exists():
                 file_path.unlink()
                 logger.debug(f"Cleaned up temp file: {file_path}")
         except Exception as e:
             logger.warning(f"Failed to clean up temp file {file_path}: {e}")
-    
-    # Store conversation messages if thread exists
-    if conversation_thread_id and transcription and llm_response:
-        try:
-            # Store user message
-            add_message(conversation_thread_id, MessageRole.USER, transcription)
-            # Store AI response
-            add_message(conversation_thread_id, MessageRole.ASSISTANT, llm_response)
-            logger.debug(f"Stored conversation messages for thread {conversation_thread_id}")
-        except ConversationServiceError as e:
-            logger.warning(f"Failed to store conversation messages: {e}")
+
+
+async def store_conversation_messages(
+    conversation_thread_id: UUID,
+    transcription: str,
+    llm_response: str
+):
+    """
+    Store conversation messages asynchronously in database.
+
+    OPTIMIZATION: Runs in background without blocking the response.
+
+    Args:
+        conversation_thread_id: Conversation thread UUID
+        transcription: User's transcribed text
+        llm_response: AI's response text
+    """
+    try:
+        # Store user message (async)
+        await add_message(conversation_thread_id, MessageRole.USER, transcription)
+        # Store AI response (async)
+        await add_message(conversation_thread_id, MessageRole.ASSISTANT, llm_response)
+        logger.debug(f"Stored conversation messages for thread {conversation_thread_id}")
+    except ConversationServiceError as e:
+        logger.warning(f"Failed to store conversation messages: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error storing messages: {e}", exc_info=True)
 
 
 if __name__ == "__main__":

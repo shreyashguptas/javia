@@ -1,19 +1,22 @@
 """Groq API service for transcription, LLM, and TTS operations"""
 import time
 import logging
+import io
+import asyncio
 from pathlib import Path
-from typing import Optional, Tuple, List, Dict
-import requests
-from openai import OpenAI
+from typing import Optional, Tuple, List, Dict, Union, AsyncIterator
+from groq import AsyncGroq
+from openai import OpenAI, AsyncOpenAI
 import tiktoken
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Groq API endpoints
-GROQ_WHISPER_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
-GROQ_LLM_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_TTS_URL = "https://api.groq.com/openai/v1/audio/speech"
+# Initialize async Groq client (reused across requests for connection pooling)
+groq_client = AsyncGroq(api_key=settings.groq_api_key)
+
+# Initialize async OpenAI client for embeddings
+openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
 
 
 class GroqServiceError(Exception):
@@ -343,9 +346,9 @@ def split_audio_into_chunks(audio_file_path: Path, max_chunk_size_mb: int = 45) 
         raise TranscriptionError(f"Audio splitting failed: {e}")
 
 
-def transcribe_audio_chunks(chunk_paths: list[Path]) -> str:
+async def transcribe_audio_chunks(chunk_paths: list[Path]) -> str:
     """
-    Transcribe multiple audio chunks and combine the results.
+    Transcribe multiple audio chunks and combine the results (async).
 
     Args:
         chunk_paths: List of audio chunk file paths
@@ -364,8 +367,8 @@ def transcribe_audio_chunks(chunk_paths: list[Path]) -> str:
         for i, chunk_path in enumerate(chunk_paths):
             logger.info(f"Transcribing chunk {i+1}/{len(chunk_paths)}")
 
-            # Transcribe this chunk
-            chunk_transcription = transcribe_single_chunk(chunk_path)
+            # Transcribe this chunk (async)
+            chunk_transcription = await transcribe_single_chunk(chunk_path)
             transcriptions.append(chunk_transcription.strip())
 
             # Clean up chunk file immediately after successful transcription
@@ -392,14 +395,16 @@ def transcribe_audio_chunks(chunk_paths: list[Path]) -> str:
                 logger.warning(f"Failed to clean up chunk {chunk_path}: {e}")
 
 
-def transcribe_single_chunk(audio_file_path: Path) -> str:
+async def transcribe_single_chunk(audio_data: Union[bytes, Path], filename: str = "audio.wav") -> str:
     """
-    Transcribe a single audio chunk using Groq Whisper API.
+    Transcribe a single audio chunk using Groq Whisper API (async, in-memory).
 
-    Supports both WAV and FLAC formats. Whisper API accepts multiple formats.
+    OPTIMIZATION: Accepts bytes directly to avoid file I/O overhead.
+    Uses Groq SDK client for better performance vs raw requests.
 
     Args:
-        audio_file_path: Path to audio chunk file (WAV or FLAC)
+        audio_data: Audio bytes or Path to audio file (WAV or FLAC)
+        filename: Filename to use for API (determines format detection)
 
     Returns:
         Transcribed text
@@ -407,109 +412,109 @@ def transcribe_single_chunk(audio_file_path: Path) -> str:
     Raises:
         TranscriptionError: If transcription fails
     """
-    logger.info(f"Transcribing single chunk: {audio_file_path}")
+    try:
+        # Read bytes from Path if needed
+        if isinstance(audio_data, Path):
+            logger.info(f"Transcribing single chunk from file: {audio_data}")
+            if not audio_data.exists():
+                raise TranscriptionError("Audio chunk file not found")
+            audio_bytes = audio_data.read_bytes()
+            filename = audio_data.name  # Use actual filename for format detection
+        else:
+            logger.info(f"Transcribing single chunk from memory: {len(audio_data)} bytes")
+            audio_bytes = audio_data
 
-    if not audio_file_path.exists():
-        raise TranscriptionError("Audio chunk file not found")
+        file_size = len(audio_bytes)
 
-    file_size = audio_file_path.stat().st_size
+        if file_size < 100:
+            raise TranscriptionError(f"Audio chunk too small ({file_size} bytes)")
 
-    if file_size < 100:
-        raise TranscriptionError(f"Audio chunk too small ({file_size} bytes)")
+        if file_size > settings.max_audio_size_bytes:
+            raise TranscriptionError(
+                f"Audio chunk too large ({file_size} bytes), max {settings.max_audio_size_bytes}"
+            )
 
-    if file_size > settings.max_audio_size_bytes:
-        raise TranscriptionError(
-            f"Audio chunk too large ({file_size} bytes), max {settings.max_audio_size_bytes}"
-        )
+        # Create file-like object from bytes for Groq SDK
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = filename  # Set name attribute for SDK format detection
 
-    # Detect file format based on extension
-    file_ext = audio_file_path.suffix.lower()
-    if file_ext == '.flac':
-        mime_type = 'audio/flac'
-        file_name = 'audio.flac'
-    elif file_ext == '.wav':
-        mime_type = 'audio/wav'
-        file_name = 'audio.wav'
-    else:
-        # Default to WAV if unknown
-        mime_type = 'audio/wav'
-        file_name = f'audio{file_ext}'
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Sending {file_size} bytes to Whisper API via Groq SDK (attempt {attempt + 1}/{max_retries})")
 
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            with open(audio_file_path, 'rb') as audio_file:
-                files = {
-                    'file': (file_name, audio_file, mime_type)
-                }
-                data = {
-                    'model': settings.whisper_model
-                }
-                headers = {
-                    'Authorization': f'Bearer {settings.groq_api_key}'
-                }
+                # Reset BytesIO position for retries
+                audio_file.seek(0)
 
-                logger.info(f"Sending {file_size} bytes {mime_type} chunk to Whisper API (attempt {attempt + 1}/{max_retries})")
-
-                response = requests.post(
-                    GROQ_WHISPER_URL,
-                    headers=headers,
-                    files=files,
-                    data=data,
-                    timeout=60
+                # Use Groq SDK client (async)
+                response = await groq_client.audio.transcriptions.create(
+                    file=audio_file,
+                    model=settings.whisper_model,
+                    timeout=60.0
                 )
 
-                logger.info(f"Whisper API response: {response.status_code}")
+                transcription = response.text.strip()
 
-                if response.status_code == 200:
-                    result = response.json()
-                    transcription = result.get('text', '').strip()
+                if not transcription:
+                    raise TranscriptionError("Transcription returned empty text")
 
-                    if not transcription:
-                        raise TranscriptionError("Transcription returned empty text")
+                logger.info(f"Chunk transcription successful: {transcription[:100]}...")
+                return transcription
 
-                    logger.info(f"Chunk transcription successful: {transcription[:100]}...")
-                    return transcription
+            except Exception as e:
+                error_msg = str(e).lower()
 
-                elif response.status_code == 429:
-                    logger.warning("Rate limited, waiting before retry...")
-                    time.sleep(2 ** attempt)  # Exponential backoff
+                # Handle rate limiting
+                if 'rate' in error_msg or '429' in error_msg:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        logger.warning(f"Rate limited, waiting {wait_time}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        raise TranscriptionError("Rate limited after retries")
+
+                # Handle timeout
+                if 'timeout' in error_msg or 'timed out' in error_msg:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(1)
+                        continue
+                    else:
+                        raise TranscriptionError("Request timeout after retries")
+
+                # Other errors
+                if attempt < max_retries - 1:
+                    logger.warning(f"Transcription error: {e}, retrying... (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(1)
                     continue
                 else:
-                    error_msg = f"API error {response.status_code}: {response.text}"
-                    logger.error(error_msg)
-                    raise TranscriptionError(error_msg)
+                    raise TranscriptionError(f"Transcription failed: {e}")
 
-        except requests.exceptions.Timeout:
-            if attempt < max_retries - 1:
-                logger.warning(f"Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
-                time.sleep(1)
-                continue
-            else:
-                raise TranscriptionError("Request timeout after retries")
+        raise TranscriptionError("Failed after all retry attempts")
 
-        except requests.exceptions.ConnectionError as e:
-            raise TranscriptionError(f"Connection error: {e}")
-
-        except Exception as e:
-            if isinstance(e, TranscriptionError):
-                raise
-            raise TranscriptionError(f"Unexpected error: {e}")
-
-    raise TranscriptionError("Failed after all retry attempts")
+    except TranscriptionError:
+        raise
+    except Exception as e:
+        raise TranscriptionError(f"Unexpected error: {e}")
 
 
-def transcribe_audio(audio_file_path: Path) -> str:
+async def transcribe_audio(audio_data: Union[bytes, Path], filename: str = "audio.wav") -> str:
     """
-    Transcribe audio using Groq Whisper API with compression and chunking support
+    Transcribe audio using Groq Whisper API with compression and chunking support (async, in-memory).
+
+    OPTIMIZATION: Accepts bytes OR Path for maximum flexibility.
+    - Bytes input: Zero file I/O (fastest path, ~50-100ms saved)
+    - Path input: Backward compatibility, still uses async SDK
 
     Handles large files by:
-    1. For small files (<25MB): Send WAV directly to Whisper (faster, no compression overhead)
+    1. For small files (<25MB): Send directly to Whisper (async, no compression overhead)
     2. For large files: Compress to FLAC format then send
     3. For very large files: Split into chunks and transcribe individually
 
     Args:
-        audio_file_path: Path to audio file
+        audio_data: Audio bytes or Path to audio file
+        filename: Filename for format detection (used when audio_data is bytes)
 
     Returns:
         Transcribed text
@@ -517,165 +522,172 @@ def transcribe_audio(audio_file_path: Path) -> str:
     Raises:
         TranscriptionError: If transcription fails
     """
-    logger.info(f"Transcribing audio from {audio_file_path}")
-
-    if not audio_file_path.exists():
-        raise TranscriptionError("Audio file not found")
-
-    original_size = audio_file_path.stat().st_size
-
-    if original_size < 100:
-        raise TranscriptionError(f"Audio file too small ({original_size} bytes)")
-
     try:
-        # OPTIMIZATION: Skip FLAC compression for small files (<25MB)
-        # Send WAV directly to Whisper API for 200-300ms speedup
-        small_file_threshold = 25 * 1024 * 1024  # 25MB
+        # Handle Path input (backward compatibility)
+        if isinstance(audio_data, Path):
+            logger.info(f"Transcribing audio from file: {audio_data}")
 
-        if original_size <= small_file_threshold:
-            # Small file - send directly without compression
-            logger.info(f"Audio file small ({original_size} bytes <= 25MB), sending WAV directly to Whisper (skipping FLAC compression)")
-            return transcribe_single_chunk(audio_file_path)
+            if not audio_data.exists():
+                raise TranscriptionError("Audio file not found")
 
-        # Large file - compress to FLAC first
-        logger.info(f"Audio file large ({original_size} bytes > 25MB), compressing to FLAC first")
-        compressed_path = compress_audio_for_groq(audio_file_path)
+            original_size = audio_data.stat().st_size
+            filename = audio_data.name  # Use actual filename
 
-        try:
-            # Step 2: Check if compressed file needs chunking
-            compressed_size = compressed_path.stat().st_size
-            # Leave 5MB buffer below configured limit for safety margin
-            max_chunk_size_mb = settings.max_audio_size_mb - 5
-            max_chunk_size_bytes = max_chunk_size_mb * 1024 * 1024
+            if original_size < 100:
+                raise TranscriptionError(f"Audio file too small ({original_size} bytes)")
 
-            if compressed_size <= max_chunk_size_bytes:
-                # Single chunk - transcribe directly
-                logger.info(f"Audio fits in single chunk ({compressed_size} bytes <= {max_chunk_size_mb}MB), transcribing directly")
-                return transcribe_single_chunk(compressed_path)
-            else:
-                # Multiple chunks needed
-                logger.info(f"Audio too large ({compressed_size} bytes > {max_chunk_size_mb}MB), splitting into chunks")
-                chunk_paths = split_audio_into_chunks(compressed_path, max_chunk_size_mb)
-                return transcribe_audio_chunks(chunk_paths)
+            # OPTIMIZATION: Skip FLAC compression for small files (<25MB)
+            small_file_threshold = 25 * 1024 * 1024  # 25MB
 
-        finally:
-            # Clean up compressed file
-            compressed_path.unlink(missing_ok=True)
+            if original_size <= small_file_threshold:
+                # Small file - send directly without compression
+                logger.info(f"Audio file small ({original_size} bytes <= 25MB), sending directly to Whisper")
+                return await transcribe_single_chunk(audio_data, filename)
 
+            # Large file - compress to FLAC first (still uses file-based processing)
+            logger.info(f"Audio file large ({original_size} bytes > 25MB), compressing to FLAC first")
+            compressed_path = compress_audio_for_groq(audio_data)
+
+            try:
+                # Check if compressed file needs chunking
+                compressed_size = compressed_path.stat().st_size
+                max_chunk_size_mb = settings.max_audio_size_mb - 5
+                max_chunk_size_bytes = max_chunk_size_mb * 1024 * 1024
+
+                if compressed_size <= max_chunk_size_bytes:
+                    # Single chunk - transcribe directly
+                    logger.info(f"Audio fits in single chunk ({compressed_size} bytes <= {max_chunk_size_mb}MB)")
+                    return await transcribe_single_chunk(compressed_path)
+                else:
+                    # Multiple chunks needed
+                    logger.info(f"Audio too large ({compressed_size} bytes > {max_chunk_size_mb}MB), splitting into chunks")
+                    chunk_paths = split_audio_into_chunks(compressed_path, max_chunk_size_mb)
+                    return await transcribe_audio_chunks(chunk_paths)
+
+            finally:
+                # Clean up compressed file
+                compressed_path.unlink(missing_ok=True)
+
+        # Handle bytes input (FASTEST PATH - no file I/O)
+        else:
+            logger.info(f"Transcribing audio from memory: {len(audio_data)} bytes")
+
+            original_size = len(audio_data)
+
+            if original_size < 100:
+                raise TranscriptionError(f"Audio too small ({original_size} bytes)")
+
+            # For in-memory bytes, send directly (no compression/chunking)
+            # Assumption: caller already handles size limits
+            return await transcribe_single_chunk(audio_data, filename)
+
+    except TranscriptionError:
+        raise
     except Exception as e:
-        if isinstance(e, TranscriptionError):
-            raise
         raise TranscriptionError(f"Transcription pipeline failed: {e}")
 
 
-def query_llm(user_text: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> str:
+async def query_llm(user_text: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> str:
     """
-    Query Groq LLM for response with optional conversation history
-    
+    Query Groq LLM for response with optional conversation history (async).
+
+    OPTIMIZATION: Uses Groq SDK async client for better performance vs raw requests.
+
     Args:
         user_text: User's transcribed text
         conversation_history: Optional list of previous messages in format [{'role': 'user'|'assistant', 'content': '...'}, ...]
-        
+
     Returns:
-        LLM response text
-        
+        LLM response text (sanitized for TTS)
+
     Raises:
         LLMError: If LLM query fails
     """
     logger.info(f"Querying LLM with text: {user_text[:100]}...")
-    
+
     if not user_text or not user_text.strip():
         raise LLMError("Cannot query LLM with empty text")
-    
+
     # Build messages array: system prompt + conversation history + new user message
     messages = [
         {'role': 'system', 'content': settings.system_prompt}
     ]
-    
+
     # Add conversation history if provided
     if conversation_history:
         messages.extend(conversation_history)
         logger.info(f"Using conversation history with {len(conversation_history)} previous messages")
-    
+
     # Add current user message
     messages.append({'role': 'user', 'content': user_text.strip()})
-    
+
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {settings.groq_api_key}'
-            }
-            
-            payload = {
-                'model': settings.llm_model,
-                'messages': messages,
-                'max_tokens': settings.llm_max_tokens,
-                'temperature': 0.7,
-                'stop': ['\n\n\n', 'In conclusion', 'To summarize', 'In summary']  # Force brevity for voice output
-            }
-            
-            logger.info(f"Sending query to LLM (attempt {attempt + 1}/{max_retries})")
-            
-            response = requests.post(
-                GROQ_LLM_URL,
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-            
-            logger.info(f"LLM API response: {response.status_code}")
-            
-            if response.status_code == 200:
-                result = response.json()
-                
-                if 'choices' not in result or len(result['choices']) == 0:
-                    raise LLMError("Invalid LLM response structure")
-                
-                llm_response = result['choices'][0]['message']['content']
-                
-                if not llm_response or llm_response.strip() == "":
-                    raise LLMError("LLM returned empty response")
-                
-                # Log response metrics
-                response_length = len(llm_response)
-                response_words = len(llm_response.split())
-                usage = result.get('usage', {})
-                completion_tokens = usage.get('completion_tokens', 'N/A')
-                
-                logger.info(f"LLM response: {llm_response[:100]}...")
-                logger.info(f"Response metrics - Length: {response_length} chars, Words: {response_words}, Tokens: {completion_tokens}")
+            logger.info(f"Sending query to LLM via Groq SDK (attempt {attempt + 1}/{max_retries})")
 
-                # CRITICAL: Sanitize for TTS to remove markdown and convert symbols
-                sanitized_response = sanitize_for_tts(llm_response.strip())
-                return sanitized_response
-                
-            elif response.status_code == 429:
-                logger.warning("Rate limited, waiting before retry...")
-                time.sleep(2 ** attempt)  # Exponential backoff
-                continue
-            else:
-                error_msg = f"API error {response.status_code}: {response.text}"
-                logger.error(error_msg)
-                raise LLMError(error_msg)
-                
-        except requests.exceptions.Timeout:
-            if attempt < max_retries - 1:
-                logger.warning(f"Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
-                time.sleep(1)
-                continue
-            else:
-                raise LLMError("Request timeout after retries")
-                
-        except requests.exceptions.ConnectionError as e:
-            raise LLMError(f"Connection error: {e}")
-        
+            # Use Groq SDK client (async)
+            response = await groq_client.chat.completions.create(
+                model=settings.llm_model,
+                messages=messages,
+                max_tokens=settings.llm_max_tokens,
+                temperature=0.7,
+                stop=['\n\n\n', 'In conclusion', 'To summarize', 'In summary'],  # Force brevity
+                timeout=30.0
+            )
+
+            if not response.choices or len(response.choices) == 0:
+                raise LLMError("Invalid LLM response structure")
+
+            llm_response = response.choices[0].message.content
+
+            if not llm_response or llm_response.strip() == "":
+                raise LLMError("LLM returned empty response")
+
+            # Log response metrics
+            response_length = len(llm_response)
+            response_words = len(llm_response.split())
+            completion_tokens = response.usage.completion_tokens if response.usage else 'N/A'
+
+            logger.info(f"LLM response: {llm_response[:100]}...")
+            logger.info(f"Response metrics - Length: {response_length} chars, Words: {response_words}, Tokens: {completion_tokens}")
+
+            # CRITICAL: Sanitize for TTS to remove markdown and convert symbols
+            sanitized_response = sanitize_for_tts(llm_response.strip())
+            return sanitized_response
+
         except Exception as e:
-            if isinstance(e, LLMError):
-                raise
-            raise LLMError(f"Unexpected error: {e}")
-    
+            error_msg = str(e).lower()
+
+            # Handle rate limiting
+            if 'rate' in error_msg or '429' in error_msg:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Rate limited, waiting {wait_time}s before retry...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    raise LLMError("Rate limited after retries")
+
+            # Handle timeout
+            if 'timeout' in error_msg or 'timed out' in error_msg:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(1)
+                    continue
+                else:
+                    raise LLMError("Request timeout after retries")
+
+            # Other errors
+            if attempt < max_retries - 1:
+                logger.warning(f"LLM error: {e}, retrying... (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(1)
+                continue
+            else:
+                if isinstance(e, LLMError):
+                    raise
+                raise LLMError(f"LLM query failed: {e}")
+
     raise LLMError("Failed after all retry attempts")
 
 
@@ -764,13 +776,12 @@ def generate_speech(text: str, output_path: Path) -> None:
     raise TTSError("Failed after all retry attempts")
 
 
-def generate_speech_streaming(text: str):
+async def generate_speech_streaming(text: str) -> AsyncIterator[bytes]:
     """
-    Generate speech using Groq TTS API with streaming output.
-    Yields WAV file chunks as they arrive from the API.
+    Generate speech using Groq TTS API with streaming output (async).
 
-    NOTE: This is a synchronous generator (not async) because it uses requests library.
-    Use with asyncio.to_thread() or similar async wrapper if needed.
+    OPTIMIZATION: Uses Groq SDK async client with streaming for real-time audio delivery.
+    Yields WAV file chunks as they arrive from the API.
 
     Args:
         text: Text to convert to speech
@@ -789,102 +800,98 @@ def generate_speech_streaming(text: str):
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {settings.groq_api_key}'
-            }
+            logger.info(f"Requesting TTS streaming via Groq SDK (attempt {attempt + 1}/{max_retries})")
 
-            payload = {
-                'model': settings.tts_model,
-                'input': text.strip(),
-                'voice': settings.tts_voice,
-                'response_format': 'wav'
-            }
-
-            logger.info(f"Requesting TTS streaming (attempt {attempt + 1}/{max_retries})")
-
-            response = requests.post(
-                GROQ_TTS_URL,
-                headers=headers,
-                json=payload,
-                timeout=60,
-                stream=True
+            # Use Groq SDK client with streaming (async)
+            response = await groq_client.audio.speech.create(
+                model=settings.tts_model,
+                input=text.strip(),
+                voice=settings.tts_voice,
+                response_format='wav',
+                timeout=60.0
             )
 
-            logger.info(f"TTS API response: {response.status_code}")
+            total_bytes = 0
 
-            if response.status_code == 200:
-                total_bytes = 0
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        total_bytes += len(chunk)
-                        yield chunk
+            # Stream response chunks
+            async for chunk in response.iter_bytes(chunk_size=8192):
+                if chunk:
+                    total_bytes += len(chunk)
+                    yield chunk
 
-                if total_bytes == 0:
-                    raise TTSError("Received empty audio stream")
+            if total_bytes == 0:
+                raise TTSError("Received empty audio stream")
 
-                logger.info(f"TTS streaming complete: {total_bytes} bytes")
-                return
-
-            elif response.status_code == 429:
-                logger.warning("Rate limited, waiting before retry...")
-                time.sleep(2 ** attempt)  # Exponential backoff
-                continue
-            else:
-                error_msg = f"API error {response.status_code}: {response.text}"
-                logger.error(error_msg)
-                raise TTSError(error_msg)
-
-        except requests.exceptions.Timeout:
-            if attempt < max_retries - 1:
-                logger.warning(f"Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
-                time.sleep(1)
-                continue
-            else:
-                raise TTSError("Request timeout after retries")
-
-        except requests.exceptions.ConnectionError as e:
-            raise TTSError(f"Connection error: {e}")
+            logger.info(f"TTS streaming complete: {total_bytes} bytes")
+            return
 
         except Exception as e:
-            if isinstance(e, TTSError):
-                raise
-            raise TTSError(f"Unexpected error: {e}")
+            error_msg = str(e).lower()
+
+            # Handle rate limiting
+            if 'rate' in error_msg or '429' in error_msg:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Rate limited, waiting {wait_time}s before retry...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    raise TTSError("Rate limited after retries")
+
+            # Handle timeout
+            if 'timeout' in error_msg or 'timed out' in error_msg:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(1)
+                    continue
+                else:
+                    raise TTSError("Request timeout after retries")
+
+            # Other errors
+            if attempt < max_retries - 1:
+                logger.warning(f"TTS error: {e}, retrying... (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(1)
+                continue
+            else:
+                if isinstance(e, TTSError):
+                    raise
+                raise TTSError(f"TTS generation failed: {e}")
 
     raise TTSError("Failed after all retry attempts")
 
 
-def embed_text(text: str) -> List[float]:
+async def embed_text(text: str) -> List[float]:
     """
-    Generate embedding for text using OpenAI embeddings API.
-    
+    Generate embedding for text using OpenAI embeddings API (async).
+
+    OPTIMIZATION: Uses async OpenAI client for better performance.
+
     Args:
         text: Text to embed
-        
+
     Returns:
         1536-dimensional embedding vector (text-embedding-3-small)
-        
+
     Raises:
         EmbeddingError: If embedding generation fails
     """
     logger.info(f"Generating embedding for text: {text[:100]}...")
-    
+
     if not text or not text.strip():
         raise EmbeddingError("Cannot generate embedding from empty text")
-    
+
     try:
-        client = OpenAI(api_key=settings.openai_api_key)
-        
-        response = client.embeddings.create(
+        # Use async OpenAI client
+        response = await openai_client.embeddings.create(
             model=settings.embedding_model,
             input=text.strip()
         )
-        
+
         embedding = response.data[0].embedding
-        
+
         logger.debug(f"Generated embedding: {len(embedding)} dimensions")
         return embedding
-        
+
     except Exception as e:
         logger.error(f"Failed to generate embedding: {e}")
         raise EmbeddingError(f"Embedding generation failed: {str(e)}")
@@ -954,24 +961,26 @@ def _is_summary_truncated(summary: str) -> bool:
     return False
 
 
-def summarize_thread(messages: List[Dict[str, str]], existing_summary: Optional[str] = None) -> str:
+async def summarize_thread(messages: List[Dict[str, str]], existing_summary: Optional[str] = None) -> str:
     """
-    Generate a concise summary of conversation thread using Groq LLM.
-    
+    Generate a concise summary of conversation thread using Groq LLM (async).
+
+    OPTIMIZATION: Uses Groq SDK async client for better performance.
+
     Uses different prompts for initial summaries (no existing summary) vs incremental summaries.
-    
+
     Args:
         messages: List of messages in format [{'role': 'user'|'assistant', 'content': '...'}, ...]
         existing_summary: Optional existing summary to update (for incremental summaries)
-        
+
     Returns:
         Complete summary (length varies based on conversation complexity)
-        
+
     Raises:
         SummarizationError: If summarization fails
     """
     logger.info(f"Summarizing thread with {len(messages)} messages")
-    
+
     if not messages:
         raise SummarizationError("Cannot summarize empty thread")
     
@@ -1026,18 +1035,7 @@ CRITICAL REQUIREMENTS:
 
 Create an updated summary that combines the previous summary with the new conversation content."""
         
-        # Build messages array with system prompt
-        groq_messages = [
-            {'role': 'system', 'content': system_prompt},
-            *conversation
-        ]
-        
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {settings.groq_api_key}'
-        }
-        
-        # Base payload configuration
+        # Base configuration for token limits and temperature
         # Use generous token limits as safety nets, not constraints
         # Limits are high enough to handle any reasonable summary length
         # Prompt quality drives appropriate length, not token limits
@@ -1053,14 +1051,14 @@ Create an updated summary that combines the previous summary with the new conver
             else:
                 base_max_tokens = 2000  # Safety limit for very long conversations with many topics
         base_temperature = 0.3
-        
+
         # Retry logic for empty summaries
         max_retries = 2
         retry_count = 0
         summary = None
-        
+
         while retry_count <= max_retries and not summary:
-            # Modify payload based on retry attempt
+            # Modify configuration based on retry attempt
             if retry_count == 0:
                 # First attempt: use base configuration
                 max_tokens = base_max_tokens
@@ -1078,108 +1076,99 @@ Create an updated summary that combines the previous summary with the new conver
                 temperature = 0.5
                 retry_prompt = system_prompt + "\n\nCRITICAL: You MUST return a complete, untruncated summary covering ALL topics discussed. Do not return empty or cut off mid-sentence. Completeness is absolutely essential."
                 logger.warning(f"Empty or truncated summary received, retrying (attempt {retry_count}/{max_retries}) with increased tokens and temperature...")
-            
-            payload = {
-                'model': settings.llm_model,
-                'messages': [
-                    {'role': 'system', 'content': retry_prompt},
-                    *conversation
-                ],
-                'max_tokens': max_tokens,
-                'temperature': temperature
-            }
+
+            # Build messages for this attempt
+            messages_for_llm = [
+                {'role': 'system', 'content': retry_prompt},
+                *conversation
+            ]
 
             # FIX: Groq API requires last message to be 'user' role
             # If conversation ends with assistant message, append dummy user message
             if conversation and conversation[-1]['role'] != 'user':
-                payload['messages'].append({
+                messages_for_llm.append({
                     'role': 'user',
                     'content': 'Please provide the summary as requested above.'
                 })
                 logger.debug(f"Added dummy user message to satisfy API requirement (last message was {conversation[-1]['role']})")
 
-            logger.info(f"Requesting thread summary from Groq LLM (initial={is_initial_summary}, messages={len(messages)}, attempt={retry_count + 1})")
-            
+            logger.info(f"Requesting thread summary via Groq SDK (initial={is_initial_summary}, messages={len(messages)}, attempt={retry_count + 1})")
+
             try:
-                response = requests.post(
-                    GROQ_LLM_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=30
+                # Use Groq SDK client (async)
+                response = await groq_client.chat.completions.create(
+                    model=settings.llm_model,
+                    messages=messages_for_llm,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    timeout=30.0
                 )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    if 'choices' not in result or len(result['choices']) == 0:
-                        raise SummarizationError("Invalid LLM response structure")
-                    
-                    summary = result['choices'][0]['message']['content'].strip()
-                    
-                    if not summary:
-                        # Empty summary - will retry if attempts remain
+
+                if not response.choices or len(response.choices) == 0:
+                    raise SummarizationError("Invalid LLM response structure")
+
+                summary = response.choices[0].message.content.strip()
+
+                if not summary:
+                    # Empty summary - will retry if attempts remain
+                    if retry_count < max_retries:
+                        retry_count += 1
+                        continue
+                    else:
+                        # All retries exhausted
+                        raise SummarizationError(
+                            f"LLM returned empty summary after {retry_count} retries"
+                        )
+                else:
+                    # Check if summary appears truncated
+                    if _is_summary_truncated(summary):
+                        logger.warning(
+                            f"Summary appears truncated (ends with: '{summary[-20:]}'). "
+                            f"Attempting retry with higher token limit..."
+                        )
                         if retry_count < max_retries:
                             retry_count += 1
+                            summary = None
                             continue
                         else:
-                            # All retries exhausted
-                            last_response = result.get('choices', [{}])[0].get('message', {}).get('content', 'N/A')[:100]
-                            raise SummarizationError(
-                                f"LLM returned empty summary after {retry_count} retries. "
-                                f"Last response: {last_response}"
-                            )
-                    else:
-                        # Check if summary appears truncated
-                        if _is_summary_truncated(summary):
+                            # Log warning but proceed with truncated summary
                             logger.warning(
-                                f"Summary appears truncated (ends with: '{summary[-20:]}'). "
-                                f"Attempting retry with higher token limit..."
+                                f"Summary appears truncated but retries exhausted. "
+                                f"Summary length: {len(summary)} chars. "
+                                f"This may indicate the token limit was too low."
                             )
-                            if retry_count < max_retries:
-                                retry_count += 1
-                                summary = None
-                                continue
-                            else:
-                                # Log warning but proceed with truncated summary
-                                logger.warning(
-                                    f"Summary appears truncated but retries exhausted. "
-                                    f"Summary length: {len(summary)} chars. "
-                                    f"This may indicate the token limit was too low."
-                                )
-                        
-                        # Success - break out of retry loop
-                        logger.info(f"Generated summary ({'initial' if is_initial_summary else 'incremental'}) on attempt {retry_count + 1}: {summary[:100]}...")
-                        logger.debug(f"Full summary length: {len(summary)} characters, {len(summary.split())} words")
-                        break
-                        
-                else:
-                    error_msg = f"API error {response.status_code}: {response.text}"
-                    logger.error(error_msg)
-                    raise SummarizationError(error_msg)
-                    
-            except requests.exceptions.Timeout:
-                if retry_count < max_retries:
-                    retry_count += 1
-                    logger.warning(f"Request timeout, retrying (attempt {retry_count}/{max_retries})...")
-                    time.sleep(1)  # Brief delay before retry
-                    continue
-                else:
-                    raise SummarizationError("Request timeout after retries")
-            except requests.exceptions.ConnectionError as e:
-                if retry_count < max_retries:
-                    retry_count += 1
-                    logger.warning(f"Connection error, retrying (attempt {retry_count}/{max_retries})...")
-                    time.sleep(1)  # Brief delay before retry
-                    continue
-                else:
-                    raise SummarizationError(f"Connection error: {e}")
+
+                    # Success - break out of retry loop
+                    logger.info(f"Generated summary ({'initial' if is_initial_summary else 'incremental'}) on attempt {retry_count + 1}: {summary[:100]}...")
+                    logger.debug(f"Full summary length: {len(summary)} characters, {len(summary.split())} words")
+                    break
+
             except SummarizationError:
-                # Re-raise summarization errors (they're already handled above)
+                # Re-raise summarization errors
                 raise
             except Exception as e:
-                logger.error(f"Unexpected error during summarization attempt {retry_count + 1}: {e}")
-                raise SummarizationError(f"Summarization failed: {str(e)}")
-        
+                error_msg = str(e).lower()
+
+                # Handle timeout
+                if 'timeout' in error_msg or 'timed out' in error_msg:
+                    if retry_count < max_retries:
+                        retry_count += 1
+                        logger.warning(f"Request timeout, retrying (attempt {retry_count}/{max_retries})...")
+                        await asyncio.sleep(1)
+                        continue
+                    else:
+                        raise SummarizationError("Request timeout after retries")
+
+                # Other errors
+                if retry_count < max_retries:
+                    retry_count += 1
+                    logger.warning(f"Summarization error: {e}, retrying (attempt {retry_count}/{max_retries})...")
+                    await asyncio.sleep(1)
+                    continue
+                else:
+                    logger.error(f"Unexpected error during summarization: {e}")
+                    raise SummarizationError(f"Summarization failed: {str(e)}")
+
         return summary
         
     except SummarizationError:
