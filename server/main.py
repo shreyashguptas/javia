@@ -29,6 +29,7 @@ from services.groq_service import (
     transcribe_audio,
     query_llm,
     generate_speech,
+    generate_speech_streaming,
     embed_text,
     GroqServiceError,
     EmbeddingError
