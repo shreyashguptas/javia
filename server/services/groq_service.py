@@ -997,7 +997,16 @@ Create an updated summary that combines the previous summary with the new conver
                 'max_tokens': max_tokens,
                 'temperature': temperature
             }
-            
+
+            # FIX: Groq API requires last message to be 'user' role
+            # If conversation ends with assistant message, append dummy user message
+            if payload['messages'][-1]['role'] != 'user':
+                payload['messages'].append({
+                    'role': 'user',
+                    'content': 'Please provide the summary as requested above.'
+                })
+                logger.debug(f"Added dummy user message to satisfy API requirement (last message was {conversation[-1]['role']})")
+
             logger.info(f"Requesting thread summary from Groq LLM (initial={is_initial_summary}, messages={len(messages)}, attempt={retry_count + 1})")
             
             try:
