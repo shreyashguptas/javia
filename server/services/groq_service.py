@@ -1000,7 +1000,7 @@ Create an updated summary that combines the previous summary with the new conver
 
             # FIX: Groq API requires last message to be 'user' role
             # If conversation ends with assistant message, append dummy user message
-            if payload['messages'][-1]['role'] != 'user':
+            if conversation and conversation[-1]['role'] != 'user':
                 payload['messages'].append({
                     'role': 'user',
                     'content': 'Please provide the summary as requested above.'
