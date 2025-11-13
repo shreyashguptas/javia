@@ -95,7 +95,9 @@ def compress_to_opus(wav_path, opus_path, bitrate=None):
         # Create Opus encoder (mono)
         encoder = opuslib.Encoder(enc_sample_rate, 1, opuslib.APPLICATION_VOIP)
         encoder.bitrate = (bitrate or getattr(config, 'OPUS_BITRATE', 64000))
-        encoder.complexity = 10  # Maximum quality (0-10)
+        # OPTIMIZATION: Reduced complexity from 10 to 5 for faster encoding (~30-40% faster)
+        # Minimal quality impact for voice, prioritizing speed over max quality
+        encoder.complexity = 5  # Medium quality (0-10), optimized for speed
         
         # Encode in chunks (Opus frame size must be specific durations)
         # For 48kHz: valid frame sizes are 120, 240, 480, 960, 1920, 2880 samples

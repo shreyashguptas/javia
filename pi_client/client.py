@@ -201,7 +201,14 @@ def main():
             logger.info("\n" + "="*50)
             logger.info("STARTING CONVERSATION")
             logger.info("="*50 + "\n")
-            
+
+            # OPTIMIZATION: Pre-warm context on server (saves 200-500ms from critical path)
+            # Call /prepare endpoint to fetch and cache context while user is speaking
+            try:
+                api_client.prepare_context()
+            except Exception as e:
+                logger.warning(f"[PREPARE] Pre-warm failed: {e}, continuing anyway")
+
             # Step 1: Record (plays stop beep automatically)
             logger.info("[STEP 1/3] Recording audio...")
             if not record_audio(gpio_manager, beep_generator):

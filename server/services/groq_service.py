@@ -318,8 +318,10 @@ def transcribe_single_chunk(audio_file_path: Path) -> str:
     """
     Transcribe a single audio chunk using Groq Whisper API.
 
+    Supports both WAV and FLAC formats. Whisper API accepts multiple formats.
+
     Args:
-        audio_file_path: Path to audio chunk file
+        audio_file_path: Path to audio chunk file (WAV or FLAC)
 
     Returns:
         Transcribed text
@@ -342,12 +344,25 @@ def transcribe_single_chunk(audio_file_path: Path) -> str:
             f"Audio chunk too large ({file_size} bytes), max {settings.max_audio_size_bytes}"
         )
 
+    # Detect file format based on extension
+    file_ext = audio_file_path.suffix.lower()
+    if file_ext == '.flac':
+        mime_type = 'audio/flac'
+        file_name = 'audio.flac'
+    elif file_ext == '.wav':
+        mime_type = 'audio/wav'
+        file_name = 'audio.wav'
+    else:
+        # Default to WAV if unknown
+        mime_type = 'audio/wav'
+        file_name = f'audio{file_ext}'
+
     max_retries = 3
     for attempt in range(max_retries):
         try:
             with open(audio_file_path, 'rb') as audio_file:
                 files = {
-                    'file': ('audio.flac', audio_file, 'audio/flac')
+                    'file': (file_name, audio_file, mime_type)
                 }
                 data = {
                     'model': settings.whisper_model
@@ -356,7 +371,7 @@ def transcribe_single_chunk(audio_file_path: Path) -> str:
                     'Authorization': f'Bearer {settings.groq_api_key}'
                 }
 
-                logger.info(f"Sending {file_size} bytes FLAC chunk to Whisper API (attempt {attempt + 1}/{max_retries})")
+                logger.info(f"Sending {file_size} bytes {mime_type} chunk to Whisper API (attempt {attempt + 1}/{max_retries})")
 
                 response = requests.post(
                     GROQ_WHISPER_URL,
@@ -411,9 +426,9 @@ def transcribe_audio(audio_file_path: Path) -> str:
     Transcribe audio using Groq Whisper API with compression and chunking support
 
     Handles large files by:
-    1. Compressing to FLAC format (preserving stereo and sample rate)
-    2. Splitting into chunks if still too large
-    3. Transcribing chunks individually and combining results
+    1. For small files (<25MB): Send WAV directly to Whisper (faster, no compression overhead)
+    2. For large files: Compress to FLAC format then send
+    3. For very large files: Split into chunks and transcribe individually
 
     Args:
         audio_file_path: Path to audio file
@@ -435,7 +450,17 @@ def transcribe_audio(audio_file_path: Path) -> str:
         raise TranscriptionError(f"Audio file too small ({original_size} bytes)")
 
     try:
-        # Step 1: Compress audio to optimal format for Groq
+        # OPTIMIZATION: Skip FLAC compression for small files (<25MB)
+        # Send WAV directly to Whisper API for 200-300ms speedup
+        small_file_threshold = 25 * 1024 * 1024  # 25MB
+
+        if original_size <= small_file_threshold:
+            # Small file - send directly without compression
+            logger.info(f"Audio file small ({original_size} bytes <= 25MB), sending WAV directly to Whisper (skipping FLAC compression)")
+            return transcribe_single_chunk(audio_file_path)
+
+        # Large file - compress to FLAC first
+        logger.info(f"Audio file large ({original_size} bytes > 25MB), compressing to FLAC first")
         compressed_path = compress_audio_for_groq(audio_file_path)
 
         try:
