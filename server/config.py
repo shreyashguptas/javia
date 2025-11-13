@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     
     # Model Configurations
     whisper_model: str = "whisper-large-v3-turbo"
-    llm_model: str = "openai/gpt-oss-20b"
+    llm_model: str = "groq/compound"
     tts_model: str = "playai-tts"
     tts_voice: str = "Cheyenne-PlayAI"
     embedding_model: str = "text-embedding-3-small"
