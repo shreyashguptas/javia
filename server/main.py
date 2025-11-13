@@ -4,14 +4,13 @@ import tempfile
 import wave
 from pathlib import Path
 from typing import Optional
-import uuid
 from urllib.parse import quote
 import numpy as np
 import opuslib
 from uuid import UUID
 
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Form
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.background import BackgroundTask
 
@@ -19,7 +18,6 @@ from config import settings
 from middleware.auth import verify_api_key
 from middleware.device_auth import verify_device_uuid
 from models.requests import (
-    ProcessAudioResponse,
     ErrorResponse,
     HealthResponse
 )
@@ -28,9 +26,7 @@ from models.conversations import MessageRole
 from services.groq_service import (
     transcribe_audio,
     query_llm,
-    generate_speech,
     generate_speech_streaming,
-    embed_text,
     GroqServiceError,
     EmbeddingError
 )
@@ -349,6 +345,7 @@ async def stream_wav_to_opus(wav_chunks, bitrate: int = 64000):
         # State variables
         buffer = bytearray()
         header_parsed = False
+        data_chunk_found = False
         sample_rate = None
         channels = None
         sample_width = None
@@ -442,17 +439,37 @@ async def stream_wav_to_opus(wav_chunks, bitrate: int = 64000):
                 # Find data chunk and skip to PCM data
                 data_pos = buffer.find(b'data')
                 if data_pos != -1:
-                    # Skip past "data" and data size
+                    # Skip past "data" and data size (4 bytes for "data" + 4 bytes for data size)
                     pcm_start = data_pos + 8
                     if pcm_start < len(buffer):
                         pcm_buffer.extend(buffer[pcm_start:])
-                        buffer = bytearray()
+                    # Clear buffer after extracting PCM data
+                    buffer = bytearray()
+                    data_chunk_found = True
                 else:
-                    # Data chunk might be in next chunk, keep buffer
+                    # Data chunk not found yet - need to wait for more chunks
+                    # Clear the header portion from buffer to prevent it from being added to pcm_buffer
+                    # Keep only the portion after the header (in case data chunk starts in next chunk)
+                    # WAV header is typically 44 bytes, but we'll search for "data" marker
+                    # For now, we'll keep the buffer but won't add it to pcm_buffer until data chunk is found
                     pass
 
-            # Process PCM data if header is parsed
-            elif header_parsed:
+            # Continue searching for data chunk if header is parsed but data chunk not found yet
+            elif header_parsed and not data_chunk_found:
+                # Search for data chunk in the accumulated buffer
+                data_pos = buffer.find(b'data')
+                if data_pos != -1:
+                    # Found data chunk - extract PCM data
+                    pcm_start = data_pos + 8
+                    if pcm_start < len(buffer):
+                        pcm_buffer.extend(buffer[pcm_start:])
+                    # Clear buffer after extracting PCM data
+                    buffer = bytearray()
+                    data_chunk_found = True
+                # If still not found, keep accumulating in buffer (don't add to pcm_buffer)
+
+            # Process PCM data if header is parsed and data chunk has been found
+            elif header_parsed and data_chunk_found:
                 pcm_buffer.extend(buffer)
                 buffer = bytearray()
 

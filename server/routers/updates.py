@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from middleware.auth import verify_api_key
 from middleware.device_auth import verify_device_uuid
@@ -18,7 +18,6 @@ from models.devices import (
 from services.update_service import (
     create_update,
     update_device_update_status,
-    get_update_download_url,
     list_updates,
     UpdateServiceError
 )

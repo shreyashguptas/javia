@@ -112,9 +112,3 @@ class UpdateListResponse(BaseModel):
     updates: List[UpdateResponse]
     total: int
 
-
-class DeviceUpdateListResponse(BaseModel):
-    """Response model for listing device updates"""
-    device_updates: List[DeviceUpdateResponse]
-    total: int
-

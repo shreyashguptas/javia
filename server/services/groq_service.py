@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Union, AsyncIterator
 from groq import AsyncGroq
-from openai import OpenAI, AsyncOpenAI
+from openai import AsyncOpenAI
 import tiktoken
 from config import settings
 
@@ -701,91 +701,6 @@ async def query_llm(user_text: str, conversation_history: Optional[List[Dict[str
                 raise LLMError(f"LLM query failed: {e}")
 
     raise LLMError("Failed after all retry attempts")
-
-
-def generate_speech(text: str, output_path: Path) -> None:
-    """
-    Generate speech using Groq TTS API
-    
-    Args:
-        text: Text to convert to speech
-        output_path: Path to save generated audio file
-        
-    Raises:
-        TTSError: If TTS generation fails
-    """
-    logger.info(f"Generating speech for text: {text[:100]}...")
-    
-    if not text or not text.strip():
-        raise TTSError("Cannot generate speech from empty text")
-    
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {settings.groq_api_key}'
-            }
-            
-            payload = {
-                'model': settings.tts_model,
-                'input': text.strip(),
-                'voice': settings.tts_voice,
-                'response_format': 'wav'
-            }
-            
-            logger.info(f"Requesting TTS (attempt {attempt + 1}/{max_retries})")
-            
-            response = requests.post(
-                GROQ_TTS_URL,
-                headers=headers,
-                json=payload,
-                timeout=60,
-                stream=True
-            )
-            
-            logger.info(f"TTS API response: {response.status_code}")
-            
-            if response.status_code == 200:
-                total_bytes = 0
-                with open(output_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            total_bytes += len(chunk)
-                
-                if total_bytes == 0:
-                    raise TTSError("Received empty audio file")
-                
-                logger.info(f"Audio saved: {output_path} ({total_bytes} bytes)")
-                return
-                
-            elif response.status_code == 429:
-                logger.warning("Rate limited, waiting before retry...")
-                time.sleep(2 ** attempt)  # Exponential backoff
-                continue
-            else:
-                error_msg = f"API error {response.status_code}: {response.text}"
-                logger.error(error_msg)
-                raise TTSError(error_msg)
-                
-        except requests.exceptions.Timeout:
-            if attempt < max_retries - 1:
-                logger.warning(f"Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
-                time.sleep(1)
-                continue
-            else:
-                raise TTSError("Request timeout after retries")
-                
-        except requests.exceptions.ConnectionError as e:
-            raise TTSError(f"Connection error: {e}")
-        
-        except Exception as e:
-            if isinstance(e, TTSError):
-                raise
-            raise TTSError(f"Unexpected error: {e}")
-    
-    raise TTSError("Failed after all retry attempts")
 
 
 async def generate_speech_streaming(text: str) -> AsyncIterator[bytes]:

@@ -3,14 +3,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class ProcessAudioRequest(BaseModel):
-    """Request model for audio processing (metadata)"""
-    session_id: Optional[str] = Field(
-        None,
-        description="Optional session ID for conversation history tracking"
-    )
-
-
 class ProcessAudioResponse(BaseModel):
     """Response model for successful audio processing"""
     transcription: str = Field(..., description="Transcribed text from audio")
