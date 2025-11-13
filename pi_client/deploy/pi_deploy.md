@@ -113,13 +113,7 @@ ssh user@raspberrypi.local
 
 ```bash
 # 1. Pull latest code to /tmp
-cd /tmp
-rm -rf javia  # Remove old clone if exists
-git clone https://github.com/shreyashguptas/javia.git
-cd javia
-
-# 2. Run the SAME script again
-bash pi_client/deploy/setup.sh
+cd /tmp && rm -rf javia && git clone https://github.com/shreyashguptas/javia.git && cd javia && bash pi_client/deploy/setup.sh && clear && sudo journalctl -u voice-assistant-client.service -f
 ```
 
 The script will:
