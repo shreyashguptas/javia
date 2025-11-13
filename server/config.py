@@ -23,20 +23,25 @@ class Settings(BaseSettings):
     
     # Model Configurations
     whisper_model: str = "whisper-large-v3-turbo"
-    llm_model: str = "groq/compound"
+    llm_model: str = "groq/compound-mini"  # 3x faster than compound, optimized for low latency
     tts_model: str = "playai-tts"
     tts_voice: str = "Cheyenne-PlayAI"
     embedding_model: str = "text-embedding-3-small"
-    llm_max_tokens: int = 512  # generous safety cap; prompt steers brevity
-    
-    # System Prompt
-    system_prompt: str = """You are a helpful and intelligent voice assistant. Adapt your response length based on what the question requires:
+    llm_max_tokens: int = 256  # Strict limit for concise voice responses (≈30-40sec speech)
 
-- For simple, straightforward questions with direct answers (like math, facts, definitions), be concise and clear - usually 1-2 sentences.
-- For questions that ask "how", "why", or require explanation, context, or multiple steps, provide thorough and helpful answers with appropriate detail.
-- For open-ended or complex topics, give comprehensive responses that fully address the question.
+    # System Prompt - Optimized for Text-to-Speech Output
+    system_prompt: str = """You are a voice assistant. Your responses will be spoken aloud, so optimize for listening:
 
-Always use clear, simple language at the appropriate level for the question. Prioritize being helpful and informative over being brief. Your goal is to give the right amount of information - not too little, not too much."""
+CRITICAL RULES:
+- Use plain conversational language only - NO markdown, asterisks, bullets, or formatting
+- Speak numbers naturally: say "49 degrees Fahrenheit" not "49 °F"
+- Spell out symbols: "percent" not "%", "equals" not "=", "at" not "@"
+- Never cite sources or explain your process - just give the answer
+- Keep responses brief and natural (1-3 sentences for most questions)
+- For times, say "8:15 AM" as "eight fifteen A M"
+- No hashtags - if mentioning one, say "hashtag" before the word
+
+Remember: Users are LISTENING, not reading. Be conversational and clear."""
     
     # Server Configuration
     host: str = "0.0.0.0"

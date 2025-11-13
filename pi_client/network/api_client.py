@@ -185,11 +185,15 @@ class APIClient:
                 if config.VERBOSE_OUTPUT:
                     print(f"[METRIC] encode_ms={encode_ms}")
                     print(f"[SERVER] Uploading {opus_size} bytes OPUS (gain: {config.MICROPHONE_GAIN}x on server)...")
+
                 # Telemetry timing points
                 stop_to_upload_start_ms = None
                 if getattr(config, 'LAST_RECORD_END_TS', None):
                     stop_to_upload_start_ms = max(0, int((time.time() - config.LAST_RECORD_END_TS) * 1000))
-                upload_start = time.time()
+
+                # DIAGNOSTIC: Detailed upload timing to identify bottlenecks
+                prep_complete = time.time()
+                upload_start = prep_complete
 
                 # Send request with persistent session (faster than new connection)
                 response = session.post(
@@ -200,13 +204,20 @@ class APIClient:
                     stream=True
                 )
 
+                # DIAGNOSTIC: Capture first byte received time
+                first_byte_received = time.time()
+
                 try:
                     ttfb_start = upload_start
                     upload_time = time.time() - upload_start
+                    network_time_ms = int((first_byte_received - upload_start) * 1000)
+
                     if config.VERBOSE_OUTPUT:
                         if stop_to_upload_start_ms is not None:
                             print(f"[METRIC] stop_to_upload_start_ms={stop_to_upload_start_ms}")
                         print(f"[METRIC] upload_ms={int(upload_time*1000)}")
+                        # DIAGNOSTIC: Network time (DNS + connect + send + wait for first byte)
+                        print(f"[DIAGNOSTIC] network_to_first_byte_ms={network_time_ms}")
 
                     if config.VERBOSE_OUTPUT:
                         print(f"[SERVER] Response code: {response.status_code}")
