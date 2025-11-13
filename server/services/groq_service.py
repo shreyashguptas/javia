@@ -46,6 +46,84 @@ class SummarizationError(GroqServiceError):
     pass
 
 
+def sanitize_for_tts(text: str) -> str:
+    """
+    Sanitize LLM output for text-to-speech by removing markdown and converting symbols.
+
+    CRITICAL for TTS quality: Removes formatting that would be spoken aloud as literal characters.
+
+    Transformations:
+    - Markdown: **bold** → bold, *italic* → italic, `code` → code
+    - Temperature: 49°F → 49 degrees Fahrenheit, 9°C → 9 degrees Celsius
+    - Math symbols: ≈ → approximately, ~ → about, ± → plus or minus
+    - Special chars: % → percent, @ → at, # → number, & → and
+    - Bullets/lists: - item → item, * item → item
+    - Citations: [1], (Source: ...) → removed
+
+    Args:
+        text: LLM response text that may contain markdown/symbols
+
+    Returns:
+        Sanitized text safe for TTS
+    """
+    import re
+
+    original_text = text
+
+    # Remove citations and source references
+    text = re.sub(r'\[?\d+\]?', '', text)  # [1], [2], etc.
+    text = re.sub(r'\(Source:.*?\)', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\(via.*?\)', '', text, flags=re.IGNORECASE)
+
+    # Remove markdown formatting
+    text = re.sub(r'\*\*([^\*]+)\*\*', r'\1', text)  # **bold** → bold
+    text = re.sub(r'\*([^\*]+)\*', r'\1', text)  # *italic* → italic
+    text = re.sub(r'`([^`]+)`', r'\1', text)  # `code` → code
+    text = re.sub(r'~~([^~]+)~~', r'\1', text)  # ~~strikethrough~~ → strikethrough
+
+    # Remove bullets and list markers
+    text = re.sub(r'^\s*[-*•]\s+', '', text, flags=re.MULTILINE)  # - item → item
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)  # 1. item → item
+
+    # Convert temperature symbols (must be before generic degree symbol)
+    text = re.sub(r'(\d+)\s*°\s*F\b', r'\1 degrees Fahrenheit', text)
+    text = re.sub(r'(\d+)\s*°\s*C\b', r'\1 degrees Celsius', text)
+    text = re.sub(r'(\d+)\s*°', r'\1 degrees', text)  # Generic degree
+
+    # Convert math and special symbols
+    text = text.replace('≈', ' approximately ')
+    text = text.replace('~', ' about ')
+    text = text.replace('±', ' plus or minus ')
+    text = text.replace('×', ' times ')
+    text = text.replace('÷', ' divided by ')
+    text = text.replace('≤', ' less than or equal to ')
+    text = text.replace('≥', ' greater than or equal to ')
+    text = text.replace('≠', ' not equal to ')
+    text = text.replace('→', ' to ')
+    text = text.replace('←', ' from ')
+
+    # Convert common symbols (but preserve in contexts like email addresses)
+    # Only replace % when followed by space or end of string
+    text = re.sub(r'%(\s|$)', r' percent\1', text)
+    # Replace @ only when NOT part of an email (simple heuristic)
+    text = re.sub(r'@(?![a-zA-Z0-9\-_.]+\.[a-zA-Z]{2,})', ' at ', text)
+    # Replace # when not followed by alphanumeric (hashtag context)
+    text = re.sub(r'#(\s|$)', r' number\1', text)
+    text = text.replace('&', ' and ')
+
+    # Clean up multiple spaces and normalize whitespace
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+
+    # Log if sanitization changed the text
+    if text != original_text:
+        logger.info(f"[TTS-SANITIZE] Modified output:")
+        logger.info(f"  Before: {original_text[:200]}")
+        logger.info(f"  After:  {text[:200]}")
+
+    return text
+
+
 def check_ffmpeg_available() -> bool:
     """
     Check if ffmpeg is available on the system.
@@ -567,8 +645,10 @@ def query_llm(user_text: str, conversation_history: Optional[List[Dict[str, str]
                 
                 logger.info(f"LLM response: {llm_response[:100]}...")
                 logger.info(f"Response metrics - Length: {response_length} chars, Words: {response_words}, Tokens: {completion_tokens}")
-                
-                return llm_response.strip()
+
+                # CRITICAL: Sanitize for TTS to remove markdown and convert symbols
+                sanitized_response = sanitize_for_tts(llm_response.strip())
+                return sanitized_response
                 
             elif response.status_code == 429:
                 logger.warning("Rate limited, waiting before retry...")
