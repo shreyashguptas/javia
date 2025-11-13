@@ -104,10 +104,47 @@ cd "$INSTALL_DIR"
 
 # Backup .env if it exists
 ENV_BACKUP=""
+RESET_ENV_FILE=false
+
 if [ -f "$INSTALL_DIR/.env" ]; then
-    ENV_BACKUP="/tmp/javia_client_env_backup_$$"
-    cp "$INSTALL_DIR/.env" "$ENV_BACKUP"
-    echo "✓ Backed up existing .env file"
+    # .env file exists - ask if user wants to reset it
+    echo ""
+    echo "==================================="
+    echo "Existing .env File Detected"
+    echo "==================================="
+    echo ""
+    echo "An existing .env file was found at: $INSTALL_DIR/.env"
+    echo ""
+    echo "Options:"
+    echo "  1) Keep existing .env and update only the values you change (default)"
+    echo "  2) Reset .env file - Delete current .env and create fresh from env.example"
+    echo ""
+    echo "⚠️  WARNING: Option 2 will DELETE your current .env file!"
+    echo "            You will need to re-enter ALL configuration values."
+    echo ""
+    read -p "Do you want to RESET your .env file? (y/N): " RESET_ENV_CHOICE
+
+    if [ "$RESET_ENV_CHOICE" = "y" ] || [ "$RESET_ENV_CHOICE" = "Y" ]; then
+        echo ""
+        echo "Resetting .env file..."
+
+        # Backup current .env before deleting
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        BACKUP_FILE="/tmp/.env.backup.$TIMESTAMP"
+        cp "$INSTALL_DIR/.env" "$BACKUP_FILE"
+        echo "✓ Backed up current .env to: $BACKUP_FILE"
+
+        # Mark for reset after file copy
+        RESET_ENV_FILE=true
+        ENV_BACKUP=""
+    else
+        echo "✓ Keeping existing .env file"
+        # Backup .env so it doesn't get overwritten by rsync
+        ENV_BACKUP="/tmp/javia_client_env_backup_$$"
+        cp "$INSTALL_DIR/.env" "$ENV_BACKUP"
+        echo "✓ Backed up existing .env file"
+    fi
+    echo ""
 fi
 
 # Copy all files from client directory
@@ -273,8 +310,21 @@ echo ""
 # ==================== STEP 6: CONFIGURE .ENV ====================
 echo "[6/8] Configuring environment..."
 
-# Create .env from template if it doesn't exist
-if [ ! -f "$INSTALL_DIR/.env" ]; then
+# Handle .env file creation/reset
+if [ "$RESET_ENV_FILE" = true ]; then
+    # User chose to reset - create fresh .env from env.example
+    if [ -f "$INSTALL_DIR/env.example" ]; then
+        rm -f "$INSTALL_DIR/.env"
+        cp "$INSTALL_DIR/env.example" "$INSTALL_DIR/.env"
+        echo "✓ Created fresh .env from env.example"
+        echo "  You will now be prompted to configure all values."
+        echo ""
+    else
+        echo "❌ ERROR: env.example not found!"
+        exit 1
+    fi
+elif [ ! -f "$INSTALL_DIR/.env" ]; then
+    # No .env exists - create from template
     if [ -f "$INSTALL_DIR/env.example" ]; then
         cp "$INSTALL_DIR/env.example" "$INSTALL_DIR/.env"
         echo "✓ Created .env from template"
@@ -282,13 +332,14 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
         echo "❌ ERROR: env.example not found!"
         exit 1
     fi
-fi
-
-# Restore backed up .env if available, then prompt for configuration
-if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
-    # Restore the backup first so we can read current values
-    cp "$ENV_BACKUP" "$INSTALL_DIR/.env"
-    rm -f "$ENV_BACKUP"
+else
+    # Restore backed up .env if available
+    if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
+        # Restore the backup first so we can read current values
+        cp "$ENV_BACKUP" "$INSTALL_DIR/.env"
+        rm -f "$ENV_BACKUP"
+        echo "✓ Restored existing .env configuration"
+    fi
 fi
 
 # Always show configuration prompts with current values

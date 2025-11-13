@@ -180,6 +180,55 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
         echo "❌ ERROR: env.example not found!"
         exit 1
     fi
+else
+    # .env file exists - ask if user wants to reset it
+    echo ""
+    echo "==================================="
+    echo "Existing .env File Detected"
+    echo "==================================="
+    echo ""
+    echo "An existing .env file was found at: $INSTALL_DIR/.env"
+    echo ""
+    echo "Options:"
+    echo "  1) Keep existing .env and update only the values you change (default)"
+    echo "  2) Reset .env file - Delete current .env and create fresh from env.example"
+    echo ""
+    echo "⚠️  WARNING: Option 2 will DELETE your current .env file!"
+    echo "            You will need to re-enter ALL configuration values."
+    echo ""
+    read -p "Do you want to RESET your .env file? (y/N): " RESET_ENV_CHOICE
+
+    if [ "$RESET_ENV_CHOICE" = "y" ] || [ "$RESET_ENV_CHOICE" = "Y" ]; then
+        echo ""
+        echo "Resetting .env file..."
+
+        # Backup current .env before deleting
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        BACKUP_FILE="/tmp/.env.backup.$TIMESTAMP"
+        cp "$INSTALL_DIR/.env" "$BACKUP_FILE"
+        echo "✓ Backed up current .env to: $BACKUP_FILE"
+
+        # Delete current .env
+        rm -f "$INSTALL_DIR/.env"
+
+        # Create fresh .env from env.example
+        if [ -f "$INSTALL_DIR/env.example" ]; then
+            cp "$INSTALL_DIR/env.example" "$INSTALL_DIR/.env"
+            echo "✓ Created fresh .env from env.example"
+            echo ""
+            echo "You will now be prompted to configure all values."
+
+            # Treat this as a fresh install for configuration purposes
+            IS_FRESH_INSTALL=true
+        else
+            echo "❌ ERROR: env.example not found!"
+            echo "Restoring backup..."
+            cp "$BACKUP_FILE" "$INSTALL_DIR/.env"
+            exit 1
+        fi
+    else
+        echo "✓ Keeping existing .env file"
+    fi
 fi
 
 cd "$INSTALL_DIR"
