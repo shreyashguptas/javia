@@ -718,34 +718,47 @@ async def process_audio(
                 transcription = await transcribe_audio(audio_path_for_transcription)
 
         _transcribe_ms = int((_t.time() - _t1) * 1000)
-        
-        # Step 2: Query LLM with conversation history (async, optimized)
-        logger.info("Step 2: Querying LLM...")
-        _t2 = _t.time()
-        llm_response = await query_llm(transcription, conversation_history_messages)
-        _llm_ms = int((_t.time() - _t2) * 1000)
 
-        # Validate LLM response before attempting TTS (prevents empty text from reaching TTS)
-        if not llm_response or not llm_response.strip():
-            logger.error("LLM returned empty response after processing")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Unable to generate response"
-            )
-
-        _t3 = _t.time()  # Start timer for TTS (will stream, no final timing)
-
-        # Step 3 & 4: Stream TTS → Opus encoding (REAL-TIME STREAMING)
-        logger.info("Step 3 & 4: Streaming TTS generation and Opus encoding...")
-        logger.info("⚡ STREAMING MODE: Client will receive audio as it's generated!")
+        # BUGFIX: Send HTTP headers immediately to prevent 502 timeout on long LLM responses
+        # Previously, headers were delayed until after LLM completed (~3+ seconds), causing timeouts
+        # Now we send headers right away and perform LLM query inside the streaming generator
 
         # Store conversation messages in background task (non-blocking)
         final_session_id = str(conversation_thread_id) if conversation_thread_id else None
 
-        # Chain generators: TTS streaming → WAV chunks → Opus packets (fully async)
+        # Timing for response (headers sent immediately)
+        _headers_sent_ms = int((_t.time() - _total_start) * 1000)
+
+        # Chain generators: LLM → TTS streaming → WAV chunks → Opus packets (fully async)
         async def stream_audio_response():
-            """Chain TTS streaming with Opus encoding (async pipeline)"""
+            """Chain LLM + TTS streaming with Opus encoding (async pipeline)"""
             try:
+                # Send empty chunk to force HTTP headers to transmit immediately
+                # This prevents 502 timeouts by establishing connection before LLM processing
+                yield b''
+
+                # Step 2: Query LLM with conversation history (async, optimized)
+                logger.info("Step 2: Querying LLM...")
+                _t2 = _t.time()
+                llm_response = await query_llm(transcription, conversation_history_messages)
+                _llm_ms = int((_t.time() - _t2) * 1000)
+
+                # Validate LLM response before attempting TTS (prevents empty text from reaching TTS)
+                if not llm_response or not llm_response.strip():
+                    logger.error("LLM returned empty response after processing")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Unable to generate response"
+                    )
+
+                logger.info(f"⚡ LLM complete: {_llm_ms}ms")
+
+                _t3 = _t.time()  # Start timer for TTS (will stream, no final timing)
+
+                # Step 3 & 4: Stream TTS → Opus encoding (REAL-TIME STREAMING)
+                logger.info("Step 3 & 4: Streaming TTS generation and Opus encoding...")
+                logger.info("⚡ STREAMING MODE: Client will receive audio as it's generated!")
+
                 # PERFORMANCE DIAGNOSTIC: Track time to first audio chunk
                 first_chunk_time = None
                 chunk_count = 0
@@ -764,31 +777,24 @@ async def process_audio(
 
                 logger.info(f"⚡ Streaming complete! Delivered {chunk_count} Opus packets")
 
+                # Schedule async message storage (non-blocking, after streaming complete)
+                if conversation_thread_id and transcription and llm_response:
+                    import asyncio
+                    asyncio.create_task(
+                        store_conversation_messages(conversation_thread_id, transcription, llm_response)
+                    )
+
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
                 raise
 
-        # Calculate timing (note: TTS time will be 0 since we're streaming)
-        _tts_ms = int((_t.time() - _t3) * 1000)  # Time to START streaming
-        _total_ms = int((_t.time() - _total_start) * 1000)
-
         headers = {
             "X-Transcription": quote(transcription, safe=''),
-            "X-LLM-Response": quote(llm_response, safe=''),
             "X-Session-ID": quote(final_session_id or "", safe=''),
             "X-Stage-Transcribe-ms": str(_transcribe_ms),
-            "X-Stage-LLM-ms": str(_llm_ms),
-            "X-Stage-TTS-ms": str(_tts_ms),  # Time to start streaming (not total)
-            "X-Stage-Total-ms": str(_total_ms),  # Time to first byte
+            "X-Headers-Sent-ms": str(_headers_sent_ms),  # Time to send headers (immediately)
             "X-Streaming": "true",  # Indicate this is a streaming response
         }
-
-        # Schedule async message storage (non-blocking)
-        if conversation_thread_id and transcription and llm_response:
-            import asyncio
-            asyncio.create_task(
-                store_conversation_messages(conversation_thread_id, transcription, llm_response)
-            )
 
         return StreamingResponse(
             stream_audio_response(),
