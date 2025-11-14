@@ -636,9 +636,9 @@ async def query_llm(user_text: str, conversation_history: Optional[List[Dict[str
             response = await groq_client.chat.completions.create(
                 model=settings.llm_model,
                 messages=messages,
-                max_tokens=settings.llm_max_tokens,
-                temperature=0.7,
-                stop=['\n\n\n', 'In conclusion', 'To summarize', 'In summary'],  # Force brevity
+                max_completion_tokens=settings.llm_max_tokens,  # Fixed: use current parameter instead of deprecated max_tokens
+                temperature=0.5,  # Lower temperature for more focused, concise responses
+                stop=['\n\n\n', 'In conclusion', 'To summarize', 'In summary', 'Additionally,', 'Furthermore,', 'Moreover,'],  # Force brevity, prevent expansion
                 timeout=30.0
             )
 
@@ -1026,7 +1026,7 @@ Create an updated summary that combines the previous summary with the new conver
                 response = await groq_client.chat.completions.create(
                     model=settings.llm_model,
                     messages=messages_for_llm,
-                    max_tokens=max_tokens,
+                    max_completion_tokens=max_tokens,  # Fixed: use current parameter instead of deprecated max_tokens
                     temperature=temperature,
                     timeout=30.0
                 )
