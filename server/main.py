@@ -27,8 +27,7 @@ from services.groq_service import (
     transcribe_audio,
     query_llm,
     generate_speech_streaming,
-    GroqServiceError,
-    EmbeddingError
+    GroqServiceError
 )
 from services.conversation_service import (
     resolve_thread,
@@ -69,7 +68,6 @@ app.include_router(updates.router)
 
 # OPTIMIZATION: In-memory context cache for pre-warming
 # Cache structure: {device_id: {session_id, context, timestamp}}
-from datetime import datetime, timezone, timedelta
 import time as _t
 context_cache = {}
 CONTEXT_CACHE_TTL_SECONDS = 300  # 5 minutes
@@ -202,126 +200,6 @@ def decompress_opus_to_wav(opus_path: Path, wav_path: Path):
         
     except Exception as e:
         logger.error(f"Opus decompression failed: {e}")
-        raise
-
-
-def compress_wav_to_opus(wav_path: Path, opus_path: Path, bitrate: int = 64000):
-    """
-    Compress WAV file to Opus for efficient response transfer.
-    
-    PERFORMANCE BENEFIT:
-    - 90% file size reduction for TTS responses
-    - 10x faster download to Pi client
-    - Server CPU can handle compression easily
-    
-    Args:
-        wav_path: Path to input WAV file
-        opus_path: Path to output Opus file
-        bitrate: Bitrate in bits/second (default 64000)
-    """
-    try:
-        logger.debug(f"Compressing WAV to Opus: {wav_path}")
-        
-        # Read WAV file
-        with wave.open(str(wav_path), 'rb') as wf:
-            sample_rate = wf.getframerate()
-            channels = wf.getnchannels()
-            sample_width = wf.getsampwidth()
-            n_frames = wf.getnframes()
-            pcm_data = wf.readframes(n_frames)
-        
-        logger.debug(f"WAV file: {sample_rate}Hz, {channels}ch, {sample_width*8}-bit, {n_frames} frames")
-        
-        # Validate format
-        if sample_width != 2:
-            raise ValueError(f"Expected 16-bit audio, got {sample_width*8}-bit")
-        
-        # Prepare PCM and sample rate for Opus (validate rate is Opus-compatible)
-        VALID_OPUS_RATES = {8000, 12000, 16000, 24000, 48000}
-        if sample_rate not in VALID_OPUS_RATES:
-            # Resample to 24kHz with simple linear interpolation per channel
-            target_rate = 24000
-            try:
-                pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
-                if channels > 1:
-                    pcm_array = pcm_array.reshape(-1, channels)
-                    ratio = target_rate / sample_rate
-                    new_length = int(pcm_array.shape[0] * ratio)
-                    indices = np.linspace(0, pcm_array.shape[0] - 1, new_length)
-                    resampled_channels = []
-                    for ch in range(channels):
-                        resampled = np.interp(indices, np.arange(pcm_array.shape[0]), pcm_array[:, ch]).astype(np.int16)
-                        resampled_channels.append(resampled)
-                    pcm_interleaved = np.vstack(resampled_channels).T.reshape(-1)
-                else:
-                    ratio = target_rate / sample_rate
-                    new_length = int(len(pcm_array) * ratio)
-                    indices = np.linspace(0, len(pcm_array) - 1, new_length)
-                    pcm_interleaved = np.interp(indices, np.arange(len(pcm_array)), pcm_array).astype(np.int16)
-                pcm_data = pcm_interleaved.tobytes()
-                sample_rate = target_rate
-            except Exception as _e:
-                logger.warning(f"Failed to resample from {sample_rate}Hz, proceeding with original rate: {_e}")
-        
-        # Create Opus encoder
-        encoder = opuslib.Encoder(sample_rate, channels, opuslib.APPLICATION_VOIP)
-        encoder.bitrate = bitrate
-        # OPTIMIZATION: Reduced complexity from 10 to 3 for faster encoding (~50-60% faster)
-        # Minimal quality impact for voice (VOIP application), prioritizing speed for faster response
-        encoder.complexity = 3  # Lower complexity (0-10), optimized for speed over quality
-        
-        # Encode in chunks (20ms frames based on sample rate)
-        if sample_rate == 48000:
-            frame_size = 960
-        elif sample_rate == 24000:
-            frame_size = 480
-        elif sample_rate == 16000:
-            frame_size = 320
-        elif sample_rate == 12000:
-            frame_size = 240
-        elif sample_rate == 8000:
-            frame_size = 160
-        else:
-            frame_size = max(120, int(0.02 * sample_rate))
-        frame_bytes = frame_size * channels * sample_width
-        
-        opus_chunks = []
-        offset = 0
-        
-        while offset < len(pcm_data):
-            # Get chunk
-            chunk = pcm_data[offset:offset + frame_bytes]
-            
-            # Pad last chunk if necessary
-            if len(chunk) < frame_bytes:
-                chunk += b'\x00' * (frame_bytes - len(chunk))
-            
-            # Encode chunk
-            opus_frame = encoder.encode(chunk, frame_size)
-            opus_chunks.append(opus_frame)
-            
-            offset += frame_bytes
-        
-        # Write Opus file with custom format (length prefixes)
-        with open(opus_path, 'wb') as f:
-            # Write header: sample_rate (4 bytes), channels (1 byte), num_packets (4 bytes)
-            f.write(sample_rate.to_bytes(4, 'little'))
-            f.write(channels.to_bytes(1, 'little'))
-            f.write(len(opus_chunks).to_bytes(4, 'little'))
-            
-            # Write each Opus packet with length prefix
-            for packet in opus_chunks:
-                f.write(len(packet).to_bytes(2, 'little'))
-                f.write(packet)
-        
-        original_size = wav_path.stat().st_size
-        compressed_size = opus_path.stat().st_size
-        compression_ratio = (1 - compressed_size / original_size) * 100
-        
-        logger.debug(f"Compressed: {original_size} → {compressed_size} bytes ({compression_ratio:.1f}% reduction)")
-        
-    except Exception as e:
-        logger.error(f"Opus compression failed: {e}")
         raise
 
 
@@ -803,21 +681,34 @@ async def process_audio(
                     asyncio.to_thread(resolve_thread, device.id, parsed_session_id, "", user_embedding)
                 )
 
-                # Wait for both to complete
-                transcription, thread_decision = await asyncio.gather(transcription_task, thread_resolution_task)
-                conversation_thread_id = thread_decision.thread_id
+                try:
+                    # Wait for both to complete
+                    transcription, thread_decision = await asyncio.gather(transcription_task, thread_resolution_task)
+                    conversation_thread_id = thread_decision.thread_id
 
-                logger.info(
-                    f"Thread resolution: {thread_decision.decision} - "
-                    f"thread_id={conversation_thread_id}, "
-                    f"delta_t={thread_decision.delta_t_minutes:.1f}min, "
-                    f"similarity={f'{thread_decision.similarity_score:.3f}' if thread_decision.similarity_score is not None else 'N/A'}, "
-                    f"reason={thread_decision.reason}"
-                )
+                    logger.info(
+                        f"Thread resolution: {thread_decision.decision} - "
+                        f"thread_id={conversation_thread_id}, "
+                        f"delta_t={thread_decision.delta_t_minutes:.1f}min, "
+                        f"similarity={f'{thread_decision.similarity_score:.3f}' if thread_decision.similarity_score is not None else 'N/A'}, "
+                        f"reason={thread_decision.reason}"
+                    )
 
-                # Build context from thread (must happen after thread resolution, async with parallel DB queries)
-                conversation_history_messages = await build_context(conversation_thread_id)
-                logger.info(f"Loaded context with {len(conversation_history_messages)} messages")
+                    # Build context from thread (must happen after thread resolution, async with parallel DB queries)
+                    conversation_history_messages = await build_context(conversation_thread_id)
+                    logger.info(f"Loaded context with {len(conversation_history_messages)} messages")
+                except ConversationServiceError:
+                    # BUGFIX: Cancel incomplete tasks to prevent duplicate work (especially transcription API calls)
+                    # If thread_resolution_task fails, transcription_task continues in background without this
+                    for task in [transcription_task, thread_resolution_task]:
+                        if not task.done():
+                            task.cancel()
+                            try:
+                                await task
+                            except asyncio.CancelledError:
+                                pass
+                    # Re-raise to be handled by outer exception handler
+                    raise
 
         except ConversationServiceError as e:
             logger.warning(f"Failed to manage conversation thread: {e}, continuing without history")

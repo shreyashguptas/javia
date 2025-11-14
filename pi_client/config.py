@@ -76,7 +76,6 @@ else:
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 RECORDING_FILE = AUDIO_DIR / "recording.wav"
 RECORDING_OPUS_FILE = AUDIO_DIR / "recording.opus"
-RESPONSE_OPUS_FILE = AUDIO_DIR / "response.opus"
 RESPONSE_FILE = AUDIO_DIR / "response.wav"
 START_BEEP_FILE = AUDIO_DIR / "start_beep.wav"
 STOP_BEEP_FILE = AUDIO_DIR / "stop_beep.wav"

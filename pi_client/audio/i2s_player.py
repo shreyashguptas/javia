@@ -270,6 +270,12 @@ class I2SPlayer(AudioPlayer):
                         logger.info("\n[INTERRUPT] *** BUTTON PRESSED! Stopping playback... ***")
                         interrupted = True
                         break
+                    
+                    # Check for programmatic stop() call
+                    if not self._is_playing:
+                        logger.info("\n[INTERRUPT] *** STOP() CALLED! Stopping playback... ***")
+                        interrupted = True
+                        break
             
             # Wait for audio to fully complete
             time.sleep(0.200)
@@ -336,13 +342,16 @@ class I2SPlayer(AudioPlayer):
     
     def stop(self):
         """
-        Stop current playback.
+        Stop current playback immediately.
         
-        Note: Current implementation relies on button interrupt.
-        Could be extended to support programmatic stopping.
+        This method should be safe to call even if nothing is playing.
+        Note: Current implementation relies on button interrupt for actual stopping.
+        Setting _is_playing to False and disabling amplifier for programmatic stops.
         """
         if self._is_playing:
             logger.info("[PLAYER] Stopping playback...")
             self._is_playing = False
-            self.gpio_manager.disable_amplifier()
-
+            try:
+                self.gpio_manager.disable_amplifier()
+            except Exception:
+                pass

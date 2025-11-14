@@ -75,19 +75,6 @@ def detect_audio_hardware() -> str:
         return _hardware_type_cache
 
 
-def is_googlevoicehat() -> bool:
-    """
-    Check if the system is using googlevoicehat driver.
-    
-    The googlevoicehat-soundcard driver is detected to determine
-    the correct ALSA device name for audio operations.
-    
-    Returns:
-        bool: True if googlevoicehat is detected, False otherwise
-    """
-    return detect_audio_hardware() == "googlevoicehat"
-
-
 def get_alsa_device_name() -> str:
     """
     Get the ALSA device name for audio operations.
@@ -151,11 +138,3 @@ def get_pyalsaaudio_device_name() -> Optional[str]:
     # If we can't parse it, try None (default device)
     # This should work if ALSA default is correctly configured
     return None
-
-
-def reset_cache():
-    """Reset the hardware detection cache (for testing)"""
-    global _hardware_type_cache, _device_name_cache
-    _hardware_type_cache = None
-    _device_name_cache = None
-
