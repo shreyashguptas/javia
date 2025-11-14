@@ -37,7 +37,7 @@ The script will:
 
 ```bash
 # 1. Pull latest code to /tmp
-cd /tmp && rm -rf javia && git clone https://github.com/shreyashguptas/javia.git && cd javia/server/scripts/setup/ && sudo bash setup.sh && clear && journalctl -u voice-assistant-server.service -f
+cd /tmp && rm -rf javia && git clone --depth 1 --single-branch https://github.com/shreyashguptas/javia.git && cd javia/server/scripts/setup/ && sudo bash setup.sh && clear && journalctl -u voice-assistant-server.service -f
 ```
 
 The script will:
